@@ -41,6 +41,10 @@ export function usePdfPage(
         })
         setIsLoading(false)
       })
+    }).catch(err => {
+      if (cancelled) return
+      console.error('Failed to render PDF page:', err)
+      setIsLoading(false)
     })
 
     return () => { cancelled = true }
