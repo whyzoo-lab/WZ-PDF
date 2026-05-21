@@ -35,8 +35,10 @@ export default function App() {
 
   // Cache raw bytes for export
   useEffect(() => {
-    if (file) file.arrayBuffer().then(setFileBytes)
-    else setFileBytes(null)
+    if (!file) { setFileBytes(null); return }
+    let cancelled = false
+    file.arrayBuffer().then(buf => { if (!cancelled) setFileBytes(buf) })
+    return () => { cancelled = true }
   }, [file])
 
   // Delete key removes selected annotation
@@ -101,10 +103,43 @@ export default function App() {
       a.download = `${baseName}_annotated.pdf`
       a.click()
       URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('PDF export failed:', err)
     } finally {
       setIsExporting(false)
     }
   }, [fileBytes, annotations, file])
+
+  const handleZoomIn = useCallback(
+    () => setZoom(z => Math.min(+(z + ZOOM_STEP).toFixed(2), MAX_ZOOM)),
+    [],
+  )
+  const handleZoomOut = useCallback(
+    () => setZoom(z => Math.max(+(z - ZOOM_STEP).toFixed(2), MIN_ZOOM)),
+    [],
+  )
+  const handleZoomReset = useCallback(() => setZoom(1), [])
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedId) removeAnnotation(selectedId)
+  }, [selectedId, removeAnnotation])
+  const handleSignatureClick = useCallback(() => setShowSignaturePad(true), [])
+  const handleWatermarkClick = useCallback(() => setShowWatermarkConfig(true), [])
+
+  const handleSignatureConfirm = useCallback((dataUrl: string) => {
+    setPendingSignature(dataUrl)
+    setShowSignaturePad(false)
+    setActiveMode('signature')
+  }, [setActiveMode])
+
+  const handleSignatureCancel = useCallback(() => {
+    setShowSignaturePad(false)
+    setActiveMode('select')
+  }, [setActiveMode])
+
+  const handleWatermarkCancel = useCallback(() => {
+    setShowWatermarkConfig(false)
+    setActiveMode('select')
+  }, [setActiveMode])
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-900">
@@ -122,13 +157,13 @@ export default function App() {
           zoom={zoom}
           hasPdf={!!pdfDoc}
           onModeChange={setActiveMode}
-          onZoomIn={() => setZoom(z => Math.min(+(z + ZOOM_STEP).toFixed(2), MAX_ZOOM))}
-          onZoomOut={() => setZoom(z => Math.max(+(z - ZOOM_STEP).toFixed(2), MIN_ZOOM))}
-          onZoomReset={() => setZoom(1)}
-          onDeleteSelected={() => selectedId && removeAnnotation(selectedId)}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onZoomReset={handleZoomReset}
+          onDeleteSelected={handleDeleteSelected}
           onStampSelect={handleStampSelect}
-          onSignatureClick={() => setShowSignaturePad(true)}
-          onWatermarkClick={() => setShowWatermarkConfig(true)}
+          onSignatureClick={handleSignatureClick}
+          onWatermarkClick={handleWatermarkClick}
         />
 
         <main className="flex-1 overflow-hidden">
@@ -170,25 +205,15 @@ export default function App() {
 
       {showSignaturePad && (
         <SignaturePad
-          onConfirm={dataUrl => {
-            setPendingSignature(dataUrl)
-            setShowSignaturePad(false)
-            setActiveMode('signature')
-          }}
-          onCancel={() => {
-            setShowSignaturePad(false)
-            setActiveMode('select')
-          }}
+          onConfirm={handleSignatureConfirm}
+          onCancel={handleSignatureCancel}
         />
       )}
 
       {showWatermarkConfig && (
         <WatermarkConfig
           onConfirm={handleWatermarkConfirm}
-          onCancel={() => {
-            setShowWatermarkConfig(false)
-            setActiveMode('select')
-          }}
+          onCancel={handleWatermarkCancel}
         />
       )}
     </div>
