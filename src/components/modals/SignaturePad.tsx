@@ -10,7 +10,7 @@ export function SignaturePad({ onConfirm, onCancel }: SignaturePadProps) {
   const isDrawing = useRef(false)
   const [hasContent, setHasContent] = useState(false)
 
-  useEffect(() => {
+  const clear = () => {
     const canvas = canvasRef.current!
     const ctx = canvas.getContext('2d')!
     ctx.fillStyle = '#ffffff'
@@ -19,7 +19,10 @@ export function SignaturePad({ onConfirm, onCancel }: SignaturePadProps) {
     ctx.lineWidth = 2.5
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-  }, [])
+    setHasContent(false)
+  }
+
+  useEffect(() => { clear() }, [])
 
   const getPos = (e: React.MouseEvent | React.TouchEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
@@ -50,13 +53,6 @@ export function SignaturePad({ onConfirm, onCancel }: SignaturePadProps) {
 
   const endDraw = () => { isDrawing.current = false }
 
-  const clear = () => {
-    const canvas = canvasRef.current!
-    const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    setHasContent(false)
-  }
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">

@@ -25,11 +25,17 @@ export function WatermarkConfig({ onConfirm, onCancel }: WatermarkConfigProps) {
   const set =
     (key: keyof WatermarkSettings) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value
       const value =
         e.target.type === 'range' || e.target.type === 'number'
-          ? parseFloat(e.target.value)
-          : e.target.value
-      setSettings(prev => ({ ...prev, [key]: value }))
+          ? parseFloat(raw)
+          : raw
+      setSettings(prev => {
+        if (process.env.NODE_ENV !== 'production' && typeof prev[key] !== typeof value) {
+          console.error(`WatermarkConfig set('${key}'): expected ${typeof prev[key]}, got ${typeof value}`)
+        }
+        return { ...prev, [key]: value }
+      })
     }
 
   return (
