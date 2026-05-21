@@ -43,6 +43,7 @@ export function PdfPage({
     const img = new window.Image()
     img.src = pageData.imageUrl
     img.onload = () => setBgImage(img)
+    img.onerror = () => console.error(`PdfPage: failed to load image for page ${pageNumber}`)
   }, [pageData])
 
   if (isLoading || !pageData) {
@@ -60,11 +61,10 @@ export function PdfPage({
   const stageHeight = pageData.height * zoom
   const effectiveZoom = PDF_RENDER_SCALE * zoom
 
-  const pageAnnotations = annotations.filter(a =>
-    a.type === 'watermark'
-      ? (a as any).allPages || a.page === pageNumber
-      : a.page === pageNumber,
-  )
+  const pageAnnotations = annotations.filter(a => {
+    if (a.type === 'watermark') return a.allPages || a.page === pageNumber
+    return a.page === pageNumber
+  })
 
   const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent | Event>) => {
     const stage = e.target.getStage()
@@ -106,13 +106,19 @@ export function PdfPage({
     }
   }
 
+  const cursor =
+    (activeMode === 'stamp' && pendingStamp) ||
+    (activeMode === 'signature' && pendingSignature)
+      ? 'crosshair'
+      : 'default'
+
   return (
     <Stage
       width={stageWidth}
       height={stageHeight}
       onClick={handleStageClick}
       onTap={handleStageClick}
-      style={{ cursor: (activeMode === 'stamp' && pendingStamp) || (activeMode === 'signature' && pendingSignature) ? 'crosshair' : 'default' }}
+      style={{ cursor }}
     >
       <Layer>
         {bgImage && (
