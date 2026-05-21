@@ -35,10 +35,14 @@ export function Toolbar({
   const [stampPanelOpen, setStampPanelOpen] = useState(false)
 
   const handlePresetClick = async (presetId: string, svg: string) => {
-    const pngDataUrl = await svgToPng(svg)
-    onStampSelect(pngDataUrl, presetId)
-    setStampPanelOpen(false)
-    onModeChange('stamp')
+    try {
+      const pngDataUrl = await svgToPng(svg)
+      onStampSelect(pngDataUrl, presetId)
+      setStampPanelOpen(false)
+      onModeChange('stamp')
+    } catch (err) {
+      console.error('Failed to convert stamp SVG:', err)
+    }
   }
 
   const handleCustomUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,8 +50,9 @@ export function Toolbar({
     if (!file) return
     const reader = new FileReader()
     reader.onload = ev => {
-      const src = ev.target?.result as string
-      onStampSelect(src)
+      const result = ev.target?.result
+      if (typeof result !== 'string') return
+      onStampSelect(result)
       setStampPanelOpen(false)
       onModeChange('stamp')
     }
@@ -55,7 +60,7 @@ export function Toolbar({
     e.target.value = ''
   }
 
-  const btn = (mode: ActiveMode | 'stamp-toggle') =>
+  const btn = (mode: ActiveMode) =>
     `w-full py-2 px-2 text-xs sm:text-sm rounded text-left transition-colors ${
       activeMode === mode
         ? 'bg-blue-600 text-white'
@@ -72,7 +77,7 @@ export function Toolbar({
           </button>
 
           <button
-            className={`${btn('stamp')} ${activeMode === 'stamp' ? 'bg-blue-600' : ''}`}
+            className={btn('stamp')}
             onClick={() => setStampPanelOpen(v => !v)}
           >
             <span className="sm:hidden">🔖</span>
