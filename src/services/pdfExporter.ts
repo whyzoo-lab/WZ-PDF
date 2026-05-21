@@ -27,7 +27,7 @@ export async function exportPdf(
 
     const pageAnnotations = annotations.filter(a =>
       a.type === 'watermark'
-        ? (a as WatermarkAnnotation).allPages || a.page === pageNum
+        ? a.allPages || a.page === pageNum
         : a.page === pageNum,
     )
 
@@ -40,15 +40,19 @@ export async function exportPdf(
         const pdfH = annotation.height / PDF_RENDER_SCALE
         const pdfLibY = toPdfLibY(pdfYTop, pdfH, pdfPageHeight)
 
-        const bytes = base64ToUint8Array((annotation as any).src)
-        const image = await pdfDoc.embedPng(bytes)
-        page.drawImage(image, {
-          x: pdfX,
-          y: pdfLibY,
-          width: pdfW,
-          height: pdfH,
-          rotate: degrees(annotation.rotation),
-        })
+        const bytes = base64ToUint8Array(annotation.src)
+        try {
+          const image = await pdfDoc.embedPng(bytes)
+          page.drawImage(image, {
+            x: pdfX,
+            y: pdfLibY,
+            width: pdfW,
+            height: pdfH,
+            rotate: degrees(annotation.rotation),
+          })
+        } catch (err) {
+          console.error(`Failed to embed annotation image (id: ${annotation.id}):`, err)
+        }
       }
 
       if (annotation.type === 'watermark') {
