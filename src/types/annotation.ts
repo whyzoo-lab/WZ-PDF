@@ -4,10 +4,10 @@ export interface BaseAnnotation {
   id: string
   page: number        // 1-based page number
   type: AnnotationType
-  x: number          // pixel coords at PDF_RENDER_SCALE, zoom=1
-  y: number
-  width: number
-  height: number
+  x: number          // PDF points (screen pixels / effectiveZoom, where effectiveZoom = PDF_RENDER_SCALE * zoom)
+  y: number          // PDF points (screen pixels / effectiveZoom, where effectiveZoom = PDF_RENDER_SCALE * zoom)
+  width: number      // PDF points (screen pixels / effectiveZoom, where effectiveZoom = PDF_RENDER_SCALE * zoom)
+  height: number     // PDF points (screen pixels / effectiveZoom, where effectiveZoom = PDF_RENDER_SCALE * zoom)
   rotation: number   // degrees
 }
 

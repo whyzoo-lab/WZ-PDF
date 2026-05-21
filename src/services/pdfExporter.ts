@@ -1,7 +1,6 @@
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib'
 import type { Annotation, WatermarkAnnotation } from '../types/annotation'
 import { toPdfLibY, hexToRgb } from '../utils/coordinates'
-import { PDF_RENDER_SCALE } from '../utils/constants'
 
 /** Exported for unit testing */
 export function base64ToUint8Array(dataUrl: string): Uint8Array {
@@ -33,11 +32,11 @@ export async function exportPdf(
 
     for (const annotation of pageAnnotations) {
       if (annotation.type === 'stamp' || annotation.type === 'signature') {
-        // Stored coords are in rendered pixel space → divide by PDF_RENDER_SCALE to get PDF points
-        const pdfX = annotation.x / PDF_RENDER_SCALE
-        const pdfYTop = annotation.y / PDF_RENDER_SCALE
-        const pdfW = annotation.width / PDF_RENDER_SCALE
-        const pdfH = annotation.height / PDF_RENDER_SCALE
+        // Stored coords are already PDF points (screen pixels / effectiveZoom, where effectiveZoom = PDF_RENDER_SCALE * zoom)
+        const pdfX = annotation.x
+        const pdfYTop = annotation.y
+        const pdfW = annotation.width
+        const pdfH = annotation.height
         const pdfLibY = toPdfLibY(pdfYTop, pdfH, pdfPageHeight)
 
         const bytes = base64ToUint8Array(annotation.src)
