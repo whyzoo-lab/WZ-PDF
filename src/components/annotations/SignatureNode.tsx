@@ -1,3 +1,4 @@
+// Intentionally separate from StampNode to allow per-type divergence
 import React, { useEffect, useState, forwardRef } from 'react'
 import { Image as KonvaImage } from 'react-konva'
 import type Konva from 'konva'
@@ -19,6 +20,7 @@ export const SignatureNode = forwardRef<Konva.Node, SignatureNodeProps>(
       const img = new window.Image()
       img.src = annotation.src
       img.onload = () => setImage(img)
+      img.onerror = () => console.error(`Failed to load annotation image`)
     }, [annotation.src])
 
     if (!image) return null

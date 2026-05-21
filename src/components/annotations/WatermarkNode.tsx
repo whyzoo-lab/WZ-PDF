@@ -16,15 +16,16 @@ export function WatermarkNode({ annotation, effectiveZoom, stageWidth, stageHeig
   return (
     <KonvaText
       text={annotation.text}
-      x={0}
-      y={stageHeight / 2 - displayFontSize / 2}
+      x={stageWidth / 2}
+      y={stageHeight / 2}
       width={stageWidth}
       align="center"
       fontSize={displayFontSize}
       fill={annotation.color}
       opacity={annotation.opacity}
       rotation={annotation.rotation}
-      offsetX={0}
+      offsetX={stageWidth / 2}
+      offsetY={displayFontSize / 2}
       listening={false}
     />
   )
