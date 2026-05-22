@@ -1,5 +1,8 @@
 import { app, BrowserWindow } from 'electron'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 let win: BrowserWindow | null = null
 let pendingFile: string | null = null
