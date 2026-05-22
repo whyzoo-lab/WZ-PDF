@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { PdfPage } from './PdfPage'
 import type { Annotation } from '../../types/annotation'
@@ -29,35 +29,27 @@ export function FullscreenView({
   const overlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const exitingRef = useRef(false)
 
-  // Calculate zoom from page dimensions to fill screen height
-  useEffect(() => {
-    let cancelled = false
+  // Shared zoom calculation
+  const calcZoom = useCallback(() => {
     pdfDoc.getPage(currentPage).then(page => {
-      if (cancelled) return
       const vp = page.getViewport({ scale: PDF_RENDER_SCALE })
-      const newZoom = Math.min(
+      setZoom(Math.min(
         window.innerHeight / vp.height,
         window.innerWidth / vp.width,
-      )
-      setZoom(newZoom)
+      ))
     }).catch(console.error)
-    return () => { cancelled = true }
   }, [pdfDoc, currentPage])
+
+  // Calculate zoom from page dimensions to fill screen height
+  useEffect(() => {
+    calcZoom()
+  }, [calcZoom])
 
   // Recalculate zoom on resize
   useEffect(() => {
-    const onResize = () => {
-      pdfDoc.getPage(currentPage).then(page => {
-        const vp = page.getViewport({ scale: PDF_RENDER_SCALE })
-        setZoom(Math.min(
-          window.innerHeight / vp.height,
-          window.innerWidth / vp.width,
-        ))
-      }).catch(console.error)
-    }
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [pdfDoc, currentPage])
+    window.addEventListener('resize', calcZoom)
+    return () => window.removeEventListener('resize', calcZoom)
+  }, [calcZoom])
 
   // Request OS fullscreen on mount; exit on unmount
   useEffect(() => {
@@ -95,14 +87,16 @@ export function FullscreenView({
   }, [numPages])
 
   // Page overlay: show briefly on page change, fade after 2s
-  const resetOverlay = () => {
+  const resetOverlay = useCallback(() => {
     setShowOverlay(true)
     if (overlayTimer.current) clearTimeout(overlayTimer.current)
     overlayTimer.current = setTimeout(() => setShowOverlay(false), 2000)
-  }
+  }, [])
 
   useEffect(() => {
-    resetOverlay()
+    setShowOverlay(true)
+    if (overlayTimer.current) clearTimeout(overlayTimer.current)
+    overlayTimer.current = setTimeout(() => setShowOverlay(false), 2000)
     return () => { if (overlayTimer.current) clearTimeout(overlayTimer.current) }
   }, [currentPage])
 

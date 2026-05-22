@@ -23,14 +23,14 @@ describe('GridView', () => {
   it('calls onPageClick with the correct page number when a thumbnail is clicked', () => {
     const onPageClick = vi.fn()
     render(<GridView pdfDoc={mockDoc} numPages={3} annotations={[]} onPageClick={onPageClick} />)
-    fireEvent.click(screen.getByTestId('page-2'))
+    fireEvent.click(screen.getByRole('button', { name: /go to page 2/i }))
     expect(onPageClick).toHaveBeenCalledWith(2)
   })
 
   it('calls onPageClick with page 1 when first thumbnail is clicked', () => {
     const onPageClick = vi.fn()
     render(<GridView pdfDoc={mockDoc} numPages={3} annotations={[]} onPageClick={onPageClick} />)
-    fireEvent.click(screen.getByTestId('page-1'))
+    fireEvent.click(screen.getByRole('button', { name: /go to page 1/i }))
     expect(onPageClick).toHaveBeenCalledWith(1)
   })
 })

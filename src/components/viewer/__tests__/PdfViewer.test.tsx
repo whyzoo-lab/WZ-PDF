@@ -3,7 +3,6 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { PdfViewer } from '../PdfViewer'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import type { ViewMode } from '../../../types/viewModes'
 
 vi.mock('../PdfPage', () => ({
   PdfPage: ({ pageNumber }: { pageNumber: number }) => (
