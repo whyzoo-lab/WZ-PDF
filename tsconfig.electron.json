@@ -10,8 +10,6 @@
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "files": [
-    "electron/main.ts",
-    "electron/preload.ts"
-  ]
+  "include": ["electron/**/*"],
+  "exclude": ["electron/**/*.js"]
 }

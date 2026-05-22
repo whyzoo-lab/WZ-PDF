@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import path from 'path'
 
 let win: BrowserWindow | null = null
@@ -24,16 +24,14 @@ function createWindow() {
 app.whenReady().then(() => {
   createWindow()
 
-  // Windows: file path via process.argv
+  // Windows: file path via process.argv (mutually exclusive with macOS open-file)
   const argFile = process.argv.find(arg => arg.endsWith('.pdf'))
   if (argFile && win) {
     win.webContents.once('did-finish-load', () => {
       win?.webContents.send('open-file', argFile)
     })
-  }
-
-  // Send pending file from open-file event (macOS)
-  if (pendingFile && win) {
+  } else if (pendingFile && win) {
+    // macOS: open-file event fired before app was ready
     const filePath = pendingFile
     pendingFile = null
     win.webContents.once('did-finish-load', () => {
@@ -59,6 +57,3 @@ app.on('open-file', (event, filePath) => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
-
-// Suppress unused import warning — ipcMain reserved for future use
-void ipcMain

@@ -1,5 +1,5 @@
 interface Window {
   electronAPI?: {
-    onOpenFile: (callback: (filePath: string) => void) => void
+    onOpenFile: (callback: (filePath: string) => void) => () => void
   }
 }
