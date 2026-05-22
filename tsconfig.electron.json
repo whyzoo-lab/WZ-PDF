@@ -3,11 +3,15 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "node",
-    "outDir": ".",
-    "rootDir": ".",
+    "ignoreDeprecations": "6.0",
+    "outDir": "electron",
+    "rootDir": "electron",
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "include": ["electron/**/*"]
+  "files": [
+    "electron/main.ts",
+    "electron/preload.ts"
+  ]
 }
