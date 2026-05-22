@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { ActionBar } from './components/toolbar/ActionBar'
 import { Toolbar } from './components/toolbar/Toolbar'
 import { PdfViewer } from './components/viewer/PdfViewer'
@@ -9,6 +9,7 @@ import { usePdfDocument } from './hooks/usePdfDocument'
 import { useAnnotations } from './hooks/useAnnotations'
 import { exportPdf } from './services/pdfExporter'
 import type { Annotation } from './types/annotation'
+import type { AppMode, ViewMode } from './types/viewModes'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
 
 export default function App() {
@@ -20,6 +21,9 @@ export default function App() {
   const [pendingStamp, setPendingStamp] = useState<{ src: string; presetId?: string } | null>(null)
   const [pendingSignature, setPendingSignature] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [appMode, setAppMode] = useState<AppMode>('viewer')
+  const [viewMode, setViewMode] = useState<ViewMode>('single')
+  const [scrollToPage, setScrollToPage] = useState<number | null>(null)
 
   const { pdfDoc, numPages, isLoading, error } = usePdfDocument(file)
   const {
@@ -41,30 +45,79 @@ export default function App() {
     return () => { cancelled = true }
   }, [file])
 
-  // Delete key removes selected annotation
+  // Delete key removes selected annotation (only in editor mode)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && appMode === 'editor') {
         removeAnnotation(selectedId)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedId, removeAnnotation])
+  }, [selectedId, removeAnnotation, appMode])
+
+  // Electron: listen for file open events from the main process
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onOpenFile(async (filePath: string) => {
+      try {
+        const response = await fetch(`file://${filePath}`)
+        const blob = await response.blob()
+        const name = filePath.split(/[\\/]/).pop() ?? 'file.pdf'
+        const f = new File([blob], name, { type: 'application/pdf' })
+        handleUpload(f)
+      } catch (err) {
+        console.error('Failed to open file from Electron:', err)
+      }
+    })
+    return () => { cleanup?.() }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scroll to page after switching from grid → single
+  useEffect(() => {
+    if (viewMode === 'single' && scrollToPage !== null) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`pdf-page-${scrollToPage}`)
+        el?.scrollIntoView({ behavior: 'smooth' })
+        setScrollToPage(null)
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [viewMode, scrollToPage])
 
   const handleUpload = useCallback((f: File) => {
     setFile(f)
     setActiveMode(null)
     setPendingStamp(null)
     setPendingSignature(null)
+    setViewMode('single')
   }, [setActiveMode])
+
+  const handleAppModeChange = useCallback((mode: AppMode) => {
+    setAppMode(mode)
+    // Switching to editor while in fullscreen → exit fullscreen, return to single
+    if (mode === 'editor') {
+      setViewMode(prev => prev === 'fullscreen' ? 'single' : prev)
+    }
+  }, [])
+
+  const handleViewModeChange = useCallback((mode: ViewMode) => {
+    setViewMode(mode)
+  }, [])
+
+  const handleGridPageClick = useCallback((pageNumber: number) => {
+    setScrollToPage(pageNumber)
+    setViewMode('single')
+  }, [])
+
+  const handleFullscreenExit = useCallback(() => {
+    setViewMode('single')
+  }, [])
 
   const handleStampSelect = useCallback((src: string, presetId?: string) => {
     setPendingStamp({ src, presetId })
     setActiveMode('stamp')
   }, [setActiveMode])
 
-  // After placement, clear pending state and switch back to select
   const handleAnnotationAdd = useCallback((annotation: Omit<Annotation, 'id'>) => {
     addAnnotation(annotation)
     setPendingStamp(null)
@@ -75,8 +128,8 @@ export default function App() {
   const handleWatermarkConfirm = useCallback((settings: WatermarkSettings) => {
     addAnnotation({
       type: 'watermark',
-      page: 1,        // ignored when allPages=true
-      x: 0,           // ignored — WatermarkNode centers itself
+      page: 1,
+      x: 0,
       y: 0,
       width: 0,
       height: 0,
@@ -145,9 +198,13 @@ export default function App() {
     <div className="flex flex-col h-screen overflow-hidden bg-gray-900">
       <ActionBar
         hasPdf={!!pdfDoc}
+        appMode={appMode}
+        viewMode={viewMode}
         onUpload={handleUpload}
         onExport={handleExport}
         isExporting={isExporting}
+        onAppModeChange={handleAppModeChange}
+        onViewModeChange={handleViewModeChange}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -156,6 +213,8 @@ export default function App() {
           selectedId={selectedId}
           zoom={zoom}
           hasPdf={!!pdfDoc}
+          appMode={appMode}
+          viewMode={viewMode}
           onModeChange={setActiveMode}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
@@ -193,11 +252,14 @@ export default function App() {
               annotations={annotations}
               selectedId={selectedId}
               activeMode={activeMode}
+              viewMode={viewMode}
               pendingStamp={pendingStamp}
               pendingSignature={pendingSignature}
               onAnnotationSelect={selectAnnotation}
               onAnnotationUpdate={updateAnnotation}
               onAnnotationAdd={handleAnnotationAdd}
+              onGridPageClick={handleGridPageClick}
+              onFullscreenExit={handleFullscreenExit}
             />
           )}
         </main>
