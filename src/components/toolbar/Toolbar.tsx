@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import type { ActiveMode } from '../../types/annotation'
+import type { AppMode, ViewMode } from '../../types/viewModes'
 import { STAMP_PRESETS, svgToPng } from '../../utils/stampPresets'
 import { ZoomControls } from '../viewer/ZoomControls'
 
@@ -8,6 +9,8 @@ interface ToolbarProps {
   selectedId: string | null
   zoom: number
   hasPdf: boolean
+  appMode: AppMode
+  viewMode: ViewMode
   onModeChange: (mode: ActiveMode) => void
   onZoomIn: () => void
   onZoomOut: () => void
@@ -23,6 +26,8 @@ export function Toolbar({
   selectedId,
   zoom,
   hasPdf,
+  appMode,
+  viewMode,
   onModeChange,
   onZoomIn,
   onZoomOut,
@@ -71,71 +76,85 @@ export function Toolbar({
     <aside className="flex flex-col w-12 sm:w-36 bg-gray-800 text-white py-3 px-1 sm:px-2 gap-1 shrink-0">
       {hasPdf && (
         <>
-          <button className={btn('select')} onClick={() => { onModeChange('select'); setStampPanelOpen(false) }}>
+          <button
+            className={btn('select')}
+            onClick={() => { onModeChange('select'); setStampPanelOpen(false) }}
+            aria-label="Select"
+          >
             <span className="sm:hidden">↖</span>
             <span className="hidden sm:inline">Select</span>
           </button>
 
-          <button
-            className={btn('stamp')}
-            onClick={() => setStampPanelOpen(v => !v)}
-          >
-            <span className="sm:hidden">🔖</span>
-            <span className="hidden sm:inline">Stamp</span>
-          </button>
+          {appMode === 'editor' && (
+            <>
+              <button
+                className={btn('stamp')}
+                onClick={() => setStampPanelOpen(v => !v)}
+                aria-label="Stamp"
+              >
+                <span className="sm:hidden">🔖</span>
+                <span className="hidden sm:inline">Stamp</span>
+              </button>
 
-          {stampPanelOpen && (
-            <div className="bg-gray-700 rounded p-1 flex flex-col gap-0.5">
-              {STAMP_PRESETS.map(p => (
+              {stampPanelOpen && (
+                <div className="bg-gray-700 rounded p-1 flex flex-col gap-0.5">
+                  {STAMP_PRESETS.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => handlePresetClick(p.id, p.svg)}
+                      className="text-xs text-left px-2 py-1.5 hover:bg-gray-600 rounded"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                  <label className="text-xs text-left px-2 py-1.5 hover:bg-gray-600 rounded cursor-pointer">
+                    Upload PNG…
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      className="hidden"
+                      onChange={handleCustomUpload}
+                    />
+                  </label>
+                </div>
+              )}
+
+              <button
+                className={btn('signature')}
+                onClick={() => { onModeChange('signature'); onSignatureClick(); setStampPanelOpen(false) }}
+                aria-label="Signature"
+              >
+                <span className="sm:hidden">✍</span>
+                <span className="hidden sm:inline">Signature</span>
+              </button>
+
+              <button
+                className={btn('watermark')}
+                onClick={() => { onModeChange('watermark'); onWatermarkClick(); setStampPanelOpen(false) }}
+                aria-label="Watermark"
+              >
+                <span className="sm:hidden">💧</span>
+                <span className="hidden sm:inline">Watermark</span>
+              </button>
+
+              {selectedId && (
                 <button
-                  key={p.id}
-                  onClick={() => handlePresetClick(p.id, p.svg)}
-                  className="text-xs text-left px-2 py-1.5 hover:bg-gray-600 rounded"
+                  onClick={onDeleteSelected}
+                  className="w-full py-2 px-2 text-xs sm:text-sm rounded text-left bg-red-700 hover:bg-red-600 text-white mt-2 transition-colors"
+                  aria-label="Delete"
                 >
-                  {p.label}
+                  <span className="sm:hidden">🗑</span>
+                  <span className="hidden sm:inline">Delete</span>
                 </button>
-              ))}
-              <label className="text-xs text-left px-2 py-1.5 hover:bg-gray-600 rounded cursor-pointer">
-                Upload PNG…
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg"
-                  className="hidden"
-                  onChange={handleCustomUpload}
-                />
-              </label>
-            </div>
-          )}
-
-          <button
-            className={btn('signature')}
-            onClick={() => { onModeChange('signature'); onSignatureClick(); setStampPanelOpen(false) }}
-          >
-            <span className="sm:hidden">✍</span>
-            <span className="hidden sm:inline">Signature</span>
-          </button>
-
-          <button
-            className={btn('watermark')}
-            onClick={() => { onModeChange('watermark'); onWatermarkClick(); setStampPanelOpen(false) }}
-          >
-            <span className="sm:hidden">💧</span>
-            <span className="hidden sm:inline">Watermark</span>
-          </button>
-
-          {selectedId && (
-            <button
-              onClick={onDeleteSelected}
-              className="w-full py-2 px-2 text-xs sm:text-sm rounded text-left bg-red-700 hover:bg-red-600 text-white mt-2 transition-colors"
-            >
-              <span className="sm:hidden">🗑</span>
-              <span className="hidden sm:inline">Delete</span>
-            </button>
+              )}
+            </>
           )}
         </>
       )}
 
-      <ZoomControls zoom={zoom} onZoomIn={onZoomIn} onZoomOut={onZoomOut} onZoomReset={onZoomReset} />
+      {viewMode !== 'grid' && (
+        <ZoomControls zoom={zoom} onZoomIn={onZoomIn} onZoomOut={onZoomOut} onZoomReset={onZoomReset} />
+      )}
     </aside>
   )
 }
