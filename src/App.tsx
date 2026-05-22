@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { ActionBar } from './components/toolbar/ActionBar'
 import { Toolbar } from './components/toolbar/Toolbar'
 import { PdfViewer } from './components/viewer/PdfViewer'
@@ -56,10 +56,21 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [selectedId, removeAnnotation, appMode])
 
+  const handleUpload = useCallback((f: File) => {
+    setFile(f)
+    setActiveMode(null)
+    setPendingStamp(null)
+    setPendingSignature(null)
+    setViewMode('single')
+  }, [setActiveMode])
+
   // Electron: listen for file open events from the main process
   useEffect(() => {
     const cleanup = window.electronAPI?.onOpenFile(async (filePath: string) => {
       try {
+        // NOTE: fetch('file://') works in dev (renderer on http://localhost:5173) but
+        // is blocked in production packaged builds. Production would need IPC-based
+        // file reading (e.g. a dedicated 'read-file' IPC channel in main.ts).
         const response = await fetch(`file://${filePath}`)
         const blob = await response.blob()
         const name = filePath.split(/[\\/]/).pop() ?? 'file.pdf'
@@ -67,10 +78,11 @@ export default function App() {
         handleUpload(f)
       } catch (err) {
         console.error('Failed to open file from Electron:', err)
+        alert(`Failed to open file: ${err instanceof Error ? err.message : String(err)}`)
       }
     })
     return () => { cleanup?.() }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [handleUpload])
 
   // Scroll to page after switching from grid → single
   useEffect(() => {
@@ -83,14 +95,6 @@ export default function App() {
       return () => clearTimeout(timer)
     }
   }, [viewMode, scrollToPage])
-
-  const handleUpload = useCallback((f: File) => {
-    setFile(f)
-    setActiveMode(null)
-    setPendingStamp(null)
-    setPendingSignature(null)
-    setViewMode('single')
-  }, [setActiveMode])
 
   const handleAppModeChange = useCallback((mode: AppMode) => {
     setAppMode(mode)
