@@ -18,6 +18,9 @@ function createWindow() {
   // Dev: load Vite dev server
   win.loadURL('http://localhost:5173')
 
+  // Open DevTools so we can see console output while debugging render issues
+  win.webContents.openDevTools()
+
   win.on('closed', () => { win = null })
 }
 

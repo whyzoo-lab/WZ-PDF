@@ -26,13 +26,23 @@ export function usePdfPage(
     let cancelled = false
     setIsLoading(true)
 
+    console.log(`[usePdfPage] starting render for page ${pageNumber}`)
+
     pdfDoc.getPage(pageNumber).then(page => {
+      console.log(`[usePdfPage] got page ${pageNumber}, creating canvas`)
       const viewport = page.getViewport({ scale: PDF_RENDER_SCALE })
       const canvas = document.createElement('canvas')
       canvas.width = viewport.width
       canvas.height = viewport.height
-      const ctx = canvas.getContext('2d')!
-      return page.render({ canvasContext: ctx, viewport }).promise.then(() => {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        throw new Error(`canvas.getContext('2d') returned null for page ${pageNumber}`)
+      }
+      console.log(`[usePdfPage] calling page.render() for page ${pageNumber}`)
+      const renderTask = page.render({ canvas, viewport })
+      console.log(`[usePdfPage] render task created for page ${pageNumber}, awaiting promise`)
+      return renderTask.promise.then(() => {
+        console.log(`[usePdfPage] render complete for page ${pageNumber}`)
         if (cancelled) return
         setPageData({
           imageUrl: canvas.toDataURL('image/png'),
@@ -43,7 +53,7 @@ export function usePdfPage(
       })
     }).catch(err => {
       if (cancelled) return
-      console.error('Failed to render PDF page:', err)
+      console.error(`[usePdfPage] Failed to render PDF page ${pageNumber}:`, err)
       setIsLoading(false)
     })
 
