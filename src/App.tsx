@@ -229,7 +229,15 @@ export default function App() {
           onWatermarkClick={handleWatermarkClick}
         />
 
-        <main className="flex-1 overflow-hidden">
+        <main
+          className="flex-1 overflow-hidden"
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => {
+            e.preventDefault()
+            const file = e.dataTransfer.files[0]
+            if (file?.type === 'application/pdf') handleUpload(file)
+          }}
+        >
           {error && (
             <div className="flex items-center justify-center h-full text-red-400 p-4">
               Failed to load PDF: {error}

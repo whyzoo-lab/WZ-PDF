@@ -5,7 +5,7 @@ import './index.css'
 import App from './App'
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
+  './pdf-worker-entry.js',
   import.meta.url,
 ).toString()
 
