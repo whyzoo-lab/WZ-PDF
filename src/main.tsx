@@ -15,13 +15,18 @@ const _pdfjsWorkerUrl = new URL(
 pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(
   new Blob(
     [
+      // pdfjs 5.x creates workers with {type:"module"}, so this blob runs as a
+      // Module Worker. Top-level `await` is supported and required — pdfjs's own
+      // CDN wrapper uses the same `await import(url)` pattern to ensure the
+      // worker module finishes setting up its message handlers before the worker
+      // enters the event loop and starts receiving messages.
       `if(!Uint8Array.prototype.toHex){` +
       `Uint8Array.prototype.toHex=function(){` +
       `let h='';for(let i=0;i<this.length;i++)h+=this[i].toString(16).padStart(2,'0');return h;` +
       `};}` +
-      `import(${JSON.stringify(_pdfjsWorkerUrl)});`,
+      `await import(${JSON.stringify(_pdfjsWorkerUrl)});`,
     ],
-    { type: 'application/javascript' },
+    { type: 'text/javascript' },
   ),
 )
 

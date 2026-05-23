@@ -28,7 +28,15 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
     setError(null)
 
     file.arrayBuffer()
-      .then(buffer => pdfjs.getDocument({ data: buffer }).promise)
+      .then(buffer => pdfjs.getDocument({
+        data: buffer,
+        // Disable CSS @font-face / FontFace API for embedded fonts.
+        // pdfjs's FontFace.loaded path can hang in Electron because the browser
+        // never auto-triggers font loading for canvas-only contexts (no HTML
+        // text elements reference these fonts). With this flag, pdfjs draws
+        // glyphs as canvas paths instead — same visual quality for our PNG output.
+        disableFontFace: true,
+      }).promise)
       .then(doc => {
         if (cancelled) return
         setPdfDoc(doc)
