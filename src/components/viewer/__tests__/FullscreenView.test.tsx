@@ -1,4 +1,3 @@
-import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { FullscreenView } from '../FullscreenView'
@@ -24,6 +23,7 @@ const baseProps = {
   numPages: 5,
   annotations: [],
   selectedId: null as null | string,
+  layout: 'single' as const,
   onAnnotationSelect: vi.fn(),
   onAnnotationUpdate: vi.fn(),
   onExit: vi.fn(),
@@ -107,5 +107,33 @@ describe('FullscreenView', () => {
       document.dispatchEvent(new Event('fullscreenchange'))
     })
     expect(onExit).not.toHaveBeenCalled()
+  })
+
+  it('calls onExit on Escape keydown (Electron-reliable exit path)', () => {
+    const onExit = vi.fn()
+    render(<FullscreenView {...baseProps} onExit={onExit} />)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onExit).toHaveBeenCalled()
+  })
+
+  it('수평 스와이프: deltaX를 80 초과 누산하면 다음 페이지로 이동', () => {
+    render(<FullscreenView {...baseProps} />)
+    // deltaX 30씩 3번 → 누산 90 > 임계값 80 → 다음 페이지
+    fireEvent.wheel(window, { deltaX: 30, deltaY: 0 })
+    fireEvent.wheel(window, { deltaX: 30, deltaY: 0 })
+    fireEvent.wheel(window, { deltaX: 30, deltaY: 0 })
+    expect(screen.getByTestId('page-2')).toBeInTheDocument()
+  })
+
+  it('수평 스와이프: deltaX를 -80 미만 누산하면 이전 페이지로 이동', () => {
+    render(<FullscreenView {...baseProps} />)
+    // 먼저 2페이지로 이동
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    expect(screen.getByTestId('page-2')).toBeInTheDocument()
+    // 왼쪽 스와이프 → 이전 페이지
+    fireEvent.wheel(window, { deltaX: -30, deltaY: 0 })
+    fireEvent.wheel(window, { deltaX: -30, deltaY: 0 })
+    fireEvent.wheel(window, { deltaX: -30, deltaY: 0 })
+    expect(screen.getByTestId('page-1')).toBeInTheDocument()
   })
 })
