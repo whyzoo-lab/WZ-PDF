@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState } from 'react'
+import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react'
 import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva'
 import type Konva from 'konva'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
@@ -48,12 +48,62 @@ function PdfPageInner({
 
   // ── Drawing state for volatile markups (pen / rectangle) ─────────────────────
   // Stored in PDF points so it scales naturally during in-flight zoom.
-  // We use a ref to avoid re-rendering on every mousemove, then mirror to state
-  // only when needed for visual preview.
+  // Hooks must be declared before any early return, so we keep state + the
+  // commit fn + the window-level mouseup safety net all here at the top.
   type PenDraw  = { kind: 'pen'; points: number[] }
   type RectDraw = { kind: 'rect'; x: number; y: number; w: number; h: number }
   const [draft, setDraft] = useState<PenDraw | RectDraw | null>(null)
   const draftRef = useRef<PenDraw | RectDraw | null>(null)
+
+  // Commit the in-progress draft as a real annotation. Reused by Stage's
+  // own onMouseUp and the window-level safety net below.
+  const commitDraft = useCallback(() => {
+    const d = draftRef.current
+    if (!d) return
+    draftRef.current = null
+    setDraft(null)
+    if (d.kind === 'pen') {
+      if (d.points.length >= 4) {
+        onAnnotationAdd({
+          type: 'pen',
+          page: pageNumber,
+          x: 0, y: 0, width: 0, height: 0,
+          rotation: 0,
+          points: d.points,
+          color: PEN_COLOR,
+          strokeWidth: PEN_STROKE_WIDTH,
+          opacity: PEN_OPACITY,
+        })
+      }
+    } else {
+      const nx = d.w < 0 ? d.x + d.w : d.x
+      const ny = d.h < 0 ? d.y + d.h : d.y
+      const nw = Math.abs(d.w)
+      const nh = Math.abs(d.h)
+      if (nw > 2 && nh > 2) {
+        onAnnotationAdd({
+          type: 'rectangle',
+          page: pageNumber,
+          x: nx, y: ny, width: nw, height: nh,
+          rotation: 0,
+          color: RECT_COLOR,
+          strokeWidth: RECT_STROKE_WIDTH,
+        })
+      }
+    }
+  }, [pageNumber, onAnnotationAdd])
+
+  // Window-level mouseup safety net: in spread mode the cursor often crosses
+  // from one page's Stage to the other (or to gray margin) before release,
+  // which means the originating Stage never sees mouseup and the stroke is
+  // orphaned. Listening on window guarantees we always commit on release.
+  useEffect(() => {
+    const isDrawingNow = activeMode === 'pen' || activeMode === 'rectangle'
+    if (!isDrawingNow) return
+    const onUp = () => commitDraft()
+    window.addEventListener('mouseup', onUp)
+    return () => window.removeEventListener('mouseup', onUp)
+  }, [activeMode, commitDraft])
 
   // Memoized per-page filter so AnnotationLayer keeps a stable prop reference
   // when unrelated annotations change.
@@ -187,43 +237,7 @@ function PdfPageInner({
     }
   }
 
-  const handleMouseUp = () => {
-    const d = draftRef.current
-    if (!d) return
-    draftRef.current = null
-    setDraft(null)
-    if (d.kind === 'pen') {
-      // Require at least 2 points for a visible stroke
-      if (d.points.length >= 4) {
-        onAnnotationAdd({
-          type: 'pen',
-          page: pageNumber,
-          x: 0, y: 0, width: 0, height: 0,
-          rotation: 0,
-          points: d.points,
-          color: PEN_COLOR,
-          strokeWidth: PEN_STROKE_WIDTH,
-          opacity: PEN_OPACITY,
-        })
-      }
-    } else {
-      // Normalize negative width/height (drag from bottom-right to top-left)
-      const nx = d.w < 0 ? d.x + d.w : d.x
-      const ny = d.h < 0 ? d.y + d.h : d.y
-      const nw = Math.abs(d.w)
-      const nh = Math.abs(d.h)
-      if (nw > 2 && nh > 2) {
-        onAnnotationAdd({
-          type: 'rectangle',
-          page: pageNumber,
-          x: nx, y: ny, width: nw, height: nh,
-          rotation: 0,
-          color: RECT_COLOR,
-          strokeWidth: RECT_STROKE_WIDTH,
-        })
-      }
-    }
-  }
+  const handleMouseUp = commitDraft
 
   const isDrawing = activeMode === 'pen' || activeMode === 'rectangle'
 

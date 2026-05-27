@@ -86,9 +86,17 @@ export function FullscreenView({
   }, [currentPage, onCurrentPageChange])
 
   // ── OS fullscreen lifecycle ───────────────────────────────────────────────
+  // We use the Keyboard Lock API (Chrome / Electron) to capture the ESC key
+  // ourselves. Without this, the browser/OS auto-exits fullscreen on ESC
+  // *before* any JS keydown handler fires — which breaks the "ESC clears
+  // drawings first, then ESC again exits fullscreen" two-step behavior.
   useEffect(() => {
     document.documentElement.requestFullscreen().catch(console.error)
+    type KbLockNav = Navigator & { keyboard?: { lock?: (keys?: string[]) => Promise<void>; unlock?: () => void } }
+    const kb = (navigator as KbLockNav).keyboard
+    kb?.lock?.(['Escape']).catch(() => { /* ignore — fall back to default browser behavior */ })
     return () => {
+      kb?.unlock?.()
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(console.error)
       }

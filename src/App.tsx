@@ -157,15 +157,23 @@ export default function App() {
       // ── Volatile markup shortcuts (work in both viewer & editor, incl. fullscreen) ──
       if (!pdfDoc || inInput) return
 
-      // ESC: if a drawing mode is active, clear all markups AND exit drawing
-      // mode. Stop propagation so FullscreenView's ESC handler doesn't also
-      // exit fullscreen — user wanted ESC to only end drawing.
-      if (e.key === 'Escape' && (activeMode === 'pen' || activeMode === 'rectangle')) {
-        e.preventDefault()
-        e.stopImmediatePropagation()
-        clearMarkups()
-        setActiveMode(null)
-        return
+      // ESC two-step priority:
+      //   1st press — if drawing mode active OR pen/rectangle markups exist:
+      //               exit drawing mode + clear all markups (fullscreen stays).
+      //   2nd press — nothing to clear, falls through to FullscreenView which
+      //               exits fullscreen.
+      // Keyboard Lock API (in FullscreenView) keeps the browser from
+      // auto-exiting fullscreen on ESC, giving this handler first crack.
+      if (e.key === 'Escape') {
+        const drawingMode = activeMode === 'pen' || activeMode === 'rectangle'
+        const hasMarkups  = annotations.some(a => a.type === 'pen' || a.type === 'rectangle')
+        if (drawingMode || hasMarkups) {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+          if (drawingMode) setActiveMode(null)
+          if (hasMarkups)  clearMarkups()
+          return
+        }
       }
 
       // "1" → highlighter pen, "2" → red rectangle. Toggle off when pressed
@@ -183,7 +191,7 @@ export default function App() {
     // listener, so stopImmediatePropagation() above actually blocks it.
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [selectedId, removeAnnotation, appMode, viewMode, pdfDoc, activeMode, clearMarkups, setActiveMode])
+  }, [selectedId, removeAnnotation, appMode, viewMode, pdfDoc, activeMode, annotations, clearMarkups, setActiveMode])
 
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────
   useEffect(() => {
