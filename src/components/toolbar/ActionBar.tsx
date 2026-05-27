@@ -115,6 +115,12 @@ const IconPrint = () => (
     <circle cx="15" cy="11" r="0.8" fill="currentColor" stroke="none"/>
   </svg>
 )
+const IconReset = () => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
+    <path d="M4 10a6 6 0 1 0 1.76-4.24" strokeLinecap="round"/>
+    <path d="M3 3v4h4" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
 const IconExe = () => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
     <rect x="3" y="4" width="14" height="12" rx="1.5"/>
@@ -166,6 +172,8 @@ export interface ActionBarProps {
   onSignatureClick: () => void
   onWatermarkClick: () => void
   onDeleteSelected: () => void
+  /** Clears volatile pen / rectangle markups. Always shown when hasPdf. */
+  onResetMarkups: () => void
   // ── Export menu ────────────────────────────────────────────────────────────
   onExportPdf: () => void
   onExportHtml: () => void
@@ -200,6 +208,7 @@ export function ActionBar({
   onSignatureClick,
   onWatermarkClick,
   onDeleteSelected,
+  onResetMarkups,
   onExportPdf,
   onExportHtml,
   onExportImages,
@@ -422,6 +431,16 @@ export function ActionBar({
                       <path d="M13 6h4M13 10h4M13 14h4" strokeLinecap="round"/>
                     </svg>
                     <span>Pages</span>
+                  </button>
+
+                  {/* Reset markups (clears pen / rectangle) — viewer & editor */}
+                  <button
+                    className={iconBtn('Reset markups')}
+                    onClick={onResetMarkups}
+                    title="형광펜 / 사각형 마크업 지우기 (Reset)"
+                    aria-label="Reset markups"
+                  >
+                    <IconReset />
                   </button>
                 </>
               )}

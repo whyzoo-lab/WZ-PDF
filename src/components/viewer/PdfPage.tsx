@@ -1,17 +1,25 @@
-import React, { useEffect, useState } from 'react'
-import { Stage, Layer, Image as KonvaImage } from 'react-konva'
+import { memo, useMemo, useRef, useState } from 'react'
+import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva'
 import type Konva from 'konva'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { usePdfPage } from '../../hooks/usePdfPage'
 import { AnnotationLayer } from '../annotations/AnnotationLayer'
-import type { Annotation, ActiveMode } from '../../types/annotation'
+import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { toStoredCoords } from '../../utils/coordinates'
 import { PDF_RENDER_SCALE } from '../../utils/constants'
+
+// Visual constants for volatile markups
+const PEN_COLOR        = '#FFFF00'
+const PEN_STROKE_WIDTH = 14   // PDF points → renders ~21px at zoom=1
+const PEN_OPACITY      = 0.4
+const RECT_COLOR        = '#FF0000'
+const RECT_STROKE_WIDTH = 2   // PDF points
 
 interface PdfPageProps {
   pdfDoc: PDFDocumentProxy
   pageNumber: number
   zoom: number
+  rotation?: number  // 0 | 90 | 180 | 270 (degrees, clockwise)
   annotations: Annotation[]
   selectedId: string | null
   activeMode: ActiveMode
@@ -19,13 +27,14 @@ interface PdfPageProps {
   pendingSignature: string | null
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void
-  onAnnotationAdd: (annotation: Omit<Annotation, 'id'>) => void
+  onAnnotationAdd: (annotation: OmitId<Annotation>) => void
 }
 
-export function PdfPage({
+function PdfPageInner({
   pdfDoc,
   pageNumber,
   zoom,
+  rotation = 0,
   annotations,
   selectedId,
   activeMode,
@@ -36,20 +45,35 @@ export function PdfPage({
   onAnnotationAdd,
 }: PdfPageProps) {
   const { pageData, isLoading } = usePdfPage(pdfDoc, pageNumber)
-  const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null)
 
-  useEffect(() => {
-    if (!pageData) return
-    const img = new window.Image()
-    img.src = pageData.imageUrl
-    img.onload = () => setBgImage(img)
-    img.onerror = () => console.error(`PdfPage: failed to load image for page ${pageNumber}`)
-  }, [pageData])
+  // ── Drawing state for volatile markups (pen / rectangle) ─────────────────────
+  // Stored in PDF points so it scales naturally during in-flight zoom.
+  // We use a ref to avoid re-rendering on every mousemove, then mirror to state
+  // only when needed for visual preview.
+  type PenDraw  = { kind: 'pen'; points: number[] }
+  type RectDraw = { kind: 'rect'; x: number; y: number; w: number; h: number }
+  const [draft, setDraft] = useState<PenDraw | RectDraw | null>(null)
+  const draftRef = useRef<PenDraw | RectDraw | null>(null)
+
+  // Memoized per-page filter so AnnotationLayer keeps a stable prop reference
+  // when unrelated annotations change.
+  const pageAnnotations = useMemo(
+    () => annotations.filter(a => {
+      if (a.type === 'watermark') return a.allPages || a.page === pageNumber
+      return a.page === pageNumber
+    }),
+    [annotations, pageNumber],
+  )
+
+  const isRotated90 = rotation === 90 || rotation === 270
 
   if (isLoading || !pageData) {
+    // Swap placeholder w/h when rotated 90/270
+    const pw = isRotated90 ? 800 * zoom : 600 * zoom
+    const ph = isRotated90 ? 600 * zoom : 800 * zoom
     return (
       <div
-        style={{ width: 600 * zoom, height: 800 * zoom }}
+        style={{ width: pw, height: ph }}
         className="bg-gray-100 animate-pulse flex items-center justify-center"
       >
         <span className="text-gray-400 text-sm">Loading page {pageNumber}…</span>
@@ -57,14 +81,23 @@ export function PdfPage({
     )
   }
 
-  const stageWidth = pageData.width * zoom
-  const stageHeight = pageData.height * zoom
+  // When rotation is 90 or 270, the displayed width/height swap.
+  const renderedW = pageData.width * zoom
+  const renderedH = pageData.height * zoom
+  const stageWidth  = isRotated90 ? renderedH : renderedW
+  const stageHeight = isRotated90 ? renderedW : renderedH
   const effectiveZoom = PDF_RENDER_SCALE * zoom
 
-  const pageAnnotations = annotations.filter(a => {
-    if (a.type === 'watermark') return a.allPages || a.page === pageNumber
-    return a.page === pageNumber
-  })
+  // CSS transform: rotate around centre and then shift back so top-left aligns.
+  // translateX/Y shift compensates for the origin moving during rotation.
+  const rotationStyle: React.CSSProperties = rotation === 0 ? {} : {
+    transform: `rotate(${rotation}deg)`,
+    transformOrigin: 'top left',
+    // After rotating, translate so the element stays in its layout box.
+    ...(rotation === 90  && { transform: `rotate(90deg) translateY(-${renderedH}px)` }),
+    ...(rotation === 180 && { transform: `rotate(180deg) translate(-${renderedW}px, -${renderedH}px)` }),
+    ...(rotation === 270 && { transform: `rotate(270deg) translateX(-${renderedW}px)` }),
+  }
 
   const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent | Event>) => {
     const stage = e.target.getStage()
@@ -108,32 +141,157 @@ export function PdfPage({
 
   const cursor =
     (activeMode === 'stamp' && pendingStamp) ||
-    (activeMode === 'signature' && pendingSignature)
+    (activeMode === 'signature' && pendingSignature) ||
+    activeMode === 'pen' ||
+    activeMode === 'rectangle'
       ? 'crosshair'
       : 'default'
 
+  // ── Drawing handlers (pen / rectangle) ─────────────────────────────────────
+  const getPointerStored = (e: Konva.KonvaEventObject<MouseEvent>): { x: number; y: number } | null => {
+    const stage = e.target.getStage()
+    const pos = stage?.getPointerPosition()
+    if (!pos) return null
+    return toStoredCoords(pos.x, pos.y, effectiveZoom)
+  }
+
+  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (activeMode === 'pen') {
+      const p = getPointerStored(e)
+      if (!p) return
+      const next: PenDraw = { kind: 'pen', points: [p.x, p.y] }
+      draftRef.current = next
+      setDraft(next)
+    } else if (activeMode === 'rectangle') {
+      const p = getPointerStored(e)
+      if (!p) return
+      const next: RectDraw = { kind: 'rect', x: p.x, y: p.y, w: 0, h: 0 }
+      draftRef.current = next
+      setDraft(next)
+    }
+  }
+
+  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const d = draftRef.current
+    if (!d) return
+    const p = getPointerStored(e)
+    if (!p) return
+    if (d.kind === 'pen') {
+      const next: PenDraw = { kind: 'pen', points: [...d.points, p.x, p.y] }
+      draftRef.current = next
+      setDraft(next)
+    } else {
+      const next: RectDraw = { kind: 'rect', x: d.x, y: d.y, w: p.x - d.x, h: p.y - d.y }
+      draftRef.current = next
+      setDraft(next)
+    }
+  }
+
+  const handleMouseUp = () => {
+    const d = draftRef.current
+    if (!d) return
+    draftRef.current = null
+    setDraft(null)
+    if (d.kind === 'pen') {
+      // Require at least 2 points for a visible stroke
+      if (d.points.length >= 4) {
+        onAnnotationAdd({
+          type: 'pen',
+          page: pageNumber,
+          x: 0, y: 0, width: 0, height: 0,
+          rotation: 0,
+          points: d.points,
+          color: PEN_COLOR,
+          strokeWidth: PEN_STROKE_WIDTH,
+          opacity: PEN_OPACITY,
+        })
+      }
+    } else {
+      // Normalize negative width/height (drag from bottom-right to top-left)
+      const nx = d.w < 0 ? d.x + d.w : d.x
+      const ny = d.h < 0 ? d.y + d.h : d.y
+      const nw = Math.abs(d.w)
+      const nh = Math.abs(d.h)
+      if (nw > 2 && nh > 2) {
+        onAnnotationAdd({
+          type: 'rectangle',
+          page: pageNumber,
+          x: nx, y: ny, width: nw, height: nh,
+          rotation: 0,
+          color: RECT_COLOR,
+          strokeWidth: RECT_STROKE_WIDTH,
+        })
+      }
+    }
+  }
+
+  const isDrawing = activeMode === 'pen' || activeMode === 'rectangle'
+
+  // The outer div holds the layout box (swapped dimensions for 90/270).
+  // The inner Stage is rendered at the original orientation and rotated via CSS.
   return (
-    <Stage
-      width={stageWidth}
-      height={stageHeight}
-      onClick={handleStageClick}
-      onTap={handleStageClick}
-      style={{ cursor }}
-    >
-      <Layer>
-        {bgImage && (
-          <KonvaImage image={bgImage} x={0} y={0} width={stageWidth} height={stageHeight} />
-        )}
-      </Layer>
-      <AnnotationLayer
-        annotations={pageAnnotations}
-        selectedId={selectedId}
-        effectiveZoom={effectiveZoom}
-        stageWidth={stageWidth}
-        stageHeight={stageHeight}
-        onSelect={onAnnotationSelect}
-        onUpdate={onAnnotationUpdate}
-      />
-    </Stage>
+    <div style={{ width: stageWidth, height: stageHeight, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, ...rotationStyle }}>
+        <Stage
+          width={renderedW}
+          height={renderedH}
+          onClick={handleStageClick}
+          onTap={handleStageClick}
+          onMouseDown={isDrawing ? handleMouseDown : undefined}
+          onMouseMove={isDrawing ? handleMouseMove : undefined}
+          onMouseUp={isDrawing ? handleMouseUp : undefined}
+          style={{ cursor }}
+        >
+          <Layer>
+            <KonvaImage
+              image={pageData.canvas}
+              x={0}
+              y={0}
+              width={renderedW}
+              height={renderedH}
+            />
+          </Layer>
+          <AnnotationLayer
+            annotations={pageAnnotations}
+            selectedId={selectedId}
+            effectiveZoom={effectiveZoom}
+            stageWidth={renderedW}
+            stageHeight={renderedH}
+            onSelect={onAnnotationSelect}
+            onUpdate={onAnnotationUpdate}
+          />
+          {/* In-progress drawing preview */}
+          {draft && (
+            <Layer listening={false}>
+              {draft.kind === 'pen' ? (
+                <Line
+                  points={draft.points.map(p => p * effectiveZoom)}
+                  stroke={PEN_COLOR}
+                  strokeWidth={PEN_STROKE_WIDTH * effectiveZoom}
+                  opacity={PEN_OPACITY}
+                  lineCap="round"
+                  lineJoin="round"
+                  tension={0.3}
+                />
+              ) : (
+                <Rect
+                  x={(draft.w < 0 ? draft.x + draft.w : draft.x) * effectiveZoom}
+                  y={(draft.h < 0 ? draft.y + draft.h : draft.y) * effectiveZoom}
+                  width={Math.abs(draft.w) * effectiveZoom}
+                  height={Math.abs(draft.h) * effectiveZoom}
+                  stroke={RECT_COLOR}
+                  strokeWidth={RECT_STROKE_WIDTH * effectiveZoom}
+                  fill="transparent"
+                />
+              )}
+            </Layer>
+          )}
+        </Stage>
+      </div>
+    </div>
   )
 }
+
+// React.memo with default shallow compare — skips re-renders when only
+// unrelated state in App changes (e.g. modal toggles).
+export const PdfPage = memo(PdfPageInner)

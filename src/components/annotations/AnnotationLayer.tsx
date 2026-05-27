@@ -1,9 +1,11 @@
-import React, { useRef, useEffect } from 'react'
+import { memo, useRef, useEffect } from 'react'
 import { Layer, Transformer } from 'react-konva'
 import type Konva from 'konva'
 import { StampNode } from './StampNode'
 import { SignatureNode } from './SignatureNode'
 import { WatermarkNode } from './WatermarkNode'
+import { PenNode } from './PenNode'
+import { RectangleNode } from './RectangleNode'
 import type { Annotation } from '../../types/annotation'
 import { toStoredCoords } from '../../utils/coordinates'
 
@@ -17,7 +19,7 @@ interface AnnotationLayerProps {
   onUpdate: (id: string, updates: Partial<Annotation>) => void
 }
 
-export function AnnotationLayer({
+function AnnotationLayerInner({
   annotations,
   selectedId,
   effectiveZoom,
@@ -77,6 +79,14 @@ export function AnnotationLayer({
           )
         }
 
+        // Volatile markups — non-interactive, no transformer
+        if (annotation.type === 'pen') {
+          return <PenNode key={annotation.id} annotation={annotation} effectiveZoom={effectiveZoom} />
+        }
+        if (annotation.type === 'rectangle') {
+          return <RectangleNode key={annotation.id} annotation={annotation} effectiveZoom={effectiveZoom} />
+        }
+
         const sharedProps = {
           effectiveZoom,
           onSelect: () => onSelect(annotation.id),
@@ -103,3 +113,8 @@ export function AnnotationLayer({
     </Layer>
   )
 }
+
+// React.memo skips re-renders when the page-level annotation list and selection
+// haven't changed. Stable callback refs (from App.tsx useCallback) are required
+// for this to work.
+export const AnnotationLayer = memo(AnnotationLayerInner)

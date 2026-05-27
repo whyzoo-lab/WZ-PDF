@@ -77,6 +77,65 @@ describe('useAnnotations', () => {
     expect(result.current.selectedId).toBeNull()
   })
 
+  it('addAnnotation: pen/rectangle은 activeMode/selectedId를 변경하지 않는다 (휘발성)', () => {
+    const { result } = renderHook(() => useAnnotations())
+    act(() => { result.current.setActiveMode('pen') })
+    expect(result.current.activeMode).toBe('pen')
+    expect(result.current.selectedId).toBeNull()
+    act(() => {
+      result.current.addAnnotation({
+        type: 'pen',
+        page: 1,
+        x: 0, y: 0, width: 0, height: 0,
+        rotation: 0,
+        points: [10, 20, 30, 40],
+        color: '#FFFF00',
+        strokeWidth: 14,
+        opacity: 0.4,
+      })
+    })
+    // 펜 추가 후에도 activeMode는 'pen' 유지, selectedId도 변경되지 않음
+    expect(result.current.activeMode).toBe('pen')
+    expect(result.current.selectedId).toBeNull()
+  })
+
+  it('clearMarkups: pen/rectangle 어노테이션만 제거하고 stamp 선택은 유지', () => {
+    const { result } = renderHook(() => useAnnotations())
+    let stampId!: string
+    act(() => { stampId = result.current.addAnnotation(makeStamp()) })
+    expect(result.current.selectedId).toBe(stampId)
+    act(() => {
+      result.current.addAnnotation({
+        type: 'pen',
+        page: 1,
+        x: 0, y: 0, width: 0, height: 0,
+        rotation: 0,
+        points: [10, 20, 30, 40],
+        color: '#FFFF00',
+        strokeWidth: 14,
+        opacity: 0.4,
+      })
+    })
+    act(() => {
+      result.current.addAnnotation({
+        type: 'rectangle',
+        page: 1,
+        x: 5, y: 5, width: 50, height: 30,
+        rotation: 0,
+        color: '#FF0000',
+        strokeWidth: 2,
+      })
+    })
+    expect(result.current.annotations).toHaveLength(3)
+
+    act(() => { result.current.clearMarkups() })
+
+    expect(result.current.annotations).toHaveLength(1)
+    expect(result.current.annotations[0].id).toBe(stampId)
+    // stamp는 휘발성이 아니므로 선택 유지
+    expect(result.current.selectedId).toBe(stampId)
+  })
+
   it('remapAnnotations: allPages 워터마크는 매핑에 관계없이 유지된다', () => {
     const { result } = renderHook(() => useAnnotations())
     act(() => {

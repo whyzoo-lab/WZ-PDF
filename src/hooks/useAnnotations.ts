@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import type { Annotation, ActiveMode, OmitId } from '../types/annotation'
+import { isVolatile } from '../types/annotation'
 
 interface AnnotationState {
   annotations: Annotation[]
@@ -14,6 +15,8 @@ export interface UseAnnotationsReturn extends AnnotationState {
   selectAnnotation: (id: string | null) => void
   setActiveMode: (mode: ActiveMode) => void
   remapAnnotations: (mapping: Map<number, number>) => void
+  /** Remove volatile markups (pen / rectangle). Stamp/signature/watermark are preserved. */
+  clearMarkups: () => void
 }
 
 export function useAnnotations(): UseAnnotationsReturn {
@@ -25,11 +28,14 @@ export function useAnnotations(): UseAnnotationsReturn {
 
   const addAnnotation = useCallback((annotation: OmitId<Annotation>): string => {
     const id = crypto.randomUUID()
+    const volatile = annotation.type === 'pen' || annotation.type === 'rectangle'
     setState(prev => ({
       ...prev,
       annotations: [...prev.annotations, { ...annotation, id } as Annotation],
-      selectedId: id,
-      activeMode: 'select',
+      // Volatile markups don't get selected / don't switch out of drawing mode,
+      // so the user can keep drawing multiple strokes.
+      selectedId: volatile ? prev.selectedId : id,
+      activeMode: volatile ? prev.activeMode : 'select',
     }))
     return id
   }, [])
@@ -76,5 +82,18 @@ export function useAnnotations(): UseAnnotationsReturn {
     })
   }, [])
 
-  return { ...state, addAnnotation, updateAnnotation, removeAnnotation, selectAnnotation, setActiveMode, remapAnnotations }
+  const clearMarkups = useCallback(() => {
+    setState(prev => {
+      const remaining = prev.annotations.filter(a => !isVolatile(a))
+      // Only clear selectedId if it pointed to a now-removed (volatile) annotation.
+      const keepSelected = prev.selectedId !== null && remaining.some(a => a.id === prev.selectedId)
+      return {
+        ...prev,
+        annotations: remaining,
+        selectedId: keepSelected ? prev.selectedId : null,
+      }
+    })
+  }, [])
+
+  return { ...state, addAnnotation, updateAnnotation, removeAnnotation, selectAnnotation, setActiveMode, remapAnnotations, clearMarkups }
 }

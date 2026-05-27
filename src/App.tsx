@@ -59,6 +59,7 @@ export default function App() {
     selectAnnotation,
     setActiveMode,
     remapAnnotations,
+    clearMarkups,
   } = useAnnotations()
 
   // ── Auto-fit zoom ──────────────────────────────────────────────────────────
@@ -134,6 +135,10 @@ export default function App() {
   // ── Global keyboard shortcuts ─────────────────────────────────────────────
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Skip when typing in a text input (allow normal text editing)
+      const tgt = e.target as HTMLElement | null
+      const inInput = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault()
         document.dispatchEvent(new CustomEvent('wz-print'))
@@ -146,11 +151,39 @@ export default function App() {
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && appMode === 'editor') {
         removeAnnotation(selectedId)
+        return
+      }
+
+      // ── Volatile markup shortcuts (work in both viewer & editor, incl. fullscreen) ──
+      if (!pdfDoc || inInput) return
+
+      // ESC: if a drawing mode is active, clear all markups AND exit drawing
+      // mode. Stop propagation so FullscreenView's ESC handler doesn't also
+      // exit fullscreen — user wanted ESC to only end drawing.
+      if (e.key === 'Escape' && (activeMode === 'pen' || activeMode === 'rectangle')) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        clearMarkups()
+        setActiveMode(null)
+        return
+      }
+
+      // "1" → highlighter pen, "2" → red rectangle. Toggle off when pressed
+      // while already active.
+      if (e.key === '1') {
+        setActiveMode(activeMode === 'pen' ? null : 'pen')
+        return
+      }
+      if (e.key === '2') {
+        setActiveMode(activeMode === 'rectangle' ? null : 'rectangle')
+        return
       }
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedId, removeAnnotation, appMode, viewMode])
+    // Capture phase ensures App's handler runs BEFORE FullscreenView's window
+    // listener, so stopImmediatePropagation() above actually blocks it.
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [selectedId, removeAnnotation, appMode, viewMode, pdfDoc, activeMode, clearMarkups, setActiveMode])
 
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────
   useEffect(() => {
@@ -379,6 +412,8 @@ export default function App() {
 
   const handleAnnotationAdd = useCallback((annotation: OmitId<Annotation>) => {
     addAnnotation(annotation)
+    // Pen / rectangle are volatile — stay in drawing mode for continuous strokes.
+    if (annotation.type === 'pen' || annotation.type === 'rectangle') return
     setPendingStamp(null)
     setPendingSignature(null)
     setActiveMode('select')
@@ -407,6 +442,12 @@ export default function App() {
   const handleDeleteSelected = useCallback(() => {
     if (selectedId) removeAnnotation(selectedId)
   }, [selectedId, removeAnnotation])
+
+  const handleResetMarkups = useCallback(() => {
+    clearMarkups()
+    // Also exit drawing mode if user was drawing
+    if (activeMode === 'pen' || activeMode === 'rectangle') setActiveMode(null)
+  }, [clearMarkups, activeMode, setActiveMode])
 
   // ── 페이지 조작 ───────────────────────────────────────────────────────────────
   const handlePageOperation = useCallback((
@@ -524,6 +565,7 @@ export default function App() {
     onSignatureClick: handleSignatureClick,
     onWatermarkClick: handleWatermarkClick,
     onDeleteSelected: handleDeleteSelected,
+    onResetMarkups: handleResetMarkups,
   }
 
   return (

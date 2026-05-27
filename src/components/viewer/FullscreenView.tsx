@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { PdfPage } from './PdfPage'
-import type { Annotation } from '../../types/annotation'
+import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { PDF_RENDER_SCALE, ZOOM_STEP, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants'
 
 interface FullscreenViewProps {
@@ -12,8 +12,12 @@ interface FullscreenViewProps {
   /** 'single' shows one page; 'spread' shows two pages side-by-side. */
   layout: 'single' | 'spread'
   rotation?: number
+  /** Active editing/drawing mode (e.g. 'pen', 'rectangle'). Defaults to 'select'. */
+  activeMode?: ActiveMode
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void
+  /** Called when a new pen/rectangle stroke is committed. */
+  onAnnotationAdd?: (annotation: OmitId<Annotation>) => void
   onExit: () => void
   /** Called whenever the displayed page changes, so parent can update its page indicator. */
   onCurrentPageChange?: (page: number) => void
@@ -26,8 +30,10 @@ export function FullscreenView({
   selectedId,
   layout,
   rotation = 0,
+  activeMode = 'select',
   onAnnotationSelect,
   onAnnotationUpdate,
+  onAnnotationAdd,
   onExit,
   onCurrentPageChange,
 }: FullscreenViewProps) {
@@ -138,6 +144,18 @@ export function FullscreenView({
         return
       }
 
+      // ── Home → first page, End → last page
+      if (e.key === 'Home') {
+        e.preventDefault()
+        setCurrentPage(1)
+        return
+      }
+      if (e.key === 'End') {
+        e.preventDefault()
+        setCurrentPage(maxPage)
+        return
+      }
+
       // ── Zoom: + / = (in), - (out)
       if (e.key === '+' || e.key === '=') {
         e.preventDefault()
@@ -216,12 +234,12 @@ export function FullscreenView({
     rotation,
     annotations,
     selectedId,
-    activeMode: 'select' as const,
+    activeMode,
     pendingStamp: null,
     pendingSignature: null,
     onAnnotationSelect,
     onAnnotationUpdate,
-    onAnnotationAdd: () => {},
+    onAnnotationAdd: onAnnotationAdd ?? (() => {}),
   }
 
   return (
@@ -229,6 +247,9 @@ export function FullscreenView({
       className="fixed inset-0 bg-black flex items-center justify-center z-50"
       onClick={(e) => {
         resetOverlay()
+        // While drawing (pen / rectangle) suppress auto-advance so margin
+        // clicks don't accidentally skip pages mid-stroke.
+        if (activeMode === 'pen' || activeMode === 'rectangle') return
         // Left-click on the black background (not on the PDF canvas) → next page.
         // This mirrors PowerPoint/Keynote presentation UX.
         // Canvas clicks are excluded so annotation selection still works.

@@ -116,6 +116,23 @@ describe('FullscreenView', () => {
     expect(onExit).toHaveBeenCalled()
   })
 
+  it('Home 키로 첫 페이지로 이동', () => {
+    render(<FullscreenView {...baseProps} />)
+    // 먼저 3페이지로 이동
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    expect(screen.getByTestId('page-3')).toBeInTheDocument()
+    // Home → 1페이지
+    fireEvent.keyDown(window, { key: 'Home' })
+    expect(screen.getByTestId('page-1')).toBeInTheDocument()
+  })
+
+  it('End 키로 마지막 페이지로 이동', () => {
+    render(<FullscreenView {...baseProps} />)
+    fireEvent.keyDown(window, { key: 'End' })
+    expect(screen.getByTestId('page-5')).toBeInTheDocument()
+  })
+
   it('수평 스와이프: deltaX를 80 초과 누산하면 다음 페이지로 이동', () => {
     render(<FullscreenView {...baseProps} />)
     // deltaX 30씩 3번 → 누산 90 > 임계값 80 → 다음 페이지

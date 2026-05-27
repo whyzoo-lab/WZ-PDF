@@ -29,6 +29,7 @@ const defaultProps = {
   onSignatureClick: vi.fn(),
   onWatermarkClick: vi.fn(),
   onDeleteSelected: vi.fn(),
+  onResetMarkups: vi.fn(),
   onExportPdf: vi.fn(),
   onExportHtml: vi.fn(),
   onExportImages: vi.fn(),
@@ -191,5 +192,17 @@ describe('ActionBar', () => {
   it('disables Export button while exporting', () => {
     render(<ActionBar {...defaultProps} isExporting={true} />)
     expect(screen.getByRole('button', { name: /내보내는 중/i })).toBeDisabled()
+  })
+
+  it('calls onResetMarkups when Reset button clicked', () => {
+    const onResetMarkups = vi.fn()
+    render(<ActionBar {...defaultProps} onResetMarkups={onResetMarkups} />)
+    fireEvent.click(screen.getByRole('button', { name: /reset markups/i }))
+    expect(onResetMarkups).toHaveBeenCalled()
+  })
+
+  it('hides Reset button in fullscreen mode', () => {
+    render(<ActionBar {...defaultProps} viewMode="fullscreen" />)
+    expect(screen.queryByRole('button', { name: /reset markups/i })).not.toBeInTheDocument()
   })
 })
