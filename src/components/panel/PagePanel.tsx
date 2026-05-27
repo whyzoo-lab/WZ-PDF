@@ -8,6 +8,8 @@ export interface PagePanelProps {
   numPages: number
   currentPage: number
   isOperating: boolean
+  /** When true, hides edit toolbar, disables drag-and-drop and Delete-key shortcut. */
+  readOnly?: boolean
   onScrollToPage: (page: number) => void
   onDeletePages: (pageNums: number[]) => void
   onInsertBlankPage: (afterPage: number) => void
@@ -20,6 +22,7 @@ export function PagePanel({
   numPages,
   currentPage,
   isOperating,
+  readOnly = false,
   onScrollToPage,
   onDeletePages,
   onInsertBlankPage,
@@ -72,12 +75,34 @@ export function PagePanel({
 
   // ── 삭제 ────────────────────────────────────────────────────────────────────
   const handleDelete = () => {
+    if (readOnly) return
     if (selected.size === 0 || numPages - selected.size < 1) return
     if (!confirm(`선택한 ${selected.size}개 페이지를 삭제할까요?`)) return
     onDeletePages([...selected].sort((a, b) => a - b))
     setSelected(new Set())
     setLastSelected(null)
   }
+
+  // ── Delete 키 단축키 ─────────────────────────────────────────────────────────
+  // 패널 내에서 페이지를 선택한 상태에서 Delete 키를 누르면 삭제.
+  // 입력 요소(input/textarea/contenteditable) 포커스 시에는 무시.
+  useEffect(() => {
+    if (readOnly) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete') return
+      if (selected.size === 0) return
+      const target = e.target as HTMLElement | null
+      if (target) {
+        const tag = target.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return
+      }
+      e.preventDefault()
+      handleDelete()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readOnly, selected, numPages])
 
   // ── 삽입 위치 ────────────────────────────────────────────────────────────────
   const insertAfterPage = selected.size > 0
@@ -144,7 +169,8 @@ export function PagePanel({
         <span className="text-[10px] text-gray-500">{numPages}p</span>
       </div>
 
-      {/* 도구 모음 */}
+      {/* 도구 모음 (편집 모드 전용) */}
+      {!readOnly && (
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-700 shrink-0">
         {/* 추가 메뉴 */}
         <div ref={addMenuRef} className="relative">
@@ -187,6 +213,7 @@ export function PagePanel({
           🗑{selected.size > 0 ? ` (${selected.size})` : ''}
         </button>
       </div>
+      )}
 
       {/* 섬네일 목록 */}
       <div className="flex-1 overflow-y-auto py-2 px-1.5 flex flex-col gap-2">
@@ -198,11 +225,11 @@ export function PagePanel({
           return (
             <div
               key={pageNum}
-              draggable
-              onDragStart={e => handleDragStart(e, pageNum)}
-              onDragOver={e => handleDragOver(e, pageNum)}
-              onDrop={e => handleDrop(e, pageNum)}
-              onDragEnd={handleDragEnd}
+              draggable={!readOnly}
+              onDragStart={readOnly ? undefined : e => handleDragStart(e, pageNum)}
+              onDragOver={readOnly ? undefined : e => handleDragOver(e, pageNum)}
+              onDrop={readOnly ? undefined : e => handleDrop(e, pageNum)}
+              onDragEnd={readOnly ? undefined : handleDragEnd}
               onClick={e => handleClick(pageNum, e)}
               className={[
                 'flex flex-col items-center gap-1 p-1 rounded cursor-pointer transition-all',

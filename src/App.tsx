@@ -13,6 +13,7 @@ import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, PDF_RENDER_SCALE } from './utils/constants'
 import { PagePanel } from './components/panel/PagePanel'
+import { Toast } from './components/Toast'
 import {
   deletePages,
   insertBlankPage,
@@ -32,6 +33,11 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false)
   const [isPanelOpen,     setIsPanelOpen]     = useState(false)
   const [isPageOperating, setIsPageOperating] = useState(false)
+  const [toast, setToast] = useState<{ id: number; message: string } | null>(null)
+
+  const showToast = useCallback((message: string) => {
+    setToast({ id: Date.now(), message })
+  }, [])
   const [appMode, setAppMode] = useState<AppMode>('viewer')
   const [viewMode, setViewMode] = useState<ViewMode>('single')
   const [scrollToPage, setScrollToPage] = useState<number | null>(null)
@@ -310,22 +316,25 @@ export default function App() {
       const a = document.createElement('a')
       a.href = url
       const baseName = file ? file.name.replace(/\.pdf$/i, '') : 'document'
-      a.download = `${baseName}_annotated.pdf`
+      const downloadName = `${baseName}_annotated.pdf`
+      a.download = downloadName
       a.click()
       URL.revokeObjectURL(url)
+      showToast(`PDF 저장 완료 — ${downloadName}`)
     } catch (err) {
       console.error('PDF export failed:', err)
     } finally {
       setIsExporting(false)
     }
-  }, [fileBytes, annotations, file])
+  }, [fileBytes, annotations, file, showToast])
 
   // ── Export: HTML Viewer ───────────────────────────────────────────────────
   const handleExportHtml = useCallback(() => {
     if (!fileBytes) return
     const filename = file?.name ?? 'document.pdf'
     exportAsHtml(fileBytes, filename)
-  }, [fileBytes, file])
+    showToast(`HTML Viewer 저장 완료 — ${filename.replace(/\.pdf$/i, '')}.html`)
+  }, [fileBytes, file, showToast])
 
   // ── Export: Images ZIP ────────────────────────────────────────────────────
   const handleExportImages = useCallback(async () => {
@@ -334,13 +343,14 @@ export default function App() {
     try {
       const filename = file?.name ?? 'document.pdf'
       await exportAsImages(pdfDoc, numPages, filename)
+      showToast(`이미지 저장 완료 — ${filename.replace(/\.pdf$/i, '')}.zip`)
     } catch (err) {
       console.error('Image export failed:', err)
       alert(`이미지 내보내기 실패: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setIsExporting(false)
     }
-  }, [pdfDoc, numPages, file])
+  }, [pdfDoc, numPages, file, showToast])
 
   // ── Export: EXE Viewer (Electron portable only) ───────────────────────────
   const handleExportExe = useCallback(async () => {
@@ -348,7 +358,9 @@ export default function App() {
     setIsExporting(true)
     try {
       const result = await window.electronAPI!.exportExe(fileBytes)
-      if (!result.success && !result.canceled) {
+      if (result.success) {
+        showToast('EXE Viewer 저장 완료')
+      } else if (!result.canceled) {
         alert(`EXE 내보내기 실패\n\n${result.error ?? '알 수 없는 오류'}`)
       }
     } catch (err) {
@@ -357,7 +369,7 @@ export default function App() {
     } finally {
       setIsExporting(false)
     }
-  }, [fileBytes])
+  }, [fileBytes, showToast])
 
   // ── Annotation helpers ────────────────────────────────────────────────────
   const handleStampSelect = useCallback((src: string, presetId?: string) => {
@@ -532,12 +544,13 @@ export default function App() {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        {appMode === 'editor' && isPanelOpen && pdfDoc && (
+        {isPanelOpen && pdfDoc && viewMode !== 'fullscreen' && (
           <PagePanel
             pdfDoc={pdfDoc}
             numPages={numPages}
             currentPage={currentPage}
             isOperating={isPageOperating}
+            readOnly={appMode === 'viewer'}
             onScrollToPage={page => {
               setScrollToPage(page)
               if (viewMode === 'grid') setViewMode('single')
@@ -605,6 +618,13 @@ export default function App() {
       )}
       {showWatermarkConfig && (
         <WatermarkConfig onConfirm={handleWatermarkConfirm} onCancel={handleWatermarkCancel} />
+      )}
+      {toast && (
+        <Toast
+          key={toast.id}
+          message={toast.message}
+          onDismiss={() => setToast(null)}
+        />
       )}
     </div>
   )

@@ -404,30 +404,33 @@ export function ActionBar({
                 </>
               )}
 
+              {/* Pages 패널 토글 — viewer/editor 양쪽 모드에서 사용 가능 */}
+              {!isFullscreen && (
+                <>
+                  <Sep />
+                  <button
+                    className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded transition-all shrink-0 ${
+                      isPanelOpen
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                    onClick={onTogglePanel}
+                    title="페이지 패널 열기/닫기"
+                  >
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
+                      <rect x="2" y="3" width="7" height="14" rx="1"/>
+                      <path d="M13 6h4M13 10h4M13 14h4" strokeLinecap="round"/>
+                    </svg>
+                    <span>Pages</span>
+                  </button>
+                </>
+              )}
+
               {/* Editor annotation tools */}
               {appMode === 'editor' && !isFullscreen && (
                 <>
                   <Sep />
                   <div className="flex items-center gap-0.5 shrink-0">
-                    {/* Pages パネル トグル */}
-                    <button
-                      className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded transition-all ${
-                        isPanelOpen
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                      }`}
-                      onClick={onTogglePanel}
-                      title="페이지 패널 열기/닫기"
-                    >
-                      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
-                        <rect x="2" y="3" width="7" height="14" rx="1"/>
-                        <path d="M13 6h4M13 10h4M13 14h4" strokeLinecap="round"/>
-                      </svg>
-                      <span>Pages</span>
-                    </button>
-
-                    <Sep />
-
                     <button className={toolBtn('select')} onClick={() => { onModeChange('select'); setStampPanelOpen(false) }} title="Select">
                       <IconSelect /> <span>Select</span>
                     </button>
