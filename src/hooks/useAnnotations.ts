@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { Annotation, ActiveMode } from '../types/annotation'
+import type { Annotation, ActiveMode, OmitId } from '../types/annotation'
 
 interface AnnotationState {
   annotations: Annotation[]
@@ -8,11 +8,12 @@ interface AnnotationState {
 }
 
 export interface UseAnnotationsReturn extends AnnotationState {
-  addAnnotation: (annotation: Omit<Annotation, 'id'>) => string
+  addAnnotation: (annotation: OmitId<Annotation>) => string
   updateAnnotation: (id: string, updates: Partial<Annotation>) => void
   removeAnnotation: (id: string) => void
   selectAnnotation: (id: string | null) => void
   setActiveMode: (mode: ActiveMode) => void
+  remapAnnotations: (mapping: Map<number, number>) => void
 }
 
 export function useAnnotations(): UseAnnotationsReturn {
@@ -22,7 +23,7 @@ export function useAnnotations(): UseAnnotationsReturn {
     activeMode: null,
   })
 
-  const addAnnotation = useCallback((annotation: Omit<Annotation, 'id'>): string => {
+  const addAnnotation = useCallback((annotation: OmitId<Annotation>): string => {
     const id = crypto.randomUUID()
     setState(prev => ({
       ...prev,
@@ -36,7 +37,7 @@ export function useAnnotations(): UseAnnotationsReturn {
   const updateAnnotation = useCallback((id: string, updates: Partial<Annotation>) => {
     setState(prev => ({
       ...prev,
-      annotations: prev.annotations.map(a => (a.id === id ? { ...a, ...updates } : a)),
+      annotations: prev.annotations.map(a => (a.id === id ? { ...a, ...updates } as Annotation : a)),
     }))
   }, [])
 
@@ -56,5 +57,24 @@ export function useAnnotations(): UseAnnotationsReturn {
     setState(prev => ({ ...prev, activeMode: mode, selectedId: null }))
   }, [])
 
-  return { ...state, addAnnotation, updateAnnotation, removeAnnotation, selectAnnotation, setActiveMode }
+  const remapAnnotations = useCallback((mapping: Map<number, number>) => {
+    setState(prev => {
+      const remapped: Annotation[] = []
+      for (const ann of prev.annotations) {
+        // allPages 워터마크는 특정 페이지에 종속되지 않으므로 항상 유지
+        if (ann.type === 'watermark' && ann.allPages) {
+          remapped.push(ann)
+          continue
+        }
+        const newPage = mapping.get(ann.page)
+        if (newPage !== undefined) {
+          remapped.push({ ...ann, page: newPage } as Annotation)
+        }
+        // newPage가 undefined면 해당 페이지 삭제 → 어노테이션도 제거
+      }
+      return { ...prev, annotations: remapped, selectedId: null }
+    })
+  }, [])
+
+  return { ...state, addAnnotation, updateAnnotation, removeAnnotation, selectAnnotation, setActiveMode, remapAnnotations }
 }
