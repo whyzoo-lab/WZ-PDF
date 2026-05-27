@@ -32,7 +32,6 @@ export function PagePanel({
   const [dragOver, setDragOver]         = useState<number | null>(null)
   const [addMenuOpen, setAddMenuOpen]   = useState(false)
   const addMenuRef   = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const thumbnails   = useThumbnails(pdfDoc, numPages)
 
   // 패널 바깥 클릭 시 추가 메뉴 닫기
@@ -75,7 +74,7 @@ export function PagePanel({
   const handleDelete = () => {
     if (selected.size === 0 || numPages - selected.size < 1) return
     if (!confirm(`선택한 ${selected.size}개 페이지를 삭제할까요?`)) return
-    onDeletePages([...selected])
+    onDeletePages([...selected].sort((a, b) => a - b))
     setSelected(new Set())
     setLastSelected(null)
   }
@@ -168,7 +167,6 @@ export function PagePanel({
               <label className="w-full flex px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 cursor-pointer transition-colors">
                 다른 PDF에서 삽입…
                 <input
-                  ref={fileInputRef}
                   type="file"
                   accept="application/pdf,.pdf"
                   className="hidden"
