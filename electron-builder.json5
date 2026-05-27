@@ -1,0 +1,75 @@
+{
+  /**
+   * WZ PDF — electron-builder configuration
+   *
+   * Two Windows targets:
+   *   - nsis     : Setup installer (fast startup, recommended for daily use,
+   *                registers .pdf file association)
+   *   - portable : Single-file exe (required by the "Viewer EXE export"
+   *                feature, which appends PDF bytes to the portable exe via
+   *                the PORTABLE_EXECUTABLE_FILE env var)
+   */
+  "appId": "com.wz.pdfeditor",
+  "productName": "WZ PDF",
+  "copyright": "WZ PDF",
+
+  "directories": {
+    "output": "dist-exe"
+  },
+
+  // Hook that bundles the portable EXE into the NSIS installer as
+  // viewer-template.exe — see scripts/afterPack.cjs.
+  "afterPack": "./scripts/afterPack.cjs",
+
+  // Files bundled into the asar (renderer + compiled main process)
+  "files": [
+    "dist/**/*",
+    "electron/**/*.js",
+    "electron/package.json",
+    "package.json"
+  ],
+
+  // Only bundle these Electron locales (drops ~50 unused ones, ~10MB saving)
+  "electronLanguages": ["en-US", "ko"],
+
+  // Maximum LZMA compression — smaller installer, slightly longer build time
+  "compression": "maximum",
+
+  // Register WZ PDF as a handler for .pdf files. The OS will pass the file
+  // path as a CLI argument; main.ts picks it up via process.argv.
+  "fileAssociations": [
+    {
+      "ext": "pdf",
+      "name": "PDF Document",
+      "description": "PDF Document",
+      "role": "Viewer"
+    }
+  ],
+
+  // `build:exe` runs `electron-builder --win portable` then `--win nsis`
+  // sequentially, so both targets are declared here but each invocation picks
+  // exactly one. Sequencing matters: NSIS's afterPack hook needs the portable
+  // artifact already on disk to bundle it as viewer-template.exe.
+  "win": {
+    "target": [
+      { "target": "nsis",     "arch": ["x64"] },
+      { "target": "portable", "arch": ["x64"] }
+    ]
+  },
+
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "WZ PDF",
+    "artifactName": "WZ_PDF_Setup_${version}.exe",
+    "deleteAppDataOnUninstall": false
+  },
+
+  "portable": {
+    // PORTABLE_EXECUTABLE_FILE env-var is set by electron-builder to the path
+    // of this exe — the app uses it to self-clone when exporting a viewer exe.
+    "artifactName": "WZ_PDF_${version}.exe"
+  }
+}

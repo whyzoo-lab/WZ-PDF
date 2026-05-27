@@ -1,11 +1,10 @@
-import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { PdfViewer } from '../PdfViewer'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 
-vi.mock('../PdfPage', () => ({
-  PdfPage: ({ pageNumber }: { pageNumber: number }) => (
+vi.mock('../LazyPdfPage', () => ({
+  LazyPdfPage: ({ pageNumber }: { pageNumber: number }) => (
     <div data-testid={`page-${pageNumber}`} />
   ),
 }))
@@ -24,9 +23,10 @@ const baseProps = {
   pdfDoc: mockDoc,
   numPages: 3,
   zoom: 1,
+  rotation: 0,
   annotations: [],
   selectedId: null,
-  activeMode: null as const,
+  activeMode: null,
   pendingStamp: null,
   pendingSignature: null,
   onAnnotationSelect: vi.fn(),
@@ -34,6 +34,8 @@ const baseProps = {
   onAnnotationAdd: vi.fn(),
   onGridPageClick: vi.fn(),
   onFullscreenExit: vi.fn(),
+  onCurrentPageChange: vi.fn(),
+  fullscreenLayout: 'single' as const,
 }
 
 describe('PdfViewer', () => {

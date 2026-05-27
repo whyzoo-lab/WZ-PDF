@@ -1,50 +1,53 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { ActionBar } from './components/toolbar/ActionBar'
 import { PdfViewer } from './components/viewer/PdfViewer'
-import { SignaturePad } from './components/modals/SignaturePad'
-import { WatermarkConfig } from './components/modals/WatermarkConfig'
 import type { WatermarkSettings } from './components/modals/WatermarkConfig'
 import { usePdfDocument } from './hooks/usePdfDocument'
 import { useAnnotations } from './hooks/useAnnotations'
-import { exportPdf } from './services/pdfExporter'
-import { exportAsHtml } from './services/htmlExporter'
-import { exportAsImages } from './services/imageExporter'
+import { useFitZoom } from './hooks/useFitZoom'
+import { usePrint } from './hooks/usePrint'
+import { useExporters } from './hooks/useExporters'
+import { usePageOperations } from './hooks/usePageOperations'
 import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
-import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, PDF_RENDER_SCALE } from './utils/constants'
+import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
 import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
-import {
-  deletePages,
-  insertBlankPage,
-  insertPagesFromPdf,
-  reorderPages,
-} from './services/pdfPageService'
+
+// Modals are loaded on demand to shrink the initial bundle.
+// They only render when the user actively summons them, so the round-trip
+// to fetch the chunk happens during otherwise-idle interaction time.
+const SignaturePad     = lazy(() => import('./components/modals/SignaturePad').then(m => ({ default: m.SignaturePad })))
+const WatermarkConfig  = lazy(() => import('./components/modals/WatermarkConfig').then(m => ({ default: m.WatermarkConfig })))
 
 export default function App() {
+  // ── Document state ────────────────────────────────────────────────────────
   const [file, setFile] = useState<File | null>(null)
   const [fileBytes, setFileBytes] = useState<ArrayBuffer | null>(null)
+
+  // ── View state ────────────────────────────────────────────────────────────
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)       // 0 | 90 | 180 | 270
-  const [showSignaturePad, setShowSignaturePad] = useState(false)
-  const [showWatermarkConfig, setShowWatermarkConfig] = useState(false)
+  const [appMode, setAppMode] = useState<AppMode>('viewer')
+  const [viewMode, setViewMode] = useState<ViewMode>('single')
+  const [fullscreenLayout, setFullscreenLayout] = useState<'single' | 'spread'>('single')
+  const [scrollToPage, setScrollToPage] = useState<number | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [isPanelOpen, setIsPanelOpen] = useState(false)
+
+  // ── Editing state (pending placement, modals) ─────────────────────────────
   const [pendingStamp, setPendingStamp] = useState<{ src: string; presetId?: string } | null>(null)
   const [pendingSignature, setPendingSignature] = useState<string | null>(null)
-  const [isExporting, setIsExporting] = useState(false)
-  const [isPanelOpen,     setIsPanelOpen]     = useState(false)
-  const [isPageOperating, setIsPageOperating] = useState(false)
-  const [toast, setToast] = useState<{ id: number; message: string } | null>(null)
+  const [showSignaturePad, setShowSignaturePad] = useState(false)
+  const [showWatermarkConfig, setShowWatermarkConfig] = useState(false)
 
+  // ── UI state ──────────────────────────────────────────────────────────────
+  const [toast, setToast] = useState<{ id: number; message: string } | null>(null)
   const showToast = useCallback((message: string) => {
     setToast({ id: Date.now(), message })
   }, [])
-  const [appMode, setAppMode] = useState<AppMode>('viewer')
-  const [viewMode, setViewMode] = useState<ViewMode>('single')
-  const [scrollToPage, setScrollToPage] = useState<number | null>(null)
-  const [fullscreenLayout, setFullscreenLayout] = useState<'single' | 'spread'>('single')
-  const [currentPage, setCurrentPage] = useState(1)
 
-  // Track the view mode before entering fullscreen so we can restore it on exit
+  // Track the view mode before entering fullscreen so we can restore on exit
   const prevViewModeRef = useRef<ViewMode>('single')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -62,62 +65,37 @@ export default function App() {
     clearMarkups,
   } = useAnnotations()
 
-  // ── Auto-fit zoom ──────────────────────────────────────────────────────────
-  const calcFitZoom = useCallback(async (
-    doc: typeof pdfDoc,
-    mode: ViewMode,
-    rot: number,
-  ) => {
-    if (!doc || mode === 'fullscreen' || mode === 'grid') return
-    try {
-      const page = await doc.getPage(1)
-      const vp = page.getViewport({ scale: PDF_RENDER_SCALE })
-      const isRotated90 = rot === 90 || rot === 270
-      const pageW = isRotated90 ? vp.height : vp.width
-      const pageH = isRotated90 ? vp.width  : vp.height
+  // ── Hooks: feature bundles ────────────────────────────────────────────────
+  useFitZoom({ pdfDoc, viewMode, rotation, setZoom })
+  const { handlePrint } = usePrint()
+  const {
+    isExporting,
+    handleExportPdf,
+    handleExportHtml,
+    handleExportImages,
+    handleExportExe,
+  } = useExporters({
+    file, fileBytes, pdfDoc, numPages, annotations, onSuccess: showToast,
+  })
 
-      const ACTION_BAR_H = 44
-      const SCROLLBAR   = 18
-      const isSpread = mode === 'spread'
-      const V_PAD = isSpread ? 32 : 48
-      const H_PAD = isSpread ? 16 : 32
-      const availW = window.innerWidth  - H_PAD - SCROLLBAR
-      const availH = window.innerHeight - ACTION_BAR_H - V_PAD
+  // Page CRUD ops: when one succeeds we rewrite `file`, remap annotations,
+  // and jump the viewer back to page 1 (the user's edits change the layout
+  // so previous scroll position is meaningless).
+  const handlePageOpResult = useCallback((newBytes: ArrayBuffer, pageMapping: Map<number, number>) => {
+    remapAnnotations(pageMapping)
+    const name = file?.name ?? 'document.pdf'
+    setFile(new File([newBytes], name, { type: 'application/pdf' }))
+    setCurrentPage(1)
+    setScrollToPage(1)
+  }, [remapAnnotations, file])
 
-      let fitZoom: number
-      if (isSpread) {
-        fitZoom = Math.min(availW / (pageW * 2), availH / pageH)
-      } else {
-        fitZoom = Math.min(availW / pageW, availH / pageH)
-      }
-      fitZoom = Math.floor(fitZoom * 100) / 100
-      fitZoom = Math.max(0.1, Math.min(MAX_ZOOM, fitZoom))
-      setZoom(fitZoom)
-    } catch (err) {
-      console.error('Auto-fit zoom failed:', err)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!pdfDoc) return
-    const t = setTimeout(() => calcFitZoom(pdfDoc, viewMode, rotation), 80)
-    return () => clearTimeout(t)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfDoc])
-
-  useEffect(() => {
-    if ((viewMode === 'single' || viewMode === 'spread') && pdfDoc) {
-      calcFitZoom(pdfDoc, viewMode, rotation)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode])
-
-  useEffect(() => {
-    if ((viewMode === 'single' || viewMode === 'spread') && pdfDoc) {
-      calcFitZoom(pdfDoc, viewMode, rotation)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rotation])
+  const {
+    isPageOperating,
+    handleDeletePages,
+    handleInsertBlankPage,
+    handleInsertFromPdf,
+    handleReorderPages,
+  } = usePageOperations({ fileBytes, onResult: handlePageOpResult })
 
   // ── Window title + raw bytes ───────────────────────────────────────────────
   useEffect(() => {
@@ -133,12 +111,25 @@ export default function App() {
   }, [file])
 
   // ── Global keyboard shortcuts ─────────────────────────────────────────────
+  // Single capture-phase listener covers every shortcut so we don't have to
+  // reason about ordering between multiple `window.addEventListener` calls.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // Skip when typing in a text input (allow normal text editing)
       const tgt = e.target as HTMLElement | null
       const inInput = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)
 
+      // ── App-level shortcuts (work regardless of pdf state) ─────────────────
+      if (e.key === 'F1') {
+        // Help: open in user's default browser (Electron via IPC + shell;
+        // web fallback opens a new tab pointing at the same static asset).
+        e.preventDefault()
+        if (window.electronAPI?.openHelp) {
+          window.electronAPI.openHelp()
+        } else {
+          window.open('./help.html', '_blank', 'noopener,noreferrer')
+        }
+        return
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault()
         document.dispatchEvent(new CustomEvent('wz-print'))
@@ -149,16 +140,25 @@ export default function App() {
         fileInputRef.current?.click()
         return
       }
+      if (e.key === 'F5' && pdfDoc && viewMode !== 'fullscreen') {
+        // Inline the fullscreen-entry logic (it's also in handleViewModeChange
+        // but that's declared further down — avoid the temporal-dead-zone issue).
+        e.preventDefault()
+        prevViewModeRef.current = viewMode
+        setFullscreenLayout(viewMode === 'spread' ? 'spread' : 'single')
+        setViewMode('fullscreen')
+        return
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && appMode === 'editor') {
         removeAnnotation(selectedId)
         return
       }
 
-      // ── Volatile markup shortcuts (work in both viewer & editor, incl. fullscreen) ──
+      // ── Markup shortcuts — require a PDF and not typing in an input ────────
       if (!pdfDoc || inInput) return
 
       // ESC two-step priority:
-      //   1st press — if drawing mode active OR pen/rectangle markups exist:
+      //   1st press — drawing mode active OR pen/rectangle markups exist:
       //               exit drawing mode + clear all markups (fullscreen stays).
       //   2nd press — nothing to clear, falls through to FullscreenView which
       //               exits fullscreen.
@@ -176,8 +176,7 @@ export default function App() {
         }
       }
 
-      // "1" → highlighter pen, "2" → red rectangle. Toggle off when pressed
-      // while already active.
+      // "1" → highlighter pen, "2" → red rectangle. Toggle off when re-pressed.
       if (e.key === '1') {
         setActiveMode(activeMode === 'pen' ? null : 'pen')
         return
@@ -205,7 +204,7 @@ export default function App() {
     return () => window.removeEventListener('wheel', onWheel)
   }, [pdfDoc, viewMode])
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
+  // ── File loading ──────────────────────────────────────────────────────────
 
   /** Reset state and load a PDF File object into the viewer. */
   const loadPdfFile = useCallback((f: File) => {
@@ -263,6 +262,7 @@ export default function App() {
     }
   }, [viewMode, scrollToPage])
 
+  // ── View mode handlers ────────────────────────────────────────────────────
   const handleAppModeChange = useCallback((mode: AppMode) => {
     setAppMode(mode)
     if (mode === 'editor') {
@@ -283,18 +283,6 @@ export default function App() {
     setViewMode('single')
   }, [])
 
-  // F5 → enter fullscreen
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F5' && pdfDoc && viewMode !== 'fullscreen') {
-        e.preventDefault()
-        handleViewModeChange('fullscreen')
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [pdfDoc, viewMode, handleViewModeChange])
-
   const handleFullscreenExit = useCallback(() => {
     setViewMode(prevViewModeRef.current)
   }, [])
@@ -302,115 +290,6 @@ export default function App() {
   const handleRotate = useCallback(() => {
     setRotation(r => (r + 90) % 360)
   }, [])
-
-  // ── Print ─────────────────────────────────────────────────────────────────
-  const handlePrint = useCallback(async () => {
-    const list: Array<{ container: HTMLDivElement; img: HTMLImageElement }> = []
-    document.querySelectorAll<HTMLDivElement>('.konvajs-content').forEach(container => {
-      const canvases = Array.from(container.querySelectorAll<HTMLCanvasElement>('canvas'))
-      if (!canvases.length) return
-      const [first] = canvases
-      const comp = document.createElement('canvas')
-      comp.width  = first.width
-      comp.height = first.height
-      const ctx = comp.getContext('2d')
-      if (ctx) canvases.forEach(c => ctx.drawImage(c, 0, 0))
-      const img = document.createElement('img')
-      img.src = comp.toDataURL('image/jpeg', 0.95)
-      img.setAttribute('data-wz-print', '')
-      img.style.cssText = [
-        `width:${container.offsetWidth}px`,
-        `height:${container.offsetHeight}px`,
-        'display:block',
-        'max-width:100%',
-      ].join(';')
-      container.before(img)
-      container.setAttribute('data-wz-hide', '')
-      container.style.display = 'none'
-      list.push({ container, img })
-    })
-    if (window.electronAPI?.printWindow) {
-      await window.electronAPI.printWindow()
-    } else {
-      window.print()
-    }
-    list.forEach(({ container, img }) => {
-      img.remove()
-      container.style.display = ''
-      container.removeAttribute('data-wz-hide')
-    })
-  }, [])
-
-  useEffect(() => {
-    const onPrint = () => { handlePrint() }
-    document.addEventListener('wz-print', onPrint)
-    return () => document.removeEventListener('wz-print', onPrint)
-  }, [handlePrint])
-
-  // ── Export: PDF ───────────────────────────────────────────────────────────
-  const handleExportPdf = useCallback(async () => {
-    if (!fileBytes) return
-    setIsExporting(true)
-    try {
-      const blob = await exportPdf(fileBytes, annotations)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      const baseName = file ? file.name.replace(/\.pdf$/i, '') : 'document'
-      const downloadName = `${baseName}_annotated.pdf`
-      a.download = downloadName
-      a.click()
-      URL.revokeObjectURL(url)
-      showToast(`PDF 저장 완료 — ${downloadName}`)
-    } catch (err) {
-      console.error('PDF export failed:', err)
-    } finally {
-      setIsExporting(false)
-    }
-  }, [fileBytes, annotations, file, showToast])
-
-  // ── Export: HTML Viewer ───────────────────────────────────────────────────
-  const handleExportHtml = useCallback(() => {
-    if (!fileBytes) return
-    const filename = file?.name ?? 'document.pdf'
-    exportAsHtml(fileBytes, filename)
-    showToast(`HTML Viewer 저장 완료 — ${filename.replace(/\.pdf$/i, '')}.html`)
-  }, [fileBytes, file, showToast])
-
-  // ── Export: Images ZIP ────────────────────────────────────────────────────
-  const handleExportImages = useCallback(async () => {
-    if (!pdfDoc) return
-    setIsExporting(true)
-    try {
-      const filename = file?.name ?? 'document.pdf'
-      await exportAsImages(pdfDoc, numPages, filename)
-      showToast(`이미지 저장 완료 — ${filename.replace(/\.pdf$/i, '')}.zip`)
-    } catch (err) {
-      console.error('Image export failed:', err)
-      alert(`이미지 내보내기 실패: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setIsExporting(false)
-    }
-  }, [pdfDoc, numPages, file, showToast])
-
-  // ── Export: EXE Viewer (Electron portable only) ───────────────────────────
-  const handleExportExe = useCallback(async () => {
-    if (!fileBytes) return
-    setIsExporting(true)
-    try {
-      const result = await window.electronAPI!.exportExe(fileBytes)
-      if (result.success) {
-        showToast('EXE Viewer 저장 완료')
-      } else if (!result.canceled) {
-        alert(`EXE 내보내기 실패\n\n${result.error ?? '알 수 없는 오류'}`)
-      }
-    } catch (err) {
-      console.error('EXE export error:', err)
-      alert(`EXE 내보내기 오류: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setIsExporting(false)
-    }
-  }, [fileBytes, showToast])
 
   // ── Annotation helpers ────────────────────────────────────────────────────
   const handleStampSelect = useCallback((src: string, presetId?: string) => {
@@ -453,71 +332,8 @@ export default function App() {
 
   const handleResetMarkups = useCallback(() => {
     clearMarkups()
-    // Also exit drawing mode if user was drawing
     if (activeMode === 'pen' || activeMode === 'rectangle') setActiveMode(null)
   }, [clearMarkups, activeMode, setActiveMode])
-
-  // ── 페이지 조작 ───────────────────────────────────────────────────────────────
-  const handlePageOperation = useCallback((
-    newBytes: ArrayBuffer,
-    pageMapping: Map<number, number>,
-  ) => {
-    remapAnnotations(pageMapping)
-    const name = file?.name ?? 'document.pdf'
-    setFile(new File([newBytes], name, { type: 'application/pdf' }))
-    setCurrentPage(1)
-    setScrollToPage(1)
-    setIsPageOperating(false)
-  }, [remapAnnotations, file])
-
-  const handleDeletePages = useCallback(async (pageNums: number[]) => {
-    if (!fileBytes) return
-    setIsPageOperating(true)
-    try {
-      const { newBytes, pageMapping } = await deletePages(fileBytes, pageNums)
-      handlePageOperation(newBytes, pageMapping)
-    } catch (err) {
-      console.error('페이지 삭제 실패:', err)
-      setIsPageOperating(false)
-    }
-  }, [fileBytes, handlePageOperation])
-
-  const handleInsertBlankPage = useCallback(async (afterPage: number) => {
-    if (!fileBytes) return
-    setIsPageOperating(true)
-    try {
-      const { newBytes, pageMapping } = await insertBlankPage(fileBytes, afterPage)
-      handlePageOperation(newBytes, pageMapping)
-    } catch (err) {
-      console.error('빈 페이지 삽입 실패:', err)
-      setIsPageOperating(false)
-    }
-  }, [fileBytes, handlePageOperation])
-
-  const handleInsertFromPdf = useCallback(async (afterPage: number, srcBytes: ArrayBuffer) => {
-    if (!fileBytes) return
-    setIsPageOperating(true)
-    try {
-      const { newBytes, pageMapping } = await insertPagesFromPdf(fileBytes, srcBytes, afterPage)
-      handlePageOperation(newBytes, pageMapping)
-    } catch (err) {
-      console.error('PDF 병합 실패:', err)
-      alert(`PDF를 삽입할 수 없습니다: ${err instanceof Error ? err.message : String(err)}`)
-      setIsPageOperating(false)
-    }
-  }, [fileBytes, handlePageOperation])
-
-  const handleReorderPages = useCallback(async (newOrder: number[]) => {
-    if (!fileBytes) return
-    setIsPageOperating(true)
-    try {
-      const { newBytes, pageMapping } = await reorderPages(fileBytes, newOrder)
-      handlePageOperation(newBytes, pageMapping)
-    } catch (err) {
-      console.error('페이지 순서 변경 실패:', err)
-      setIsPageOperating(false)
-    }
-  }, [fileBytes, handlePageOperation])
 
   const handleSignatureClick   = useCallback(() => setShowSignaturePad(true), [])
   const handleWatermarkClick   = useCallback(() => setShowWatermarkConfig(true), [])
@@ -559,7 +375,7 @@ export default function App() {
     onExportPdf: handleExportPdf,
     onExportHtml: handleExportHtml,
     onExportImages: handleExportImages,
-    // EXE export only available in Electron context
+    // EXE export only available in Electron context (portable build)
     onExportExe: window.electronAPI ? handleExportExe : undefined,
     onPrint: handlePrint,
     onAppModeChange: handleAppModeChange,
@@ -663,12 +479,16 @@ export default function App() {
         </main>
       </div>
 
-      {showSignaturePad && (
-        <SignaturePad onConfirm={handleSignatureConfirm} onCancel={handleSignatureCancel} />
-      )}
-      {showWatermarkConfig && (
-        <WatermarkConfig onConfirm={handleWatermarkConfirm} onCancel={handleWatermarkCancel} />
-      )}
+      {/* Lazy-loaded modals — Suspense fallback is `null` because the user
+          clicked a button, so a tiny load delay is acceptable. */}
+      <Suspense fallback={null}>
+        {showSignaturePad && (
+          <SignaturePad onConfirm={handleSignatureConfirm} onCancel={handleSignatureCancel} />
+        )}
+        {showWatermarkConfig && (
+          <WatermarkConfig onConfirm={handleWatermarkConfirm} onCancel={handleWatermarkCancel} />
+        )}
+      </Suspense>
       {toast && (
         <Toast
           key={toast.id}

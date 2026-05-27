@@ -1,11 +1,10 @@
-import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Toolbar } from '../Toolbar'
 import type { AppMode, ViewMode } from '../../../types/viewModes'
 
 const defaultProps = {
-  activeMode: null as const,
+  activeMode: null,
   selectedId: null as null | string,
   zoom: 1,
   hasPdf: true,

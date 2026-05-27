@@ -1,12 +1,12 @@
-import React from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import { PdfPage } from './PdfPage'
-import type { Annotation, ActiveMode } from '../../types/annotation'
+import { LazyPdfPage } from './LazyPdfPage'
+import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 
 interface SpreadViewProps {
   pdfDoc: PDFDocumentProxy
   numPages: number
   zoom: number
+  rotation?: number
   annotations: Annotation[]
   selectedId: string | null
   activeMode: ActiveMode
@@ -14,13 +14,14 @@ interface SpreadViewProps {
   pendingSignature: string | null
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void
-  onAnnotationAdd: (annotation: Omit<Annotation, 'id'>) => void
+  onAnnotationAdd: (annotation: OmitId<Annotation>) => void
 }
 
 export function SpreadView({
   pdfDoc,
   numPages,
   zoom,
+  rotation,
   annotations,
   selectedId,
   activeMode,
@@ -39,6 +40,7 @@ export function SpreadView({
   const pageProps = {
     pdfDoc,
     zoom,
+    rotation,
     annotations,
     selectedId,
     activeMode,
@@ -50,12 +52,12 @@ export function SpreadView({
   }
 
   return (
-    <div className="flex flex-col items-center gap-4 py-6 px-4 overflow-auto h-full bg-gray-300">
+    <div className="flex flex-col items-center gap-2 py-4 px-2 overflow-auto h-full bg-gray-300">
       {pairs.map((pair, idx) => (
-        <div key={idx} data-spread-row className="flex gap-4">
+        <div key={idx} data-spread-row className="flex gap-0">
           {pair.map(pageNum => (
-            <div key={pageNum} className="shadow-xl">
-              <PdfPage {...pageProps} pageNumber={pageNum} />
+            <div key={pageNum} className="shadow-md">
+              <LazyPdfPage {...pageProps} pageNumber={pageNum} />
             </div>
           ))}
         </div>

@@ -1,45 +1,298 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session } from 'electron'
 import path from 'path'
+import fs from 'fs'
 
 let win: BrowserWindow | null = null
 let pendingFile: string | null = null
+
+// ── Security limits ────────────────────────────────────────────────────────
+const MAX_FILE_SIZE = 500 * 1024 * 1024  // 500 MB — defensive cap on read-file IPC
+
+// ── Production-only Content Security Policy ────────────────────────────────
+// Dev mode (Vite + HMR) needs `unsafe-eval`/WebSocket which would weaken CSP.
+// We only inject CSP for packaged builds where those aren't needed.
+const PROD_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",  // wasm-unsafe-eval: required by pdfjs
+  "style-src 'self' 'unsafe-inline'",      // inline style attrs from React/Konva
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' blob:",
+  "worker-src 'self' blob:",                // pdfjs worker is a blob URL
+  "frame-src 'none'",
+  "object-src 'none'",
+  "base-uri 'self'",
+].join('; ')
+
+function installCsp() {
+  if (!app.isPackaged) return
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [PROD_CSP],
+      },
+    })
+  })
+}
 
 function createWindow() {
   win = new BrowserWindow({
     width: 1280,
     height: 800,
+    title: 'WZ PDF',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
+      // ── Hardened defaults (explicit even when matching defaults) ─────────
+      contextIsolation: true,             // renderer + preload in separate contexts
+      nodeIntegration: false,             // no `require` in renderer
+      sandbox: true,                      // preload runs in an OS sandbox
+      webSecurity: true,                  // enforce same-origin policy
+      allowRunningInsecureContent: false, // no mixed content
+      experimentalFeatures: false,        // no Chromium experimental APIs
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
     },
   })
 
-  // Dev: load Vite dev server
-  win.loadURL('http://localhost:5173')
+  // Block in-app navigation to any URL except the renderer's own origin.
+  // PDF content shouldn't be able to navigate the host window.
+  win.webContents.on('will-navigate', (event, navUrl) => {
+    const allowed =
+      navUrl.startsWith('file://') ||
+      navUrl.startsWith('http://localhost:5173')
+    if (!allowed) {
+      event.preventDefault()
+    }
+  })
 
-  // Open DevTools so we can see console output while debugging render issues
-  win.webContents.openDevTools()
+  // External links (http/https) open in the user's default browser; everything
+  // else is blocked. We never open a new Electron window.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url).catch(() => { /* ignore */ })
+    }
+    return { action: 'deny' }
+  })
+
+  if (app.isPackaged) {
+    // Production: load the Vite-built renderer from the asar bundle
+    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+  } else {
+    // Development: load from the Vite dev server
+    win.loadURL('http://localhost:5173')
+  }
 
   win.on('closed', () => { win = null })
 }
 
+// ── Embedded PDF (viewer-exe mode) ─────────────────────────────────────────
+//
+// When the user exports a PDF as a standalone viewer exe, we:
+//   1. Locate a portable SFX template (see findViewerTemplate below)
+//   2. Append: [PDF bytes] [4-byte length UInt32LE] [EMBED_MARKER]
+//
+// On startup the app reads the original exe, detects the marker, and sends
+// the PDF bytes to the renderer so they are loaded automatically.
+
+const EMBED_MARKER = Buffer.from('WZPDF_VIEWER_V01')  // 16 bytes
+const EMBED_FOOTER  = 4 + EMBED_MARKER.length          // UInt32LE length + marker = 20 bytes
+
+/**
+ * Find the portable-SFX template to use as the viewer EXE base.
+ *
+ * Two scenarios:
+ *
+ * 1. Running from the portable exe itself — `PORTABLE_EXECUTABLE_FILE` is
+ *    set by electron-builder and points to the running SFX. Use that.
+ *
+ * 2. Running from the NSIS-installed app — no env var, but the installer
+ *    bundled the portable as `<resources>/viewer-template.exe` via the
+ *    afterPack hook. Use that.
+ *
+ * Returns `null` in dev mode (no template available; the feature is gated
+ * on `window.electronAPI` in the renderer anyway).
+ */
+function findViewerTemplate(): string | null {
+  const portableEnv = process.env['PORTABLE_EXECUTABLE_FILE']
+  if (portableEnv && fs.existsSync(portableEnv)) {
+    return portableEnv
+  }
+
+  if (app.isPackaged) {
+    const bundled = path.join(process.resourcesPath, 'viewer-template.exe')
+    if (fs.existsSync(bundled)) {
+      return bundled
+    }
+  }
+
+  return null
+}
+
+function extractEmbeddedPdf(): Buffer | null {
+  // Only the portable SFX entry point carries embedded PDFs — the NSIS app
+  // never has bytes appended to its own exe. Skip when not portable.
+  const exeFile = process.env['PORTABLE_EXECUTABLE_FILE']
+  if (!exeFile) return null
+
+  try {
+    if (!fs.existsSync(exeFile)) return null
+    const exeBytes = fs.readFileSync(exeFile)
+    if (exeBytes.length < EMBED_FOOTER) return null
+
+    // Check marker at the very end
+    const marker = exeBytes.slice(exeBytes.length - EMBED_MARKER.length)
+    if (!marker.equals(EMBED_MARKER)) return null
+
+    // Read PDF size (4 bytes before the marker)
+    const sizeOffset = exeBytes.length - EMBED_FOOTER
+    const pdfSize    = exeBytes.readUInt32LE(sizeOffset)
+    if (pdfSize === 0) return null
+
+    const pdfOffset = sizeOffset - pdfSize
+    if (pdfOffset < 0) return null
+
+    console.log('[WZ PDF] Embedded PDF detected — size:', pdfSize, 'bytes')
+    return exeBytes.slice(pdfOffset, pdfOffset + pdfSize)
+  } catch (err) {
+    console.warn('[WZ PDF] extractEmbeddedPdf failed:', err)
+    return null
+  }
+}
+
+// ── IPC: export-exe ─────────────────────────────────────────────────────────
+ipcMain.handle('export-exe', async (_event, pdfData: ArrayBuffer) => {
+  const baseExe = findViewerTemplate()
+  if (!baseExe) {
+    return {
+      success: false,
+      error:
+        'EXE Viewer 템플릿을 찾을 수 없습니다.\n\n' +
+        '개발 모드에서는 이 기능을 사용할 수 없습니다.\n' +
+        'npm run build:exe 로 빌드한 뒤 실행해주세요.',
+    }
+  }
+
+  const { filePath, canceled } = await dialog.showSaveDialog({
+    title: 'Viewer EXE로 저장',
+    defaultPath: 'WZ_PDF_Viewer.exe',
+    filters: [{ name: 'Executable', extensions: ['exe'] }],
+  })
+  if (canceled || !filePath) return { success: false, canceled: true }
+
+  try {
+    const exeBytes  = fs.readFileSync(baseExe)
+    const pdfBytes  = Buffer.from(pdfData)
+    const sizeBytes = Buffer.allocUnsafe(4)
+    sizeBytes.writeUInt32LE(pdfBytes.length)
+
+    const output = Buffer.concat([exeBytes, pdfBytes, sizeBytes, EMBED_MARKER])
+    fs.writeFileSync(filePath, output)
+
+    console.log('[WZ PDF] Viewer EXE exported to:', filePath, '— total size:', output.length)
+    return { success: true, outputPath: filePath }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { success: false, error: `저장 실패: ${msg}` }
+  }
+})
+
+// ── IPC: read-file ─────────────────────────────────────────────────────────
+// Renderer cannot fetch('file://') from an http://localhost origin (CORS).
+// This handler lets the renderer ask the main process to read a file for it.
+//
+// Defense-in-depth: even though the path normally comes from the OS (CLI arg
+// or open-file event), a compromised renderer must not be able to read
+// arbitrary files on disk. We enforce:
+//   - input is a non-empty string
+//   - extension is `.pdf`
+//   - path resolves to a real, regular file
+//   - size is below MAX_FILE_SIZE
+ipcMain.handle('read-file', async (_event, filePath: unknown): Promise<ArrayBuffer> => {
+  if (typeof filePath !== 'string' || filePath.length === 0) {
+    throw new Error('Invalid file path')
+  }
+  const resolved = path.resolve(filePath)
+  if (!resolved.toLowerCase().endsWith('.pdf')) {
+    throw new Error('Only .pdf files are allowed')
+  }
+  const stat = await fs.promises.stat(resolved)
+  if (!stat.isFile()) {
+    throw new Error('Path is not a regular file')
+  }
+  if (stat.size > MAX_FILE_SIZE) {
+    throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
+  }
+  const data = await fs.promises.readFile(resolved)
+  // Return a fresh ArrayBuffer slice (Buffer view → standalone ArrayBuffer)
+  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+})
+
+// ── IPC: open-help ─────────────────────────────────────────────────────────
+// Opens `help.html` (shipped alongside the renderer build) in the user's
+// default browser via shell.openExternal. Reachable from F1 in the renderer.
+ipcMain.handle('open-help', async () => {
+  try {
+    let url: string
+    if (app.isPackaged) {
+      // dist/help.html is copied from public/help.html during vite build
+      const helpPath = path.join(__dirname, '..', 'dist', 'help.html')
+      // file:// URL with forward slashes works on all platforms
+      url = 'file:///' + helpPath.replace(/\\/g, '/')
+    } else {
+      url = 'http://localhost:5173/help.html'
+    }
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[WZ PDF] open-help failed:', msg)
+    return { success: false, error: msg }
+  }
+})
+
+// ── IPC: print-window ───────────────────────────────────────────────────────
+ipcMain.handle('print-window', async (event) => {
+  const targetWin = BrowserWindow.fromWebContents(event.sender)
+  if (!targetWin) return { success: false, error: 'No window found' }
+  return new Promise((resolve) => {
+    targetWin.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
+      resolve({ success, error: failureReason })
+    })
+  })
+})
+
+// ── App lifecycle ───────────────────────────────────────────────────────────
+
 app.whenReady().then(() => {
+  installCsp()
+  Menu.setApplicationMenu(null)
   createWindow()
 
-  // Windows: file path via process.argv (mutually exclusive with macOS open-file)
-  const argFile = process.argv.find(arg => arg.endsWith('.pdf'))
+  // Determine what to open on startup (priority: CLI arg > open-file event > embedded PDF)
+  // CLI arg covers both manual launches (`WZ_PDF.exe foo.pdf`) and the OS
+  // file-association entry point (double-click a .pdf in Explorer).
+  const argFile = process.argv.find(arg => /\.pdf$/i.test(arg))
+
   if (argFile && win) {
     win.webContents.once('did-finish-load', () => {
       win?.webContents.send('open-file', argFile)
     })
   } else if (pendingFile && win) {
-    // macOS: open-file event fired before app was ready
     const filePath = pendingFile
     pendingFile = null
     win.webContents.once('did-finish-load', () => {
       win?.webContents.send('open-file', filePath)
     })
+  } else {
+    // Check for a PDF embedded in this portable exe (viewer-exe mode)
+    const embedded = extractEmbeddedPdf()
+    if (embedded && win) {
+      win.webContents.once('did-finish-load', () => {
+        // Send as a transferable ArrayBuffer so the renderer can use it directly
+        win?.webContents.send('open-pdf-bytes', embedded.buffer)
+      })
+    }
   }
 
   app.on('activate', () => {
@@ -47,7 +300,6 @@ app.whenReady().then(() => {
   })
 })
 
-// macOS: file association fires before or after app ready
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
   if (win) {
@@ -59,4 +311,12 @@ app.on('open-file', (event, filePath) => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// Belt-and-suspenders: deny any webview creation app-wide. We don't use
+// <webview> tags, but this prevents abuse if one slipped in.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-attach-webview', (event) => {
+    event.preventDefault()
+  })
 })

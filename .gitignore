@@ -26,3 +26,7 @@ dist-ssr
 # Electron compiled outputs
 electron/*.js
 electron/*.js.map
+
+# Build artifacts
+dist-exe/
+release/

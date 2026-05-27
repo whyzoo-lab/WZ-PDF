@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 
 export interface WatermarkSettings {
   text: string
@@ -31,7 +31,7 @@ export function WatermarkConfig({ onConfirm, onCancel }: WatermarkConfigProps) {
           ? parseFloat(raw)
           : raw
       setSettings(prev => {
-        if (process.env.NODE_ENV !== 'production' && typeof prev[key] !== typeof value) {
+        if (import.meta.env.DEV && typeof prev[key] !== typeof value) {
           console.error(`WatermarkConfig set('${key}'): expected ${typeof prev[key]}, got ${typeof value}`)
         }
         return { ...prev, [key]: value }

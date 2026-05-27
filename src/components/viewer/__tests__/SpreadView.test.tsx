@@ -1,11 +1,10 @@
-import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { SpreadView } from '../SpreadView'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 
-vi.mock('../PdfPage', () => ({
-  PdfPage: ({ pageNumber }: { pageNumber: number }) => (
+vi.mock('../LazyPdfPage', () => ({
+  LazyPdfPage: ({ pageNumber }: { pageNumber: number }) => (
     <div data-testid={`page-${pageNumber}`} />
   ),
 }))
@@ -16,7 +15,7 @@ const baseProps = {
   zoom: 1,
   annotations: [],
   selectedId: null,
-  activeMode: null as const,
+  activeMode: null,
   pendingStamp: null,
   pendingSignature: null,
   onAnnotationSelect: vi.fn(),

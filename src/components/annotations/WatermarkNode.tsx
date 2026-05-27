@@ -1,4 +1,3 @@
-import React from 'react'
 import { Text as KonvaText } from 'react-konva'
 import type { WatermarkAnnotation } from '../../types/annotation'
 import { PDF_RENDER_SCALE } from '../../utils/constants'

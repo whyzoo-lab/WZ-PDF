@@ -1,1 +1,37 @@
 @import "tailwindcss";
+
+/* ── Print styles ────────────────────────────────────────────────────────── */
+@media print {
+  /* Hide everything except the PDF canvas area */
+  header,
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Make the main viewer fill the print area */
+  main,
+  #root,
+  .flex-1 {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* Each PDF page should break cleanly */
+  [id^="pdf-page-"] {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-bottom: 0;
+    box-shadow: none !important;
+  }
+
+  /* The Konva canvas elements */
+  canvas {
+    max-width: 100% !important;
+  }
+}
