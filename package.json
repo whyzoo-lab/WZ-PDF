@@ -5,10 +5,10 @@
   "description": "Lightweight PDF viewer / editor with annotation, page management, multi-format export, and an MCP server. Built with React, Konva, pdfjs, pdf-lib, and Electron.",
   "license": "MIT",
   "author": "WhyZOO",
-  "homepage": "https://github.com/whyzoo/wz-pdf",
+  "homepage": "https://github.com/whyzoo-lab/WZ-PDF",
   "repository": {
     "type": "git",
-    "url": "https://github.com/whyzoo/wz-pdf.git"
+    "url": "https://github.com/whyzoo-lab/WZ-PDF.git"
   },
   "keywords": ["pdf", "viewer", "editor", "annotation", "watermark", "electron", "react", "mcp"],
   "type": "module",

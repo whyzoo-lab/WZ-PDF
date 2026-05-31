@@ -4,7 +4,7 @@ setlocal
 REM ============================================================
 REM  WZ PDF - Web Deploy Script
 REM
-REM  Server:  YOUR_USER@YOUR_SERVER:/opt/pdfusion
+REM  Server:  YOUR_USER@YOUR_SERVER:/opt/wz-pdf
 REM  URL:     http://YOUR_SERVER:PORT
 REM
 REM  Usage:
@@ -16,7 +16,7 @@ REM  Prerequisite: SSH key auth set up (~/.ssh/id_ed25519)
 REM ============================================================
 
 set SERVER=YOUR_USER@YOUR_SERVER
-set REMOTE=/opt/pdfusion
+set REMOTE=/opt/wz-pdf
 set URL=http://YOUR_SERVER:PORT
 REM Local build-output dir AND the remote subfolder the installer is served from.
 set INSTALLER_DIR=release

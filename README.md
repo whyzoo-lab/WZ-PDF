@@ -1,8 +1,8 @@
-# PDFusion
+# WZ PDF
 
 > Presentation-focused PDF viewer, editor & distribution platform.
 
-PDFusion is a fast, fully client-side PDF tool. Open a PDF, mark it up, manage
+WZ PDF is a fast, fully client-side PDF tool. Open a PDF, mark it up, manage
 pages, present it fullscreen, and export it in multiple formats — all in the
 browser or as a desktop app. **No backend, no upload: your file never leaves
 your machine.**
