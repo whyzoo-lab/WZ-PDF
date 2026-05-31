@@ -2,9 +2,15 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import pkg from './package.json' with { type: 'json' }
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Inject the app version at build time so the renderer can reference
+  // package.json's version without bundling the whole file.
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   server: {
     port: 5173,
     strictPort: true,

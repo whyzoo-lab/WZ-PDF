@@ -13,6 +13,8 @@ import type { AppMode, ViewMode } from './types/viewModes'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
 import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { t, LANG } from './i18n'
 
 // Modals are loaded on demand to shrink the initial bundle.
 // They only render when the user actively summons them, so the round-trip
@@ -67,7 +69,7 @@ export default function App() {
 
   // ── Hooks: feature bundles ────────────────────────────────────────────────
   useFitZoom({ pdfDoc, viewMode, rotation, setZoom })
-  const { handlePrint } = usePrint()
+  const { handlePrint, isPrinting, printProgress } = usePrint({ pdfDoc, numPages, annotations })
   const {
     isExporting,
     handleExportPdf,
@@ -100,6 +102,9 @@ export default function App() {
   // ── Window title + raw bytes ───────────────────────────────────────────────
   useEffect(() => {
     if (!file) {
+      // Resetting derived state when the source `file` prop clears is the
+      // intended use of an effect here, not a render-cascade bug.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFileBytes(null)
       document.title = 'WZ PDF'
       return
@@ -122,11 +127,13 @@ export default function App() {
       if (e.key === 'F1') {
         // Help: open in user's default browser (Electron via IPC + shell;
         // web fallback opens a new tab pointing at the same static asset).
+        // Korean locale → help.html, everything else → help.en.html.
         e.preventDefault()
+        const helpFile = LANG === 'ko' ? 'help.html' : 'help.en.html'
         if (window.electronAPI?.openHelp) {
-          window.electronAPI.openHelp()
+          window.electronAPI.openHelp(LANG)
         } else {
-          window.open('./help.html', '_blank', 'noopener,noreferrer')
+          window.open(`./${helpFile}`, '_blank', 'noopener,noreferrer')
         }
         return
       }
@@ -204,6 +211,32 @@ export default function App() {
     return () => window.removeEventListener('wheel', onWheel)
   }, [pdfDoc, viewMode])
 
+  // ── Scroll-pin guard ──────────────────────────────────────────────────────
+  // The app shell (documentElement / body / #root / <main>) must never scroll —
+  // only the inner PDF container does. But browser behaviours like
+  // scrollIntoView on a focused input, a selected text node, or a clicked
+  // annotation can scroll an overflow-hidden ancestor *programmatically*,
+  // which pushes the ActionBar off-screen and spawns a phantom window
+  // scrollbar. This capture-phase listener resets any such stray scroll to 0
+  // the instant it happens, regardless of the trigger.
+  useEffect(() => {
+    const pin = () => {
+      const de = document.documentElement
+      if (de.scrollTop) de.scrollTop = 0
+      if (de.scrollLeft) de.scrollLeft = 0
+      if (document.body.scrollTop) document.body.scrollTop = 0
+      if (document.body.scrollLeft) document.body.scrollLeft = 0
+      const main = document.querySelector('main')
+      if (main) {
+        if (main.scrollTop) main.scrollTop = 0
+        if (main.scrollLeft) main.scrollLeft = 0
+      }
+    }
+    // Capture phase so we run before the scroll settles visually.
+    window.addEventListener('scroll', pin, true)
+    return () => window.removeEventListener('scroll', pin, true)
+  }, [])
+
   // ── File loading ──────────────────────────────────────────────────────────
 
   /** Reset state and load a PDF File object into the viewer. */
@@ -219,7 +252,7 @@ export default function App() {
   /** Main upload handler — accepts PDF files only. */
   const handleUpload = useCallback((f: File) => {
     if (!f.type.includes('pdf') && !f.name.toLowerCase().endsWith('.pdf')) {
-      alert('PDF 파일만 열 수 있습니다.')
+      alert(t('error.pdfOnly'))
       return
     }
     loadPdfFile(f)
@@ -235,7 +268,7 @@ export default function App() {
         loadPdfFile(f)
       } catch (err) {
         console.error('Failed to open file from Electron:', err)
-        alert(`파일을 열 수 없습니다: ${err instanceof Error ? err.message : String(err)}`)
+        alert(t('error.openFailed', { error: err instanceof Error ? err.message : String(err) }))
       }
     })
     return () => { cleanup?.() }
@@ -255,7 +288,16 @@ export default function App() {
     if (viewMode === 'single' && scrollToPage !== null) {
       const timer = setTimeout(() => {
         const el = document.getElementById(`pdf-page-${scrollToPage}`)
-        el?.scrollIntoView({ behavior: 'smooth' })
+        const container = document.getElementById('pdf-single-container')
+        // Scroll ONLY the dedicated scroll container. el.scrollIntoView()
+        // walks up and scrolls every scrollable ancestor — including the
+        // overflow-hidden #root/main — which pushes the ActionBar off-screen
+        // and leaves a phantom gap + horizontal scrollbar. scrollBy on the
+        // container alone keeps the rest of the layout pinned.
+        if (el && container) {
+          const delta = el.getBoundingClientRect().top - container.getBoundingClientRect().top
+          container.scrollBy({ top: delta, behavior: 'smooth' })
+        }
         setScrollToPage(null)
       }, 50)
       return () => clearTimeout(timer)
@@ -375,8 +417,10 @@ export default function App() {
     onExportPdf: handleExportPdf,
     onExportHtml: handleExportHtml,
     onExportImages: handleExportImages,
-    // EXE export only available in Electron context (portable build)
-    onExportExe: window.electronAPI ? handleExportExe : undefined,
+    // EXE Viewer:
+    //   - Electron: appends PDF bytes onto the running portable exe.
+    //   - Web:      redirects to the installer download (see useExporters).
+    onExportExe: handleExportExe,
     onPrint: handlePrint,
     onAppModeChange: handleAppModeChange,
     onViewModeChange: handleViewModeChange,
@@ -392,8 +436,10 @@ export default function App() {
     onResetMarkups: handleResetMarkups,
   }
 
+  const panelVisible = isPanelOpen && !!pdfDoc && viewMode !== 'fullscreen'
+
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-gray-900">
+    <div className="flex flex-col h-dvh overflow-hidden bg-gray-900">
       <ActionBar {...actionBarProps} />
 
       {/* Hidden file input for F2 / double-click to open */}
@@ -409,23 +455,42 @@ export default function App() {
         }}
       />
 
-      <div className="flex flex-1 overflow-hidden">
-        {isPanelOpen && pdfDoc && viewMode !== 'fullscreen' && (
-          <PagePanel
-            pdfDoc={pdfDoc}
-            numPages={numPages}
-            currentPage={currentPage}
-            isOperating={isPageOperating}
-            readOnly={appMode === 'viewer'}
-            onScrollToPage={page => {
-              setScrollToPage(page)
-              if (viewMode === 'grid') setViewMode('single')
-            }}
-            onDeletePages={handleDeletePages}
-            onInsertBlankPage={handleInsertBlankPage}
-            onInsertFromPdf={handleInsertFromPdf}
-            onReorderPages={handleReorderPages}
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile backdrop — taps close the drawer; hidden on md+ where panel is inline. */}
+        {panelVisible && (
+          <div
+            className="md:hidden absolute inset-0 bg-black/50 z-20 no-print"
+            onClick={() => setIsPanelOpen(false)}
+            aria-hidden="true"
           />
+        )}
+
+        {/* PagePanel: inline on md+, slide-over drawer on mobile.
+            Hidden during print so only the PDF snapshots are sent to paper. */}
+        {panelVisible && (
+          <div className="absolute md:static inset-y-0 left-0 z-30 md:z-auto shadow-2xl md:shadow-none no-print">
+            <PagePanel
+              pdfDoc={pdfDoc}
+              numPages={numPages}
+              currentPage={currentPage}
+              isOperating={isPageOperating}
+              readOnly={appMode === 'viewer'}
+              onClose={() => setIsPanelOpen(false)}
+              onScrollToPage={page => {
+                setScrollToPage(page)
+                if (viewMode === 'grid') setViewMode('single')
+                // On mobile, navigating to a page should close the drawer so
+                // the user can see the page they just chose.
+                if (window.matchMedia('(max-width: 767px)').matches) {
+                  setIsPanelOpen(false)
+                }
+              }}
+              onDeletePages={handleDeletePages}
+              onInsertBlankPage={handleInsertBlankPage}
+              onInsertFromPdf={handleInsertFromPdf}
+              onReorderPages={handleReorderPages}
+            />
+          </div>
         )}
         <main
           className="flex-1 overflow-hidden"
@@ -448,33 +513,42 @@ export default function App() {
             </div>
           )}
           {!pdfDoc && !isLoading && !error && (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-400 select-none cursor-pointer">
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div
+              className="flex flex-col items-center justify-center h-full gap-3 text-gray-400 select-none cursor-pointer px-6 text-center"
+              onClick={handleMainDoubleClick}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 sm:w-16 sm:h-16 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p className="text-lg">PDF를 여기에 드래그하거나 Open 버튼 또는 F2를 누르세요</p>
+              <p className="text-sm sm:text-lg">
+                <span className="hidden sm:inline">{t('empty.desktop')}</span>
+                <span className="sm:hidden">{t('empty.mobile')}</span>
+              </p>
             </div>
           )}
           {pdfDoc && (
-            <PdfViewer
-              pdfDoc={pdfDoc}
-              numPages={numPages}
-              zoom={zoom}
-              rotation={rotation}
-              annotations={annotations}
-              selectedId={selectedId}
-              activeMode={activeMode}
-              viewMode={viewMode}
-              fullscreenLayout={fullscreenLayout}
-              pendingStamp={pendingStamp}
-              pendingSignature={pendingSignature}
-              onAnnotationSelect={selectAnnotation}
-              onAnnotationUpdate={updateAnnotation}
-              onAnnotationAdd={handleAnnotationAdd}
-              onGridPageClick={handleGridPageClick}
-              onFullscreenExit={handleFullscreenExit}
-              onCurrentPageChange={setCurrentPage}
-            />
+            <ErrorBoundary>
+              <PdfViewer
+                pdfDoc={pdfDoc}
+                numPages={numPages}
+                zoom={zoom}
+                rotation={rotation}
+                appMode={appMode}
+                annotations={annotations}
+                selectedId={selectedId}
+                activeMode={activeMode}
+                viewMode={viewMode}
+                fullscreenLayout={fullscreenLayout}
+                pendingStamp={pendingStamp}
+                pendingSignature={pendingSignature}
+                onAnnotationSelect={selectAnnotation}
+                onAnnotationUpdate={updateAnnotation}
+                onAnnotationAdd={handleAnnotationAdd}
+                onGridPageClick={handleGridPageClick}
+                onFullscreenExit={handleFullscreenExit}
+                onCurrentPageChange={setCurrentPage}
+              />
+            </ErrorBoundary>
           )}
         </main>
       </div>
@@ -495,6 +569,23 @@ export default function App() {
           message={toast.message}
           onDismiss={() => setToast(null)}
         />
+      )}
+
+      {/* Print preparation overlay. Rendering ~80 pages with annotations
+          composited onto canvases can take a few seconds; without this the
+          user just sees the UI frozen until the system print dialog appears. */}
+      {isPrinting && (
+        <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center no-print">
+          <div className="text-center text-white">
+            <div className="animate-spin h-12 w-12 border-4 border-white/80 border-t-transparent rounded-full mx-auto mb-4" />
+            <p className="text-base font-medium">{t('print.preparing')}</p>
+            {printProgress.total > 0 && (
+              <p className="text-sm text-gray-300 mt-1">
+                {t('print.progress', { done: printProgress.done, total: printProgress.total })}
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

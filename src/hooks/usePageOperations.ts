@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { t } from '../i18n'
 
 type PageOpResult = { newBytes: ArrayBuffer; pageMapping: Map<number, number> }
 
@@ -50,7 +51,7 @@ export function usePageOperations({ fileBytes, onResult }: UsePageOperationsArgs
         const { deletePages } = await import('../services/pdfPageService')
         return deletePages(fileBytes, pageNums)
       },
-      err => console.error('페이지 삭제 실패:', err),
+      err => console.error('Delete pages failed:', err),
     )
   }, [fileBytes, runOp])
 
@@ -61,7 +62,7 @@ export function usePageOperations({ fileBytes, onResult }: UsePageOperationsArgs
         const { insertBlankPage } = await import('../services/pdfPageService')
         return insertBlankPage(fileBytes, afterPage)
       },
-      err => console.error('빈 페이지 삽입 실패:', err),
+      err => console.error('Insert blank page failed:', err),
     )
   }, [fileBytes, runOp])
 
@@ -73,8 +74,8 @@ export function usePageOperations({ fileBytes, onResult }: UsePageOperationsArgs
         return insertPagesFromPdf(fileBytes, srcBytes, afterPage)
       },
       err => {
-        console.error('PDF 병합 실패:', err)
-        alert(`PDF를 삽입할 수 없습니다: ${err instanceof Error ? err.message : String(err)}`)
+        console.error('Insert from PDF failed:', err)
+        alert(t('error.pdfInsertFailed', { error: err instanceof Error ? err.message : String(err) }))
       },
     )
   }, [fileBytes, runOp])
@@ -86,7 +87,7 @@ export function usePageOperations({ fileBytes, onResult }: UsePageOperationsArgs
         const { reorderPages } = await import('../services/pdfPageService')
         return reorderPages(fileBytes, newOrder)
       },
-      err => console.error('페이지 순서 변경 실패:', err),
+      err => console.error('Reorder pages failed:', err),
     )
   }, [fileBytes, runOp])
 

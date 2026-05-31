@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WZ PDF — User Guide</title>
+  <style>
+    :root {
+      --bg:       #0f172a;
+      --bg-soft:  #1e293b;
+      --bg-card:  #1f2937;
+      --border:   #334155;
+      --text:     #e2e8f0;
+      --dim:      #94a3b8;
+      --accent:   #38bdf8;
+      --green:    #34d399;
+      --yellow:   #fbbf24;
+      --red:      #f87171;
+      --kbd-bg:   #0b1220;
+      --kbd-bd:   #475569;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+                   "Noto Sans KR", "Malgun Gothic", Roboto, sans-serif;
+      line-height: 1.75;
+      font-size: 15px;
+    }
+
+    .wrap { max-width: 900px; margin: 0 auto; padding: 40px 28px 72px; }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      padding: 32px 0 36px;
+      margin-bottom: 36px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      font-size: 36px; font-weight: 800; letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #38bdf8, #a78bfa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .tagline { margin-top: 6px; color: var(--dim); font-size: 15px; }
+    .version {
+      display: inline-block; margin-top: 10px;
+      font-size: 12px; color: var(--dim);
+      padding: 3px 12px; border: 1px solid var(--border); border-radius: 999px;
+    }
+
+    /* ── Table of Contents ── */
+    nav.toc {
+      background: var(--bg-soft); border: 1px solid var(--border);
+      border-radius: 12px; padding: 18px 22px; margin-bottom: 44px;
+    }
+    .toc-label {
+      font-size: 12px; color: var(--dim); text-transform: uppercase;
+      letter-spacing: 0.1em; margin-bottom: 12px;
+    }
+    .toc-chips {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      list-style: none; margin: 0; padding: 0;
+    }
+    .toc-chips a {
+      display: inline-block; color: var(--text); text-decoration: none;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 14px; font-size: 13.5px;
+      transition: border-color .15s, color .15s;
+    }
+    .toc-chips a:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Section chrome ── */
+    section { margin-bottom: 52px; scroll-margin-top: 20px; }
+    .s-head {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    .s-icon { font-size: 26px; line-height: 1; flex-shrink: 0; }
+    .s-title h2 { margin: 0; font-size: 20px; font-weight: 700; }
+    .s-title .sub { font-size: 13px; color: var(--dim); margin-top: 2px; }
+
+    p { margin: 8px 0; }
+    p.lead { color: var(--dim); margin-bottom: 16px; font-size: 14.5px; }
+
+    /* ── Method list (numbered / icon bullets) ── */
+    .method-list {
+      list-style: none; margin: 0 0 18px; padding: 0;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .method-list li {
+      display: flex; align-items: flex-start; gap: 12px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; font-size: 14.5px;
+    }
+    .method-list .mi { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── 2-column / 4-column grid cards ── */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px; margin: 14px 0 20px;
+    }
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 16px; text-align: center;
+    }
+    .card .c-icon { font-size: 28px; margin-bottom: 8px; }
+    .card .c-name { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .card .c-desc { font-size: 13px; color: var(--dim); line-height: 1.55; }
+
+    /* ── Feature cards (left-aligned) ── */
+    .feat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px; margin: 14px 0;
+    }
+    .feat {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px;
+    }
+    .feat .f-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .feat .f-icon { font-size: 20px; }
+    .feat .f-name { font-size: 14.5px; font-weight: 600; }
+    .feat .f-desc { font-size: 13.5px; color: var(--dim); line-height: 1.55; }
+
+    /* ── Export rows ── */
+    .export-list { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+    .export-row {
+      display: flex; align-items: flex-start; gap: 14px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px;
+    }
+    .export-row .e-icon { font-size: 26px; flex-shrink: 0; margin-top: 2px; }
+    .export-row .e-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .export-row .e-desc { font-size: 13.5px; color: var(--dim); line-height: 1.5; }
+    .export-row .e-tag {
+      display: inline-block; margin-top: 6px;
+      font-size: 11.5px; padding: 2px 8px; border-radius: 4px;
+      background: #1e3a5f; color: #7dd3fc;
+    }
+
+    /* ── Tip / Note callouts ── */
+    .tip {
+      background: var(--bg-soft); border-left: 3px solid var(--accent);
+      border-radius: 0 6px 6px 0; padding: 11px 16px;
+      margin: 12px 0; font-size: 13.5px; color: var(--dim); line-height: 1.6;
+    }
+    .tip strong { color: var(--text); }
+    .tip a { color: var(--accent); }
+    .tip-ok  { border-left-color: var(--green); }
+    .tip-warn{ border-left-color: var(--red); }
+
+    /* ── Keyboard ── */
+    kbd {
+      display: inline-block; padding: 2px 8px;
+      background: var(--kbd-bg); border: 1px solid var(--kbd-bd);
+      border-bottom-width: 2px; border-radius: 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px; color: var(--text); min-width: 22px; text-align: center;
+    }
+
+    /* ── Shortcut rows ── */
+    .sc-group { margin-bottom: 26px; }
+    .sc-group-title {
+      font-size: 12.5px; font-weight: 600; color: var(--dim);
+      text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px;
+    }
+    .sc-list { display: flex; flex-direction: column; gap: 2px; }
+    .sc-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 9px 12px; border-radius: 7px; font-size: 14px;
+      transition: background .1s;
+    }
+    .sc-row:hover { background: var(--bg-card); }
+    .sc-keys {
+      display: flex; align-items: center; gap: 3px;
+      min-width: 180px; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .sc-sep { color: var(--dim); font-size: 11px; padding: 0 2px; }
+    .sc-desc { color: var(--dim); }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border);
+      font-size: 13px; color: var(--dim); text-align: center; line-height: 1.8;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 580px) {
+      .wrap { padding: 24px 16px 56px; }
+      .card-grid { grid-template-columns: 1fr 1fr; }
+      .sc-keys { min-width: 130px; }
+    }
+
+    /* ── Print ── */
+    @media print {
+      body { background: #fff; color: #000; }
+      .wrap { padding: 20px; max-width: 100%; }
+      nav.toc { display: none; }
+      .logo { -webkit-text-fill-color: #111; background: none; color: #111; }
+      .card, .feat, .export-row, .method-list li, .tip { background: #f3f4f6; border-color: #ddd; }
+      kbd { background: #fff; color: #000; border-color: #888; }
+      .sc-row:hover { background: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">WZ PDF</div>
+    <div class="tagline">Fast and simple PDF — User Guide</div>
+    <div class="version">v1.0.0</div>
+  </header>
+
+  <!-- ── Table of Contents ── -->
+  <nav class="toc">
+    <div class="toc-label">📋 Contents</div>
+    <ul class="toc-chips">
+      <li><a href="#open">📂 Opening files</a></li>
+      <li><a href="#view">🖥️ View modes</a></li>
+      <li><a href="#pages">📄 Page management</a></li>
+      <li><a href="#stamp">🖊️ Stamp · Signature · Watermark</a></li>
+      <li><a href="#markup">✏️ On-screen markup</a></li>
+      <li><a href="#export">💾 Exporting</a></li>
+      <li><a href="#print">🖨️ Printing</a></li>
+      <li><a href="#shortcuts">⌨️ Keyboard shortcuts</a></li>
+    </ul>
+  </nav>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Opening files                                             -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="open">
+    <div class="s-head">
+      <div class="s-icon">📂</div>
+      <div class="s-title">
+        <h2>Opening files</h2>
+        <div class="sub">Five ways to open a PDF</div>
+      </div>
+    </div>
+
+    <ul class="method-list">
+      <li>
+        <span class="mi">🖱️</span>
+        <span>Click the <strong>Open</strong> button at the top and choose a file.</span>
+      </li>
+      <li>
+        <span class="mi">⌨️</span>
+        <span>Press <kbd>F2</kbd> to bring up the file picker instantly.</span>
+      </li>
+      <li>
+        <span class="mi">🗂️</span>
+        <span><strong>Drag and drop</strong> a PDF onto the window to open it right away.</span>
+      </li>
+      <li>
+        <span class="mi">💻</span>
+        <span><strong>Double-click the empty area</strong> when no file is open to bring up the picker.</span>
+      </li>
+      <li>
+        <span class="mi">📁</span>
+        <span><strong>Double-click a PDF in Windows Explorer</strong> and WZ PDF opens it automatically. <em>(installed version only)</em></span>
+      </li>
+    </ul>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- View modes                                                -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="view">
+    <div class="s-head">
+      <div class="s-icon">🖥️</div>
+      <div class="s-title">
+        <h2>View modes</h2>
+        <div class="sub">Switch the layout to match what you're doing</div>
+      </div>
+    </div>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="c-icon">📄</div>
+        <div class="c-name">Single page</div>
+        <div class="c-desc">Scroll one page at a time, top to bottom. The default view.</div>
+      </div>
+      <div class="card">
+        <div class="c-icon">📖</div>
+        <div class="c-name">Two-page spread</div>
+        <div class="c-desc">Show two pages side by side — great for reading like a book.</div>
+      </div>
+      <div class="card">
+        <div class="c-icon">🗂️</div>
+        <div class="c-name">Grid view</div>
+        <div class="c-desc">See every page at a glance. Click one to jump to it.</div>
+      </div>
+      <div class="card">
+        <div class="c-icon">🎬</div>
+        <div class="c-name">Fullscreen</div>
+        <div class="c-desc">Fill the whole screen — perfect for talks and presentations.</div>
+      </div>
+    </div>
+
+    <div class="tip">
+      💡 <strong>Zoom:</strong> Hold <kbd>Ctrl</kbd> and scroll the mouse wheel to zoom in/out. You can also use the <strong>+</strong> / <strong>–</strong> buttons or the rotate button at the top.
+    </div>
+    <div class="tip">
+      🎬 <strong>Enter fullscreen:</strong> Pick it from the top menu or press <kbd>F5</kbd>.
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Page management                                           -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="pages">
+    <div class="s-head">
+      <div class="s-icon">📄</div>
+      <div class="s-title">
+        <h2>Page management</h2>
+        <div class="sub">Navigate and edit from the left panel — editing requires Editor mode</div>
+      </div>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🖱️</span><span class="f-name">Jump to a page</span></div>
+        <div class="f-desc">Click a page thumbnail in the left list to jump straight to it.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">↕️</span><span class="f-name">Reorder</span></div>
+        <div class="f-desc">Drag thumbnails up or down to rearrange pages freely.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">➕</span><span class="f-name">Add pages</span></div>
+        <div class="f-desc">Insert a blank page, or pull in pages from another PDF file.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🗑️</span><span class="f-name">Delete pages</span></div>
+        <div class="f-desc">Select the pages you want to remove and press Delete or the trash button.</div>
+      </div>
+    </div>
+
+    <div class="tip tip-ok">
+      ✅ <strong>Select multiple pages at once:</strong> Hold <kbd>Ctrl</kbd> or <kbd>Shift</kbd> while clicking to select several pages together.
+    </div>
+    <div class="tip">
+      💡 <strong>No worries:</strong> When you delete or reorder pages, stamps and signatures follow along automatically. Watermarks stay in place too.
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Stamp / Signature / Watermark                             -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="stamp">
+    <div class="s-head">
+      <div class="s-icon">🖊️</div>
+      <div class="s-title">
+        <h2>Stamps, signatures &amp; watermarks</h2>
+        <div class="sub">Marks saved permanently into the PDF — available in Editor mode</div>
+      </div>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📮</span><span class="f-name">Add a stamp</span></div>
+        <div class="f-desc">Click the stamp icon, pick a stamp, then click where you want it on the PDF. Size and angle are fully adjustable.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">✍️</span><span class="f-name">Add a signature</span></div>
+        <div class="f-desc">Click the signature icon to open a popup. Draw your signature with the mouse or touch, then place it where you like.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🔏</span><span class="f-name">Add a watermark</span></div>
+        <div class="f-desc">Lay translucent text across the whole document. Set the text, size, color, and angle — it applies to every page automatically.</div>
+      </div>
+    </div>
+
+    <div class="tip tip-ok">
+      ✅ <strong>Delete a mark:</strong> Click a stamp or signature to select it, then press <kbd>Delete</kbd> or <kbd>Backspace</kbd>.
+    </div>
+    <div class="tip">
+      💡 <strong>Save to keep it:</strong> These marks are committed to the file only when you <strong>Save as PDF</strong>. See <a href="#export">Exporting</a> below.
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- On-screen markup                                          -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="markup">
+    <div class="s-head">
+      <div class="s-icon">✏️</div>
+      <div class="s-title">
+        <h2>On-screen markup</h2>
+        <div class="sub">Highlight during talks &amp; lectures — not saved to the file</div>
+      </div>
+    </div>
+
+    <p class="lead">Tools for drawing temporarily on screen. Handy for pointing out or emphasizing something during a presentation. They're <strong>never saved into the PDF</strong>, so you can wipe them clean anytime.</p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🖌️</span><span class="f-name"><kbd>1</kbd> Yellow highlighter</span></div>
+        <div class="f-desc">Drag the mouse to draw freely in translucent yellow. Press <kbd>1</kbd> again to turn it off.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">⬜</span><span class="f-name"><kbd>2</kbd> Red rectangle</span></div>
+        <div class="f-desc">Drag to draw a red outline box — great for framing an area. Press <kbd>2</kbd> again to turn it off.</div>
+      </div>
+    </div>
+
+    <div class="tip tip-warn">
+      🧹 <strong>Clear everything:</strong> Press <kbd>ESC</kbd> to erase all markup and exit drawing mode. The <strong>Reset</strong> button at the top does the same.
+    </div>
+    <div class="tip">
+      💡 <strong>In fullscreen:</strong> Press <kbd>ESC</kbd> once to clear markup, and again to leave fullscreen.
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Exporting                                                 -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="export">
+    <div class="s-head">
+      <div class="s-icon">💾</div>
+      <div class="s-title">
+        <h2>Exporting</h2>
+        <div class="sub">Pick a format from the Export menu at the top</div>
+      </div>
+    </div>
+
+    <div class="export-list">
+      <div class="export-row">
+        <div class="e-icon">📄</div>
+        <div>
+          <div class="e-name">Save as PDF</div>
+          <div class="e-desc">Save a PDF with stamps, signatures, and watermarks baked in. The most common way to save.</div>
+        </div>
+      </div>
+      <div class="export-row">
+        <div class="e-icon">🌐</div>
+        <div>
+          <div class="e-name">Save as HTML</div>
+          <div class="e-desc">Save a single HTML file that opens anywhere with just a web browser. Handy for sharing without extra software.</div>
+        </div>
+      </div>
+      <div class="export-row">
+        <div class="e-icon">🖼️</div>
+        <div>
+          <div class="e-name">Save as Images</div>
+          <div class="e-desc">Convert each page to a high-resolution PNG and bundle them into a ZIP. Useful when you need to edit or insert images.</div>
+        </div>
+      </div>
+      <div class="export-row">
+        <div class="e-icon">📦</div>
+        <div>
+          <div class="e-name">Save as Viewer EXE</div>
+          <div class="e-desc">Save a standalone executable (.exe) with the PDF embedded. The recipient just double-clicks it — the document opens without WZ PDF installed.</div>
+          <span class="e-tag">Available in the portable build only</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Printing                                                  -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="print">
+    <div class="s-head">
+      <div class="s-icon">🖨️</div>
+      <div class="s-title">
+        <h2>Printing</h2>
+        <div class="sub">Prints with stamps, signatures, and watermarks included</div>
+      </div>
+    </div>
+
+    <p>Click the <strong>Print</strong> button at the top or press <kbd>Ctrl</kbd>+<kbd>P</kbd> to open the print dialog. What you see on screen is what prints, so check your layout first.</p>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Keyboard shortcuts                                        -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="shortcuts">
+    <div class="s-head">
+      <div class="s-icon">⌨️</div>
+      <div class="s-title">
+        <h2>Keyboard shortcuts</h2>
+        <div class="sub">Learn these to work much faster</div>
+      </div>
+    </div>
+
+    <div class="sc-group">
+      <div class="sc-group-title">📂 File · View</div>
+      <div class="sc-list">
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>F1</kbd></div>
+          <div class="sc-desc">Open this help</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>F2</kbd></div>
+          <div class="sc-desc">Open a PDF file</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>F5</kbd></div>
+          <div class="sc-desc">View in fullscreen</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>P</kbd></div>
+          <div class="sc-desc">Print</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Wheel</kbd></div>
+          <div class="sc-desc">Zoom in / out (except in Fullscreen / Grid)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sc-group">
+      <div class="sc-group-title">✏️ On-screen markup</div>
+      <div class="sc-list">
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>1</kbd></div>
+          <div class="sc-desc">Toggle yellow highlighter</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>2</kbd></div>
+          <div class="sc-desc">Toggle red rectangle</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>ESC</kbd></div>
+          <div class="sc-desc">Clear all markup + exit drawing → (again) exit fullscreen</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sc-group">
+      <div class="sc-group-title">🖊️ Delete marks</div>
+      <div class="sc-list">
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Delete</kbd></div>
+          <div class="sc-desc">Delete the selected stamp / signature, or the selected page</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Backspace</kbd></div>
+          <div class="sc-desc">Delete the selected stamp / signature</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sc-group">
+      <div class="sc-group-title">🎬 Fullscreen only</div>
+      <div class="sc-list">
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>→</kbd><span class="sc-sep">/</span><kbd>↓</kbd><span class="sc-sep">/</span><kbd>Space</kbd><span class="sc-sep">/</span><kbd>Enter</kbd></div>
+          <div class="sc-desc">Next page — USB clicker compatible</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>←</kbd><span class="sc-sep">/</span><kbd>↑</kbd><span class="sc-sep">/</span><kbd>PageUp</kbd></div>
+          <div class="sc-desc">Previous page</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Home</kbd></div>
+          <div class="sc-desc">Go to the first page</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>End</kbd></div>
+          <div class="sc-desc">Go to the last page</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>+</kbd><span class="sc-sep">/</span><kbd>–</kbd></div>
+          <div class="sc-desc">Zoom in / out</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys">🖱️ Background click</div>
+          <div class="sc-desc">Next page — presentation style</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys">👆 Two-finger swipe</div>
+          <div class="sc-desc">Previous / next page — touchpad</div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <footer>
+    WZ PDF &nbsp;·&nbsp; Press <kbd>F1</kbd> anytime to reopen this guide 😊
+  </footer>
+
+</div>
+</body>
+</html>

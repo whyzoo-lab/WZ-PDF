@@ -1,37 +1,136 @@
 @import "tailwindcss";
 
+/* ── App shell sizing ────────────────────────────────────────────────────── */
+/* The whole app is a fixed-viewport SPA — inner panels (PdfViewer, PagePanel,
+   modals) manage their own scroll. The outermost chrome must NEVER grow a
+   scrollbar; pin every level to the viewport and clip. */
+html, body, #root {
+  height: 100%;
+  /* iOS Safari: 100vh includes URL bar area; dvh adapts dynamically. */
+  height: 100dvh;
+  margin: 0;
+  /* Belt-and-suspenders: stop the page itself from ever scrolling. Without
+     this, sub-pixel rounding + safe-area padding can spawn a phantom
+     scrollbar on top of the PdfViewer's own scroll → "double scrollbar". */
+  overflow: hidden;
+}
+
+html {
+  /* Prevent rubber-band bounce on iOS when scrolling past the top/bottom. */
+  overscroll-behavior: none;
+  /* Avoid iOS double-tap zoom flicker on UI chrome (PDF content still pinch-zooms). */
+  -webkit-tap-highlight-color: transparent;
+  /* Crisp text on retina/iPhone displays. */
+  -webkit-font-smoothing: antialiased;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: #0f172a;
+}
+
+/* iPhone notch / home-indicator padding lives on the ActionBar so it doesn't
+   shrink #root and trigger the body-overflow issue described above. */
+header {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* Text-entry inputs should never trigger iOS focus zoom (font >= 16px).
+   Buttons are excluded — Tailwind text-xs/text-sm classes must win there. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* Konva canvas — let touch events through for native scroll on the PDF area;
+   the drawing tools (pen/rectangle) opt back in via their own handlers. */
+canvas {
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+/* ── PDF text-layer (pdfjs TextLayer overlay) ────────────────────────────── */
+/* Container is pointer-events:none (set inline) so clicks pass through to the
+   Konva Stage. Individual spans opt back in so users can select / copy text. */
+.pdf-text-layer {
+  line-height: 1;
+  text-align: initial;
+}
+.pdf-text-layer > span,
+.pdf-text-layer > br {
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  color: transparent;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.pdf-text-layer ::selection {
+  background: rgba(56, 189, 248, 0.35); /* sky-400 @ 35% */
+  color: transparent;
+}
+.pdf-text-layer ::-moz-selection {
+  background: rgba(56, 189, 248, 0.35);
+  color: transparent;
+}
+
 /* ── Print styles ────────────────────────────────────────────────────────── */
+/* The print pipeline (src/hooks/usePrint.ts) builds a dedicated
+   `#wz-print-root` container with one <img> per page and toggles
+   `data-wz-printing` on <body>. The CSS below makes ONLY that container
+   visible to the print pipeline, regardless of the rest of the app state. */
 @media print {
-  /* Hide everything except the PDF canvas area */
-  header,
+  html, body, #root {
+    height: auto !important;
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* While the print container is mounted, hide the entire app shell —
+     including any modals or overlays — so only the page snapshots reach
+     the printer. */
+  body[data-wz-printing] > *:not(#wz-print-root) {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  body[data-wz-printing] #wz-print-root {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  body[data-wz-printing] #wz-print-root img[data-wz-print] {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    page-break-after: always;
+    page-break-inside: avoid;
+    break-after: page;
+    break-inside: avoid;
+  }
+  body[data-wz-printing] #wz-print-root img[data-wz-print]:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  /* Belt-and-suspenders: anything explicitly marked no-print is gone. */
   .no-print {
     display: none !important;
   }
+}
 
-  body {
-    background: white !important;
-    margin: 0;
-    padding: 0;
-  }
-
-  /* Make the main viewer fill the print area */
-  main,
-  #root,
-  .flex-1 {
-    overflow: visible !important;
-    height: auto !important;
-  }
-
-  /* Each PDF page should break cleanly */
-  [id^="pdf-page-"] {
-    page-break-inside: avoid;
-    break-inside: avoid;
-    margin-bottom: 0;
-    box-shadow: none !important;
-  }
-
-  /* The Konva canvas elements */
-  canvas {
-    max-width: 100% !important;
-  }
+/* Zero-margin sheet so the rendered image fills paper edge to edge. */
+@page {
+  margin: 0;
 }

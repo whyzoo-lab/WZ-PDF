@@ -46,8 +46,13 @@ async function renderPage(pdfDoc: PDFDocumentProxy, pageNumber: number): Promise
 
 /**
  * Render-or-fetch from cache. Concurrent calls for the same page de-duplicate
- * onto a single inflight promise.
+ * onto a single inflight promise. Exposed so non-React code paths (e.g. the
+ * print pipeline) can reuse the shared cache instead of re-rendering pages.
  */
+export function getOrRenderPage(pdfDoc: PDFDocumentProxy, pageNumber: number): Promise<PageData> {
+  return getOrRender(pdfDoc, pageNumber)
+}
+
 function getOrRender(pdfDoc: PDFDocumentProxy, pageNumber: number): Promise<PageData> {
   const cache = getCacheMap(pdfDoc)
   const hit = cache.get(pageNumber)
@@ -84,6 +89,8 @@ export function usePdfPage(
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
+    // Reset when the document goes away — intentional effect-driven reset.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!pdfDoc) { setPageData(null); return }
 
     // Cache hit: hand over the cached canvas synchronously, no loading state.

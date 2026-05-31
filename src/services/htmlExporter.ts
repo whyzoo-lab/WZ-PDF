@@ -6,6 +6,8 @@
  * No external dependencies — works fully offline.
  */
 
+import { downloadBlob, stripPdfExt } from '../utils/download'
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Convert ArrayBuffer → base64 string (chunked to avoid call-stack overflow). */
@@ -25,15 +27,6 @@ function escapeHtml(str: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-}
-
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 // ── HTML template ────────────────────────────────────────────────────────────
@@ -66,7 +59,7 @@ function buildHtml(title: string, base64Pdf: string): string {
 </div>
 <script>
 (function(){
-  var d="${base64Pdf}";
+  var d=${JSON.stringify(base64Pdf)};
   try{
     var s=atob(d),a=new Uint8Array(s.length);
     for(var i=0;i<s.length;i++)a[i]=s.charCodeAt(i);
@@ -98,9 +91,9 @@ function buildHtml(title: string, base64Pdf: string): string {
  * @param filename   Source filename — used to derive the .html download name
  */
 export function exportAsHtml(fileBytes: ArrayBuffer, filename: string): void {
-  const title   = filename.replace(/\.pdf$/i, '')
+  const title   = stripPdfExt(filename)
   const base64  = arrayBufferToBase64(fileBytes)
   const html    = buildHtml(title, base64)
   const blob    = new Blob([html], { type: 'text/html;charset=utf-8' })
-  triggerDownload(blob, `${title}.html`)
+  downloadBlob(blob, `${title}.html`)
 }

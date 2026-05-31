@@ -6,6 +6,7 @@ import { SignatureNode } from './SignatureNode'
 import { WatermarkNode } from './WatermarkNode'
 import { PenNode } from './PenNode'
 import { RectangleNode } from './RectangleNode'
+import { TextEditNode } from './TextEditNode'
 import type { Annotation } from '../../types/annotation'
 import { toStoredCoords } from '../../utils/coordinates'
 
@@ -100,6 +101,9 @@ function AnnotationLayerInner({
         }
         if (annotation.type === 'signature') {
           return <SignatureNode key={annotation.id} annotation={annotation} {...sharedProps} />
+        }
+        if (annotation.type === 'textEdit') {
+          return <TextEditNode key={annotation.id} annotation={annotation} {...sharedProps} />
         }
         return null
       })}

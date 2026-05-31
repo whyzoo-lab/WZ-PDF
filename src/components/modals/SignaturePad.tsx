@@ -22,6 +22,8 @@ export function SignaturePad({ onConfirm, onCancel }: SignaturePadProps) {
     setHasContent(false)
   }
 
+  // Initialize the canvas context once on mount; clear() also resets state.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { clear() }, [])
 
   const getPos = (e: React.MouseEvent | React.TouchEvent) => {

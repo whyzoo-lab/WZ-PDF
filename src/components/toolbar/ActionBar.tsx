@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { AppMode, ViewMode } from '../../types/viewModes'
 import type { ActiveMode } from '../../types/annotation'
 import { STAMP_PRESETS, svgToPng } from '../../utils/stampPresets'
+import { t } from '../../i18n'
 
 // ── SVG Icon components ────────────────────────────────────────────────────
 const IconSingle = () => (
@@ -291,29 +292,23 @@ export function ActionBar({
   }
 
   // ── Button style helpers ──────────────────────────────────────────────────
+  // Single shared icon-only size so every toolbar button hits the same grid.
+  // Tooltips (`title` attr) carry the label; visible text is reserved for
+  // status (page count, zoom %).
+  const BTN_BASE = 'flex items-center justify-center w-9 h-9 rounded transition-all'
+  const BTN_IDLE = 'text-gray-300 hover:bg-gray-700 hover:text-white'
+  const BTN_ACTIVE = 'bg-blue-600 text-white shadow-sm'
+
   const viewBtn = (mode: ViewMode) =>
-    `flex items-center justify-center w-8 h-8 rounded transition-all ${
-      viewMode === mode
-        ? 'bg-blue-600 text-white shadow-sm'
-        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-    }`
+    `${BTN_BASE} ${viewMode === mode ? BTN_ACTIVE : BTN_IDLE}`
 
   const modeToggleBtn = (mode: AppMode) =>
-    `flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded transition-all ${
-      appMode === mode
-        ? 'bg-blue-600 text-white'
-        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-    }`
+    `${BTN_BASE} ${appMode === mode ? BTN_ACTIVE : BTN_IDLE}`
 
   const toolBtn = (mode: ActiveMode) =>
-    `flex items-center gap-1 px-2 py-1.5 text-xs rounded transition-all ${
-      activeMode === mode
-        ? 'bg-blue-600 text-white shadow-sm'
-        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-    }`
+    `${BTN_BASE} ${activeMode === mode ? BTN_ACTIVE : BTN_IDLE}`
 
-  const iconBtn = (_label: string, extra = '') =>
-    `flex items-center justify-center w-8 h-8 rounded text-gray-300 hover:bg-gray-700 hover:text-white transition-all ${extra}`
+  const iconBtn = (_label: string, extra = '') => `${BTN_BASE} ${BTN_IDLE} ${extra}`
 
   const isFullscreen = viewMode === 'fullscreen'
 
@@ -338,7 +333,7 @@ export function ActionBar({
             >{p.label}</button>
           ))}
           <label className="text-xs text-left px-3 py-1.5 hover:bg-gray-700 rounded cursor-pointer text-gray-200">
-            Upload image…
+            {t('stamp.uploadImage')}
             <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleCustomUpload} />
           </label>
         </div>,
@@ -366,14 +361,27 @@ export function ActionBar({
       >
         {/* ── Left: scrollable view + editor controls ── */}
         <div className="flex items-center gap-1 px-3 py-1.5 flex-1 min-w-0 overflow-x-auto">
+          {/* Empty-state branding — only when no PDF is loaded */}
+          {!hasPdf && (
+            <div className="flex items-center gap-2.5 px-1.5 py-0.5 select-none">
+              <img src="./icon.svg" alt="" className="w-7 h-7 rounded-md shrink-0" draggable={false} />
+              <span
+                className="text-lg font-bold tracking-tight bg-gradient-to-br from-sky-400 to-violet-400 bg-clip-text text-transparent leading-none"
+              >
+                WZ PDF
+              </span>
+              <span className="hidden sm:inline text-xs text-gray-500 ml-1">{t('app.tagline')}</span>
+            </div>
+          )}
+
           {hasPdf && (
             <>
               {/* View mode buttons */}
               <div className="flex items-center gap-0.5 shrink-0">
-                <button className={viewBtn('single')}     onClick={() => onViewModeChange('single')}     title="Single page">    <IconSingle /></button>
-                <button className={viewBtn('spread')}     onClick={() => onViewModeChange('spread')}     title="Spread (2 pages)"><IconSpread /></button>
-                <button className={viewBtn('grid')}       onClick={() => onViewModeChange('grid')}       title="Grid view">      <IconGrid /></button>
-                <button className={viewBtn('fullscreen')} onClick={() => onViewModeChange('fullscreen')} title="Fullscreen (F5)"><IconFullscreen /></button>
+                <button className={viewBtn('single')}     onClick={() => onViewModeChange('single')}     title={t('tool.single')}     aria-label={t('tool.single')}><IconSingle /></button>
+                <button className={viewBtn('spread')}     onClick={() => onViewModeChange('spread')}     title={t('tool.spread')}     aria-label={t('tool.spread')}><IconSpread /></button>
+                <button className={viewBtn('grid')}       onClick={() => onViewModeChange('grid')}       title={t('tool.grid')}       aria-label={t('tool.grid')}><IconGrid /></button>
+                <button className={viewBtn('fullscreen')} onClick={() => onViewModeChange('fullscreen')} title={t('tool.fullscreen')} aria-label={t('tool.fullscreen')}><IconFullscreen /></button>
               </div>
 
               <Sep />
@@ -390,11 +398,11 @@ export function ActionBar({
                 <>
                   <Sep />
                   <div className="flex items-center gap-0.5 shrink-0">
-                    <button onClick={onZoomOut}   className={iconBtn('Zoom out')} title="Zoom out"><IconZoomOut /></button>
-                    <button onClick={onZoomReset} className="text-xs text-gray-300 hover:text-white w-12 text-center tabular-nums" title="Reset zoom" aria-label="Reset zoom">
+                    <button onClick={onZoomOut}   className={iconBtn('Zoom out')} title={t('tool.zoomOut')} aria-label={t('tool.zoomOut')}><IconZoomOut /></button>
+                    <button onClick={onZoomReset} className="text-xs text-gray-300 hover:text-white w-12 text-center tabular-nums" title={t('tool.zoomReset')} aria-label={t('tool.zoomReset')}>
                       {Math.round(zoom * 100)}%
                     </button>
-                    <button onClick={onZoomIn} className={iconBtn('Zoom in')} title="Zoom in"><IconZoomIn /></button>
+                    <button onClick={onZoomIn} className={iconBtn('Zoom in')} title={t('tool.zoomIn')} aria-label={t('tool.zoomIn')}><IconZoomIn /></button>
                   </div>
                 </>
               )}
@@ -406,7 +414,8 @@ export function ActionBar({
                   <button
                     onClick={onRotate}
                     className={`${iconBtn('Rotate 90°')} ${rotation !== 0 ? 'text-blue-400' : ''}`}
-                    title={`Rotate 90° (current: ${rotation}°)`}
+                    title={t('tool.rotate', { deg: rotation })}
+                    aria-label={t('tool.rotate', { deg: rotation })}
                   >
                     <IconRotate />
                   </button>
@@ -418,27 +427,23 @@ export function ActionBar({
                 <>
                   <Sep />
                   <button
-                    className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded transition-all shrink-0 ${
-                      isPanelOpen
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                    }`}
+                    className={`${BTN_BASE} ${isPanelOpen ? BTN_ACTIVE : BTN_IDLE} shrink-0`}
                     onClick={onTogglePanel}
-                    title="페이지 패널 열기/닫기"
+                    title={t('tool.pages')}
+                    aria-label={t('tool.pages')}
                   >
                     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
                       <rect x="2" y="3" width="7" height="14" rx="1"/>
                       <path d="M13 6h4M13 10h4M13 14h4" strokeLinecap="round"/>
                     </svg>
-                    <span>Pages</span>
                   </button>
 
                   {/* Reset markups (clears pen / rectangle) — viewer & editor */}
                   <button
                     className={iconBtn('Reset markups')}
                     onClick={onResetMarkups}
-                    title="형광펜 / 사각형 마크업 지우기 (Reset)"
-                    aria-label="Reset markups"
+                    title={t('tool.reset')}
+                    aria-label={t('tool.reset')}
                   >
                     <IconReset />
                   </button>
@@ -450,47 +455,44 @@ export function ActionBar({
                 <>
                   <Sep />
                   <div className="flex items-center gap-0.5 shrink-0">
-                    <button className={toolBtn('select')} onClick={() => { onModeChange('select'); setStampPanelOpen(false) }} title="Select">
-                      <IconSelect /> <span>Select</span>
-                    </button>
+                    <button
+                      className={toolBtn('select')}
+                      onClick={() => { onModeChange('select'); setStampPanelOpen(false) }}
+                      title={t('tool.select')}
+                      aria-label={t('tool.select')}
+                    ><IconSelect /></button>
 
                     {/* Stamp button — dropdown rendered via portal (escapes overflow) */}
                     <button
                       ref={stampBtnRef}
                       className={toolBtn('stamp')}
                       onClick={openStampMenu}
-                      title="Stamp"
+                      title={t('tool.stamp')}
+                      aria-label={t('tool.stamp')}
                       aria-expanded={stampPanelOpen}
-                    >
-                      <IconStamp /> <span>Stamp ▾</span>
-                    </button>
+                    ><IconStamp /></button>
 
                     <button
                       className={toolBtn('signature')}
                       onClick={() => { onModeChange('signature'); onSignatureClick(); setStampPanelOpen(false) }}
-                      title="Signature"
-                      aria-label="Signature"
-                    >
-                      <IconSignature /> <span>Sign</span>
-                    </button>
+                      title={t('tool.signature')}
+                      aria-label={t('tool.signature')}
+                    ><IconSignature /></button>
 
                     <button
                       className={toolBtn('watermark')}
                       onClick={() => { onModeChange('watermark'); onWatermarkClick(); setStampPanelOpen(false) }}
-                      title="Watermark"
-                      aria-label="Watermark"
-                    >
-                      <IconWatermark /> <span>W Mark</span>
-                    </button>
+                      title={t('tool.watermark')}
+                      aria-label={t('tool.watermark')}
+                    ><IconWatermark /></button>
 
                     {selectedId && (
                       <button
                         onClick={onDeleteSelected}
-                        className="flex items-center gap-1 px-2 py-1.5 text-xs rounded bg-red-700 hover:bg-red-600 text-white transition-all"
-                        title="Delete selected"
-                      >
-                        <IconDelete /> <span>Delete</span>
-                      </button>
+                        className={`${BTN_BASE} bg-red-700 hover:bg-red-600 text-white`}
+                        title={t('tool.delete')}
+                        aria-label={t('tool.delete')}
+                      ><IconDelete /></button>
                     )}
                   </div>
                 </>
@@ -500,15 +502,21 @@ export function ActionBar({
         </div>
 
         {/* ── Right: fixed controls (not inside overflow — dropdown safe) ── */}
-        <div className="flex items-center gap-1 px-3 py-1.5 shrink-0 border-l border-gray-700/40">
-          {/* Viewer / Editor mode toggle */}
+        <div className="flex items-center gap-1 px-2 sm:px-3 py-1.5 shrink-0 border-l border-gray-700/40">
+          {/* Viewer / Editor mode toggle (icon-only segmented control) */}
           <div className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
-            <button className={modeToggleBtn('viewer')} onClick={() => onAppModeChange('viewer')} title="Viewer mode">
-              <IconViewer /> Viewer
-            </button>
-            <button className={modeToggleBtn('editor')} onClick={() => onAppModeChange('editor')} title="Editor mode">
-              <IconEditor /> Editor
-            </button>
+            <button
+              className={modeToggleBtn('viewer')}
+              onClick={() => onAppModeChange('viewer')}
+              title={t('tool.viewer')}
+              aria-label={t('tool.viewer')}
+            ><IconViewer /></button>
+            <button
+              className={modeToggleBtn('editor')}
+              onClick={() => onAppModeChange('editor')}
+              title={t('tool.editor')}
+              aria-label={t('tool.editor')}
+            ><IconEditor /></button>
           </div>
 
           <Sep />
@@ -516,22 +524,20 @@ export function ActionBar({
           {/* Open */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-700 hover:bg-gray-600 rounded-lg transition-all text-gray-200"
-            title="Open PDF (F2)"
-          >
-            <IconUpload /> Open
-          </button>
+            className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
+            title={t('tool.open')}
+            aria-label={t('tool.open')}
+          ><IconUpload /></button>
           <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={handleFileChange} />
 
           {/* Print */}
           {hasPdf && (
             <button
               onClick={onPrint}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-700 hover:bg-gray-600 rounded-lg transition-all text-gray-200"
-              title="Print (Ctrl+P)"
-            >
-              <IconPrint /> Print
-            </button>
+              className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
+              title={t('tool.print')}
+              aria-label={t('tool.print')}
+            ><IconPrint /></button>
           )}
 
           {/* Export dropdown — absolute child renders below this section, no overflow parent */}
@@ -541,11 +547,11 @@ export function ActionBar({
                 onClick={() => setExportMenuOpen(v => !v)}
                 disabled={isExporting}
                 aria-expanded={exportMenuOpen}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-500 rounded-lg transition-all disabled:opacity-50 text-white"
-                title="내보내기"
+                aria-label={t('tool.export')}
+                className={`${BTN_BASE} bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 w-auto px-2.5 gap-1`}
+                title={isExporting ? t('tool.exporting') : t('tool.export')}
               >
                 <IconDownload />
-                {isExporting ? '내보내는 중…' : 'Export'}
                 <IconChevron />
               </button>
 
@@ -555,7 +561,7 @@ export function ActionBar({
                     onClick={() => { onExportPdf(); setExportMenuOpen(false) }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
                   >
-                    <IconDownload /><span>PDF 저장</span>
+                    <IconDownload /><span>{t('export.pdf')}</span>
                     <span className="ml-auto text-gray-500 text-[10px]">.pdf</span>
                   </button>
 
@@ -563,7 +569,7 @@ export function ActionBar({
                     onClick={() => { onExportHtml(); setExportMenuOpen(false) }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
                   >
-                    <IconHtml /><span>HTML Viewer</span>
+                    <IconHtml /><span>{t('export.html')}</span>
                     <span className="ml-auto text-gray-500 text-[10px]">.html</span>
                   </button>
 
@@ -571,7 +577,7 @@ export function ActionBar({
                     onClick={() => { onExportImages(); setExportMenuOpen(false) }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
                   >
-                    <IconImage /><span>이미지 저장</span>
+                    <IconImage /><span>{t('export.images')}</span>
                     <span className="ml-auto text-gray-500 text-[10px]">.zip</span>
                   </button>
 
@@ -582,7 +588,7 @@ export function ActionBar({
                         onClick={() => { onExportExe(); setExportMenuOpen(false) }}
                         className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-300 hover:bg-gray-700 transition-colors"
                       >
-                        <IconExe /><span>EXE Viewer</span>
+                        <IconExe /><span>{t('export.exe')}</span>
                         <span className="ml-auto text-gray-500 text-[10px]">.exe</span>
                       </button>
                     </>

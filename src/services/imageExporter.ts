@@ -11,6 +11,7 @@
 
 import JSZip from 'jszip'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import { downloadBlob, stripPdfExt } from '../utils/download'
 
 /** Render scale for exported images — 2× gives ~144 DPI equivalent. */
 const EXPORT_SCALE = 2
@@ -39,7 +40,7 @@ export async function exportAsImages(
   filename: string,
   onProgress?: (current: number, total: number) => void,
 ): Promise<void> {
-  const baseName  = filename.replace(/\.pdf$/i, '')
+  const baseName  = stripPdfExt(filename)
   const padWidth  = String(numPages).length   // e.g. 3 for 100+ pages
   const zip       = new JSZip()
 
@@ -66,10 +67,5 @@ export async function exportAsImages(
     compressionOptions: { level: 6 },
   })
 
-  const url = URL.createObjectURL(zipBlob)
-  const a   = document.createElement('a')
-  a.href     = url
-  a.download = `${baseName}_images.zip`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(zipBlob, `${baseName}_images.zip`)
 }

@@ -216,14 +216,21 @@ ipcMain.handle('read-file', async (_event, filePath: unknown): Promise<ArrayBuff
   if (!resolved.toLowerCase().endsWith('.pdf')) {
     throw new Error('Only .pdf files are allowed')
   }
-  const stat = await fs.promises.stat(resolved)
+  // Resolve symlinks before any check: a `foo.pdf` symlink pointing at
+  // /etc/shadow would otherwise pass the extension test and leak the target.
+  // We validate the REAL path's extension + that it's a regular file.
+  const real = await fs.promises.realpath(resolved)
+  if (!real.toLowerCase().endsWith('.pdf')) {
+    throw new Error('Resolved path is not a .pdf file')
+  }
+  const stat = await fs.promises.lstat(real)
   if (!stat.isFile()) {
     throw new Error('Path is not a regular file')
   }
   if (stat.size > MAX_FILE_SIZE) {
     throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
   }
-  const data = await fs.promises.readFile(resolved)
+  const data = await fs.promises.readFile(real)
   // Return a fresh ArrayBuffer slice (Buffer view → standalone ArrayBuffer)
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
 })
@@ -231,16 +238,19 @@ ipcMain.handle('read-file', async (_event, filePath: unknown): Promise<ArrayBuff
 // ── IPC: open-help ─────────────────────────────────────────────────────────
 // Opens `help.html` (shipped alongside the renderer build) in the user's
 // default browser via shell.openExternal. Reachable from F1 in the renderer.
-ipcMain.handle('open-help', async () => {
+ipcMain.handle('open-help', async (_event, lang?: unknown) => {
   try {
+    // Korean → help.html, anything else → help.en.html. Validate the arg so a
+    // compromised renderer can't smuggle an arbitrary filename into the path.
+    const helpFile = lang === 'ko' ? 'help.html' : 'help.en.html'
     let url: string
     if (app.isPackaged) {
-      // dist/help.html is copied from public/help.html during vite build
-      const helpPath = path.join(__dirname, '..', 'dist', 'help.html')
+      // dist/<helpFile> is copied from public/ during vite build
+      const helpPath = path.join(__dirname, '..', 'dist', helpFile)
       // file:// URL with forward slashes works on all platforms
       url = 'file:///' + helpPath.replace(/\\/g, '/')
     } else {
-      url = 'http://localhost:5173/help.html'
+      url = `http://localhost:5173/${helpFile}`
     }
     await shell.openExternal(url)
     return { success: true }

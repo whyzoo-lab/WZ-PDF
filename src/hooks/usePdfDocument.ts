@@ -17,6 +17,9 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
 
   useEffect(() => {
     if (!file) {
+      // Clearing document state when the source file is removed — intentional
+      // effect-driven reset, not a cascading-render smell.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPdfDoc(null)
       setNumPages(0)
       setError(null)

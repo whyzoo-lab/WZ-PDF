@@ -1,7 +1,16 @@
 {
-  "name": "pdf-editor",
+  "name": "wz-pdf",
   "private": true,
   "version": "1.0.0",
+  "description": "Lightweight PDF viewer / editor with annotation, page management, multi-format export, and an MCP server. Built with React, Konva, pdfjs, pdf-lib, and Electron.",
+  "license": "MIT",
+  "author": "WhyZOO",
+  "homepage": "https://github.com/whyzoo/wz-pdf",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/whyzoo/wz-pdf.git"
+  },
+  "keywords": ["pdf", "viewer", "editor", "annotation", "watermark", "electron", "react", "mcp"],
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -9,7 +18,8 @@
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "dev:vite": "vite",
     "build": "tsc -b && vite build",
-    "build:exe": "tsc -p tsconfig.electron.json && tsc -b && vite build && electron-builder --win portable && electron-builder --win nsis",
+    "build:icon": "node scripts/build-icon.cjs",
+    "build:exe": "npm run build:icon && tsc -p tsconfig.electron.json && tsc -b && vite build && electron-builder --win portable && electron-builder --win nsis",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
@@ -17,6 +27,7 @@
     "electron:compile": "tsc -p tsconfig.electron.json"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "jszip": "^3.10.1",
     "konva": "^10.3.0",
     "pdf-lib": "^1.17.1",
@@ -44,6 +55,8 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "jsdom": "^29.1.1",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",

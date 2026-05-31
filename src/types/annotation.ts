@@ -1,4 +1,4 @@
-export type AnnotationType = 'stamp' | 'signature' | 'watermark' | 'pen' | 'rectangle'
+export type AnnotationType = 'stamp' | 'signature' | 'watermark' | 'pen' | 'rectangle' | 'textEdit'
 
 export interface BaseAnnotation {
   id: string
@@ -54,14 +54,30 @@ export interface RectangleAnnotation extends BaseAnnotation {
   strokeWidth: number // PDF points
 }
 
+/**
+ * Editor-mode text patch: covers the original PDF text at (x, y, width, height)
+ * with a white rectangle and renders `text` on top in the default font.
+ * Created by double-clicking a text span in the selectable text layer.
+ */
+export interface TextEditAnnotation extends BaseAnnotation {
+  type: 'textEdit'
+  text: string       // new text content to display
+  fontSize: number   // PDF points (matches original text size)
+  color: string      // hex color, default '#000000'
+  background: string // rectangle fill that hides the original, default '#FFFFFF'
+}
+
 export type Annotation =
   | StampAnnotation
   | SignatureAnnotation
   | WatermarkAnnotation
   | PenAnnotation
   | RectangleAnnotation
+  | TextEditAnnotation
 
-export type OmitId<T> = T extends any ? Omit<T, 'id'> : never
+// Distributive Omit over the Annotation union. `T extends unknown` triggers
+// distribution just like `extends any` but without the no-explicit-any lint.
+export type OmitId<T> = T extends unknown ? Omit<T, 'id'> : never
 
 export type ActiveMode = 'select' | 'stamp' | 'signature' | 'watermark' | 'pen' | 'rectangle' | null
 
@@ -70,4 +86,15 @@ export const VOLATILE_TYPES: readonly AnnotationType[] = ['pen', 'rectangle']
 
 export function isVolatile(a: Annotation): boolean {
   return a.type === 'pen' || a.type === 'rectangle'
+}
+
+/**
+ * Annotations that belong on a given 1-based page. `allPages` watermarks match
+ * every page; everything else matches only its own `page`. Single source of
+ * truth used by the renderer, the print pipeline, and the PDF exporter.
+ */
+export function annotationsForPage(annotations: Annotation[], pageNumber: number): Annotation[] {
+  return annotations.filter(a =>
+    a.type === 'watermark' ? a.allPages || a.page === pageNumber : a.page === pageNumber,
+  )
 }

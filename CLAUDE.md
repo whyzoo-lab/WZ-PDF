@@ -265,12 +265,12 @@ Export pipeline (regardless of source):
 `--win portable` then `--win nsis`. The order matters: NSIS's afterPack hook
 needs the portable artifact already on disk to embed.
 
-- `dist-exe/WZ_PDF_${version}.exe` — Portable single-file exe (~140 MB)
+- `release/WZ_PDF_${version}.exe` — Portable single-file exe (~140 MB)
   - Built first
   - Acts as both a standalone launcher AND the template embedded by NSIS
   - `PORTABLE_EXECUTABLE_FILE` env-var is set automatically when launched
 
-- `dist-exe/WZ_PDF_Setup_${version}.exe` — NSIS installer (~280 MB; recommended for daily use)
+- `release/WZ_PDF_Setup_${version}.exe` — NSIS installer (~280 MB; recommended for daily use)
   - User chooses install path, creates Desktop + Start Menu shortcuts
   - Registers as a handler for `.pdf` files (`fileAssociations` in `electron-builder.json5`)
   - Maximum LZMA compression; only en-US/ko Electron locales bundled
@@ -332,4 +332,4 @@ The `export-exe` IPC handler can't work in dev mode because no SFX template exis
 The script in `package.json` runs `electron-builder --win portable` *and then* `electron-builder --win nsis` deliberately, not as one combined invocation. The NSIS `afterPack` hook (`scripts/afterPack.cjs`) embeds the portable artifact as `viewer-template.exe`, which requires the portable to already exist on disk. A combined invocation would share `win-unpacked/` and the template wouldn't be ready when NSIS packs.
 
 ### Claude Code file locks during build
-The `claude.exe` agent process can hold open file handles to `dist-exe/win-unpacked/resources/app.asar` from previous Glob/Read tool calls, causing electron-builder to fail with "process cannot access the file because it is being used by another process". Before a `build:exe` run, either restart the Claude Code session or delete `dist-exe/` from a separate admin terminal. Also add the project folder to Windows Defender exclusions if real-time scanning is locking newly written asars.
+The `claude.exe` agent process can hold open file handles to `release/win-unpacked/resources/app.asar` from previous Glob/Read tool calls, causing electron-builder to fail with "process cannot access the file because it is being used by another process". Before a `build:exe` run, either restart the Claude Code session or delete `release/` from a separate admin terminal. Also add the project folder to Windows Defender exclusions if real-time scanning is locking newly written asars.

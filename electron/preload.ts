@@ -43,7 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('print-window'),
 
   // ── Help ────────────────────────────────────────────────────────────────
-  /** Open the help.html document in the user's default browser. */
-  openHelp: (): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('open-help'),
+  /** Open the help document in the user's default browser (lang: 'ko' | 'en'). */
+  openHelp: (lang?: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('open-help', lang),
 })

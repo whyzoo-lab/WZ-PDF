@@ -19,11 +19,13 @@ export function useThumbnails(
 
   useEffect(() => {
     if (!pdfDoc || numPages === 0) {
+      // Clear thumbnails when there's no document — intentional reset.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDataUrls([])
       return
     }
 
-    // null로 초기화 (로딩 표시용)
+    // Initialize to nulls (loading placeholders).
     setDataUrls(new Array(numPages).fill(null))
 
     let cancelled = false

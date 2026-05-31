@@ -5,13 +5,15 @@ import { SpreadView } from './SpreadView'
 import { GridView } from './GridView'
 import { FullscreenView } from './FullscreenView'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
-import type { ViewMode } from '../../types/viewModes'
+import type { AppMode, ViewMode } from '../../types/viewModes'
 
 interface PdfViewerProps {
   pdfDoc: PDFDocumentProxy
   numPages: number
   zoom: number
   rotation: number
+  /** Viewer/Editor toggle — enables text editing on double-click in editor mode. */
+  appMode?: AppMode
   annotations: Annotation[]
   selectedId: string | null
   activeMode: ActiveMode
@@ -33,6 +35,7 @@ export function PdfViewer({
   numPages,
   zoom,
   rotation,
+  appMode,
   annotations,
   selectedId,
   activeMode,
@@ -51,6 +54,7 @@ export function PdfViewer({
     pdfDoc,
     zoom,
     rotation,
+    appMode,
     annotations,
     selectedId,
     activeMode,
@@ -65,6 +69,9 @@ export function PdfViewer({
   const singleScrollRef = React.useRef<HTMLDivElement>(null)
 
   // Track the most visible page in single mode for the ActionBar page indicator.
+  // The observer is held in a ref (not stashed on the DOM node) so cleanup is
+  // type-safe and not subject to the node being swapped out by React.
+  const obsRef = React.useRef<IntersectionObserver | null>(null)
   React.useEffect(() => {
     if (viewMode !== 'single') return
     onCurrentPageChange(1)
@@ -89,16 +96,16 @@ export function PdfViewer({
         { root: container, threshold: Array.from({ length: 11 }, (_, i) => i / 10) },
       )
       pageEls.forEach(el => obs.observe(el))
-      ;(container as HTMLDivElement & { _obs?: IntersectionObserver })._obs?.disconnect()
-      ;(container as HTMLDivElement & { _obs?: IntersectionObserver })._obs = obs
+      obsRef.current?.disconnect()
+      obsRef.current = obs
     }, 100)
     return () => {
       clearTimeout(timer)
-      const containerForCleanup = singleScrollRef.current
-      if (containerForCleanup) {
-        ;(containerForCleanup as HTMLDivElement & { _obs?: IntersectionObserver })._obs?.disconnect()
-      }
+      obsRef.current?.disconnect()
+      obsRef.current = null
     }
+  // onCurrentPageChange is a stable setState dispatcher; re-running only on
+  // view/page-count change is intentional.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, numPages])
 

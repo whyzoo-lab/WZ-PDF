@@ -72,13 +72,13 @@ describe('ActionBar', () => {
 
   it('calls onAppModeChange("editor") when Editor button clicked', () => {
     render(<ActionBar {...defaultProps} />)
-    fireEvent.click(screen.getByRole('button', { name: /^editor$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /editor mode/i }))
     expect(defaultProps.onAppModeChange).toHaveBeenCalledWith('editor')
   })
 
   it('calls onAppModeChange("viewer") when Viewer button clicked', () => {
     render(<ActionBar {...defaultProps} appMode="editor" />)
-    fireEvent.click(screen.getByRole('button', { name: /^viewer$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /viewer mode/i }))
     expect(defaultProps.onAppModeChange).toHaveBeenCalledWith('viewer')
   })
 
@@ -100,25 +100,27 @@ describe('ActionBar', () => {
 
   it('shows editor tools (Stamp, Signature, Watermark) in editor mode', () => {
     render(<ActionBar {...defaultProps} appMode="editor" />)
-    expect(screen.getByRole('button', { name: /stamp/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /signature/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /watermark/i })).toBeInTheDocument()
+    // Anchored so they don't collide with the "Editor mode — stamp / sign /
+    // watermark" toggle button's accessible name.
+    expect(screen.getByRole('button', { name: /^stamp$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^signature$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^watermark$/i })).toBeInTheDocument()
   })
 
   it('hides editor tools in viewer mode', () => {
     render(<ActionBar {...defaultProps} appMode="viewer" />)
-    expect(screen.queryByRole('button', { name: /stamp/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /signature/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^stamp$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^signature$/i })).not.toBeInTheDocument()
   })
 
   it('shows Delete button in editor mode when selectedId is set', () => {
     render(<ActionBar {...defaultProps} appMode="editor" selectedId="ann-1" />)
-    expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /delete selected/i })).toBeInTheDocument()
   })
 
   it('hides Delete button when no annotation is selected', () => {
     render(<ActionBar {...defaultProps} appMode="editor" selectedId={null} />)
-    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /delete selected/i })).not.toBeInTheDocument()
   })
 
   it('calls onZoomIn when + button is clicked', () => {
@@ -147,9 +149,9 @@ describe('ActionBar', () => {
   it('opens Export menu on click and shows PDF/HTML/Images options', () => {
     render(<ActionBar {...defaultProps} />)
     fireEvent.click(screen.getByRole('button', { name: /export/i }))
-    expect(screen.getByText('PDF 저장')).toBeInTheDocument()
-    expect(screen.getByText('HTML Viewer')).toBeInTheDocument()
-    expect(screen.getByText('이미지 저장')).toBeInTheDocument()
+    expect(screen.getByText('Save PDF')).toBeInTheDocument()
+    expect(screen.getByText('Save HTML')).toBeInTheDocument()
+    expect(screen.getByText('Save Images')).toBeInTheDocument()
   })
 
   it('shows EXE Viewer option when onExportExe is provided', () => {
@@ -168,16 +170,16 @@ describe('ActionBar', () => {
     const onExportPdf = vi.fn()
     render(<ActionBar {...defaultProps} onExportPdf={onExportPdf} />)
     fireEvent.click(screen.getByRole('button', { name: /export/i }))
-    fireEvent.click(screen.getByText('PDF 저장'))
+    fireEvent.click(screen.getByText('Save PDF'))
     expect(onExportPdf).toHaveBeenCalled()
-    expect(screen.queryByText('HTML Viewer')).not.toBeInTheDocument()
+    expect(screen.queryByText('Save HTML')).not.toBeInTheDocument()
   })
 
   it('calls onExportHtml and closes menu when HTML option clicked', () => {
     const onExportHtml = vi.fn()
     render(<ActionBar {...defaultProps} onExportHtml={onExportHtml} />)
     fireEvent.click(screen.getByRole('button', { name: /export/i }))
-    fireEvent.click(screen.getByText('HTML Viewer'))
+    fireEvent.click(screen.getByText('Save HTML'))
     expect(onExportHtml).toHaveBeenCalled()
   })
 
@@ -185,24 +187,24 @@ describe('ActionBar', () => {
     const onExportImages = vi.fn()
     render(<ActionBar {...defaultProps} onExportImages={onExportImages} />)
     fireEvent.click(screen.getByRole('button', { name: /export/i }))
-    fireEvent.click(screen.getByText('이미지 저장'))
+    fireEvent.click(screen.getByText('Save Images'))
     expect(onExportImages).toHaveBeenCalled()
   })
 
   it('disables Export button while exporting', () => {
     render(<ActionBar {...defaultProps} isExporting={true} />)
-    expect(screen.getByRole('button', { name: /내보내는 중/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /export/i })).toBeDisabled()
   })
 
   it('calls onResetMarkups when Reset button clicked', () => {
     const onResetMarkups = vi.fn()
     render(<ActionBar {...defaultProps} onResetMarkups={onResetMarkups} />)
-    fireEvent.click(screen.getByRole('button', { name: /reset markups/i }))
+    fireEvent.click(screen.getByRole('button', { name: /clear markups/i }))
     expect(onResetMarkups).toHaveBeenCalled()
   })
 
   it('hides Reset button in fullscreen mode', () => {
     render(<ActionBar {...defaultProps} viewMode="fullscreen" />)
-    expect(screen.queryByRole('button', { name: /reset markups/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /clear markups/i })).not.toBeInTheDocument()
   })
 })

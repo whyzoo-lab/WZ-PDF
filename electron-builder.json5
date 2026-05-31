@@ -14,7 +14,7 @@
   "copyright": "WZ PDF",
 
   "directories": {
-    "output": "dist-exe"
+    "output": "release"
   },
 
   // Hook that bundles the portable EXE into the NSIS installer as
@@ -37,12 +37,14 @@
 
   // Register WZ PDF as a handler for .pdf files. The OS will pass the file
   // path as a CLI argument; main.ts picks it up via process.argv.
+  // `icon` controls the icon shown for associated .pdf files in Explorer.
   "fileAssociations": [
     {
       "ext": "pdf",
       "name": "PDF Document",
       "description": "PDF Document",
-      "role": "Viewer"
+      "role": "Viewer",
+      "icon": "build/icon.ico"
     }
   ],
 
@@ -51,6 +53,10 @@
   // exactly one. Sequencing matters: NSIS's afterPack hook needs the portable
   // artifact already on disk to bundle it as viewer-template.exe.
   "win": {
+    // build/icon.ico is generated from public/icon.svg by scripts/build-icon.cjs
+    // (multi-resolution: 16/24/32/48/64/128/256). Used as the exe icon, taskbar
+    // icon, and — together with `fileAssociations[].icon` — the .pdf file icon.
+    "icon": "build/icon.ico",
     "target": [
       { "target": "nsis",     "arch": ["x64"] },
       { "target": "portable", "arch": ["x64"] }
@@ -64,7 +70,10 @@
     "createStartMenuShortcut": true,
     "shortcutName": "WZ PDF",
     "artifactName": "WZ_PDF_Setup_${version}.exe",
-    "deleteAppDataOnUninstall": false
+    "deleteAppDataOnUninstall": false,
+    // NSIS installer icon (also used for uninstaller) — same as the app icon.
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico"
   },
 
   "portable": {

@@ -1,0 +1,30 @@
+{
+  "name": "wz-pdf-mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server exposing WZ PDF operations to Claude.",
+  "license": "MIT",
+  "author": "WhyZOO",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "dev:http": "tsx src/server-http.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:http": "node dist/server-http.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@pdf-lib/fontkit": "^1.1.1",
+    "express": "^5.0.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.7.284"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.12.3",
+    "tsx": "^4.20.0",
+    "typescript": "~5.6.0"
+  }
+}

@@ -27,10 +27,13 @@ interface Window {
     /** Open the native OS print dialog. */
     printWindow: () => Promise<{ success: boolean; error?: string }>
 
-    /** Open the help.html document in the user's default browser. */
-    openHelp: () => Promise<{ success: boolean; error?: string }>
+    /** Open the help document in the user's default browser (lang: 'ko' | 'en'). */
+    openHelp: (lang?: string) => Promise<{ success: boolean; error?: string }>
   }
 }
+
+/** App version, injected at build time from package.json via Vite's `define`. */
+declare const __APP_VERSION__: string
 
 interface Uint8Array {
   toHex(): string

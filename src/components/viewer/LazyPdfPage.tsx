@@ -4,6 +4,7 @@ import { useInViewport } from '../../hooks/useInViewport'
 import { PDF_RENDER_SCALE } from '../../utils/constants'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
+import type { AppMode } from '../../types/viewModes'
 
 // US Letter dimensions in PDF points × render scale — used as a placeholder
 // size before the real page viewport is known.
@@ -15,6 +16,7 @@ interface LazyPdfPageProps {
   pageNumber: number
   zoom: number
   rotation?: number
+  appMode?: AppMode
   annotations: Annotation[]
   selectedId: string | null
   activeMode: ActiveMode

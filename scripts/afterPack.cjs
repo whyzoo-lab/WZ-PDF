@@ -12,7 +12,7 @@
  * package is assembled:
  *
  *   1. Portable build → template doesn't exist yet → this hook skips.
- *   2. Portable artifact written to `dist-exe/WZ_PDF_${version}.exe`.
+ *   2. Portable artifact written to `release/WZ_PDF_${version}.exe`.
  *   3. NSIS build → template exists → this hook copies it into resources.
  */
 
@@ -24,7 +24,7 @@ exports.default = async function (context) {
   const version = packager.appInfo.version
   const portableTemplate = path.join(
     packager.projectDir,
-    'dist-exe',
+    'release',
     `WZ_PDF_${version}.exe`,
   )
 

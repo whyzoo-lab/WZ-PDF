@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { useThumbnails } from '../../hooks/useThumbnails'
+import { t } from '../../i18n'
 
 export interface PagePanelProps {
   pdfDoc: PDFDocumentProxy
@@ -10,6 +11,8 @@ export interface PagePanelProps {
   isOperating: boolean
   /** When true, hides edit toolbar, disables drag-and-drop and Delete-key shortcut. */
   readOnly?: boolean
+  /** Called when the mobile drawer's close button is tapped (no-op on desktop). */
+  onClose?: () => void
   onScrollToPage: (page: number) => void
   onDeletePages: (pageNums: number[]) => void
   onInsertBlankPage: (afterPage: number) => void
@@ -23,6 +26,7 @@ export function PagePanel({
   currentPage,
   isOperating,
   readOnly = false,
+  onClose,
   onScrollToPage,
   onDeletePages,
   onInsertBlankPage,
@@ -62,7 +66,8 @@ export function PagePanel({
     } else if (e.ctrlKey || e.metaKey) {
       setSelected(prev => {
         const next = new Set(prev)
-        next.has(pageNum) ? next.delete(pageNum) : next.add(pageNum)
+        if (next.has(pageNum)) next.delete(pageNum)
+        else next.add(pageNum)
         return next
       })
       setLastSelected(pageNum)
@@ -77,7 +82,7 @@ export function PagePanel({
   const handleDelete = () => {
     if (readOnly) return
     if (selected.size === 0 || numPages - selected.size < 1) return
-    if (!confirm(`선택한 ${selected.size}개 페이지를 삭제할까요?`)) return
+    if (!confirm(t('panel.confirmDelete', { n: selected.size }))) return
     onDeletePages([...selected].sort((a, b) => a - b))
     setSelected(new Set())
     setLastSelected(null)
@@ -121,7 +126,7 @@ export function PagePanel({
     if (!f) return
     f.arrayBuffer()
       .then(bytes => onInsertFromPdf(insertAfterPage, bytes))
-      .catch(err => alert(`PDF를 읽을 수 없습니다: ${err instanceof Error ? err.message : String(err)}`))
+      .catch(err => alert(t('panel.readError', { error: err instanceof Error ? err.message : String(err) })))
     e.target.value = ''
     setAddMenuOpen(false)
   }
@@ -162,11 +167,26 @@ export function PagePanel({
   const canDelete = selected.size > 0 && numPages - selected.size >= 1
 
   return (
-    <div className="relative flex flex-col w-40 shrink-0 bg-gray-900 border-r border-gray-700 overflow-hidden select-none">
+    <div className="relative flex flex-col w-44 md:w-40 shrink-0 h-full bg-gray-900 border-r border-gray-700 overflow-hidden select-none">
       {/* 헤더 */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
         <span className="text-xs font-semibold text-gray-300">Pages</span>
-        <span className="text-[10px] text-gray-500">{numPages}p</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-500">{numPages}p</span>
+          {/* Close button — only on mobile (md:hidden). Desktop uses ActionBar's Pages toggle. */}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="md:hidden w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-700 hover:text-white"
+              aria-label={t('panel.close')}
+            >
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round"/>
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 도구 모음 (편집 모드 전용) */}
@@ -178,9 +198,9 @@ export function PagePanel({
             disabled={isOperating}
             onClick={() => setAddMenuOpen(v => !v)}
             className="flex items-center gap-0.5 px-2 py-1 text-[11px] bg-gray-700 hover:bg-gray-600 text-gray-200 rounded disabled:opacity-50 transition-colors"
-            title="페이지 추가"
+            title={t('panel.addTitle')}
           >
-            + 추가 ▾
+            {t('panel.add')}
           </button>
           {addMenuOpen && (
             <div className="absolute left-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[150px]">
@@ -188,10 +208,10 @@ export function PagePanel({
                 onClick={handleInsertBlank}
                 className="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
               >
-                빈 페이지 삽입
+                {t('panel.insertBlank')}
               </button>
               <label className="w-full flex px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 cursor-pointer transition-colors">
-                다른 PDF에서 삽입…
+                {t('panel.insertFromPdf')}
                 <input
                   type="file"
                   accept="application/pdf,.pdf"
@@ -208,7 +228,7 @@ export function PagePanel({
           disabled={!canDelete || isOperating}
           onClick={handleDelete}
           className="flex items-center gap-0.5 px-2 py-1 text-[11px] bg-red-800 hover:bg-red-700 text-white rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          title={canDelete ? `${selected.size}개 페이지 삭제` : '페이지를 선택하세요'}
+          title={canDelete ? t('panel.deleteN', { n: selected.size }) : t('panel.selectFirst')}
         >
           🗑{selected.size > 0 ? ` (${selected.size})` : ''}
         </button>
@@ -259,7 +279,7 @@ export function PagePanel({
       {/* 조작 중 오버레이 */}
       {isOperating && (
         <div className="absolute inset-0 bg-gray-900/70 flex items-center justify-center z-10">
-          <span className="text-xs text-gray-300">처리 중…</span>
+          <span className="text-xs text-gray-300">{t('panel.processing')}</span>
         </div>
       )}
     </div>

@@ -228,6 +228,9 @@ export function FullscreenView({
   }, [])
 
   useEffect(() => {
+    // Show the page-number overlay briefly whenever the page changes —
+    // intentional effect-driven UI feedback.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     resetOverlay()
     return () => { if (overlayTimer.current) clearTimeout(overlayTimer.current) }
   }, [currentPage, resetOverlay])

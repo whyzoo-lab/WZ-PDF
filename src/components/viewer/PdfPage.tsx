@@ -4,7 +4,10 @@ import type Konva from 'konva'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { usePdfPage } from '../../hooks/usePdfPage'
 import { AnnotationLayer } from '../annotations/AnnotationLayer'
+import { PdfTextLayer } from './PdfTextLayer'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
+import { annotationsForPage } from '../../types/annotation'
+import type { AppMode } from '../../types/viewModes'
 import { toStoredCoords } from '../../utils/coordinates'
 import { PDF_RENDER_SCALE } from '../../utils/constants'
 
@@ -20,6 +23,7 @@ interface PdfPageProps {
   pageNumber: number
   zoom: number
   rotation?: number  // 0 | 90 | 180 | 270 (degrees, clockwise)
+  appMode?: AppMode
   annotations: Annotation[]
   selectedId: string | null
   activeMode: ActiveMode
@@ -35,6 +39,7 @@ function PdfPageInner({
   pageNumber,
   zoom,
   rotation = 0,
+  appMode = 'viewer',
   annotations,
   selectedId,
   activeMode,
@@ -108,10 +113,7 @@ function PdfPageInner({
   // Memoized per-page filter so AnnotationLayer keeps a stable prop reference
   // when unrelated annotations change.
   const pageAnnotations = useMemo(
-    () => annotations.filter(a => {
-      if (a.type === 'watermark') return a.allPages || a.page === pageNumber
-      return a.page === pageNumber
-    }),
+    () => annotationsForPage(annotations, pageNumber),
     [annotations, pageNumber],
   )
 
@@ -198,14 +200,18 @@ function PdfPageInner({
       : 'default'
 
   // ── Drawing handlers (pen / rectangle) ─────────────────────────────────────
-  const getPointerStored = (e: Konva.KonvaEventObject<MouseEvent>): { x: number; y: number } | null => {
+  // Mouse and touch both go through the same handlers; Konva normalizes the
+  // pointer position via stage.getPointerPosition(), so the event payload only
+  // matters for the stage reference.
+  type PointerEvt = Konva.KonvaEventObject<MouseEvent | TouchEvent>
+  const getPointerStored = (e: PointerEvt): { x: number; y: number } | null => {
     const stage = e.target.getStage()
     const pos = stage?.getPointerPosition()
     if (!pos) return null
     return toStoredCoords(pos.x, pos.y, effectiveZoom)
   }
 
-  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
+  const handleMouseDown = (e: PointerEvt) => {
     if (activeMode === 'pen') {
       const p = getPointerStored(e)
       if (!p) return
@@ -221,7 +227,7 @@ function PdfPageInner({
     }
   }
 
-  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+  const handleMouseMove = (e: PointerEvt) => {
     const d = draftRef.current
     if (!d) return
     const p = getPointerStored(e)
@@ -254,6 +260,10 @@ function PdfPageInner({
           onMouseDown={isDrawing ? handleMouseDown : undefined}
           onMouseMove={isDrawing ? handleMouseMove : undefined}
           onMouseUp={isDrawing ? handleMouseUp : undefined}
+          // Touch equivalents — same handlers; Konva normalizes pointer position.
+          onTouchStart={isDrawing ? handleMouseDown : undefined}
+          onTouchMove={isDrawing ? handleMouseMove : undefined}
+          onTouchEnd={isDrawing ? handleMouseUp : undefined}
           style={{ cursor }}
         >
           <Layer>
@@ -302,6 +312,36 @@ function PdfPageInner({
           )}
         </Stage>
       </div>
+
+      {/* Selectable text overlay — only when no tool is active, so it doesn't
+          steal drag events from the drawing tools or click-to-place tools.
+          In editor mode, double-clicking a text span opens an edit prompt
+          and creates a text-patch annotation. */}
+      {(activeMode === null || activeMode === 'select') && (
+        <PdfTextLayer
+          pdfDoc={pdfDoc}
+          pageNumber={pageNumber}
+          scale={effectiveZoom}
+          rotation={rotation}
+          width={stageWidth}
+          height={stageHeight}
+          onEditCommit={appMode === 'editor' ? (edit) => {
+            onAnnotationAdd({
+              type: 'textEdit',
+              page: pageNumber,
+              x: edit.x,
+              y: edit.y,
+              width: edit.width,
+              height: edit.height,
+              rotation: 0,
+              text: edit.text,
+              fontSize: edit.fontSize,
+              color: '#000000',
+              background: '#FFFFFF',
+            })
+          } : undefined}
+        />
+      )}
     </div>
   )
 }
