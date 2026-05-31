@@ -1,4 +1,6 @@
 # WZ PDF
+<img width="1584" height="992" alt="image" src="https://github.com/user-attachments/assets/efbb3f04-74ce-442f-9fa1-7f45d58ff6d3" />
+
 
 > Presentation-focused PDF viewer, editor & distribution platform.
 
@@ -95,3 +97,6 @@ your own server, user, and paths.
 
 [MIT](./LICENSE). Third-party components and their licenses (Apache-2.0,
 SIL OFL, etc.) are listed in [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
+
+<img width="900" height="4775" alt="image" src="https://github.com/user-attachments/assets/ae625740-851c-4655-9268-a56a2bfd5aec" />
+
