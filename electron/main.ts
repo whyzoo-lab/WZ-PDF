@@ -41,6 +41,20 @@ function createWindow() {
     width: 1280,
     height: 800,
     title: 'WZ PDF',
+    // ── Custom title bar ────────────────────────────────────────────────
+    // Hide the native title bar so the ActionBar visually becomes the chrome.
+    // On Windows/Linux we use Window Controls Overlay: the OS still draws
+    // accessible min/max/close buttons in the top-right, but we control the
+    // background color, height, and symbol color so it blends with the app.
+    // On macOS, `hiddenInset` shows the traffic-light controls inset slightly
+    // — they sit on top of our dark toolbar without further configuration.
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    titleBarOverlay: process.platform === 'darwin' ? undefined : {
+      color: '#111827',         // matches Tailwind bg-gray-900 (the ActionBar bg)
+      symbolColor: '#e5e7eb',   // matches Tailwind gray-200 (visible on dark bg)
+      height: 48,               // matches the ActionBar's intrinsic height
+    },
+    backgroundColor: '#111827', // paints the same gray during the brief load gap
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // ── Hardened defaults (explicit even when matching defaults) ─────────

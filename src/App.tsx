@@ -234,6 +234,12 @@ export default function App() {
   // which pushes the ActionBar off-screen and spawns a phantom window
   // scrollbar. This capture-phase listener resets any such stray scroll to 0
   // the instant it happens, regardless of the trigger.
+  // Tag the root element when running inside Electron so CSS can opt in to
+  // window-drag regions and reserve space for the OS title-bar overlay.
+  useEffect(() => {
+    if (window.electronAPI) document.documentElement.classList.add('is-electron')
+  }, [])
+
   useEffect(() => {
     const pin = () => {
       const de = document.documentElement

@@ -36,6 +36,30 @@ header {
   padding-top: env(safe-area-inset-top, 0);
 }
 
+/* ── Electron: unify the OS title-bar with our ActionBar ─────────────────── */
+/* Electron is configured with titleBarStyle: 'hidden' + titleBarOverlay, so
+   the OS draws min/max/close buttons over the top-right of our header. To
+   make the header double as the window's drag handle:
+     1. Mark the header as a drag region.
+     2. Mark anything interactive inside it as `no-drag` (otherwise clicks
+        get swallowed by the drag handler).
+     3. Reserve ~140px on the right so our own buttons don't sit behind the
+        OS controls.
+   In a regular browser these properties are simply ignored. */
+.is-electron header {
+  -webkit-app-region: drag;
+  app-region: drag;
+  padding-right: 140px;  /* clears the Windows min/max/close cluster */
+}
+.is-electron header button,
+.is-electron header input,
+.is-electron header a,
+.is-electron header label,
+.is-electron header [role='button'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 /* Text-entry inputs should never trigger iOS focus zoom (font >= 16px).
    Buttons are excluded — Tailwind text-xs/text-sm classes must win there. */
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
