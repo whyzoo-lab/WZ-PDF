@@ -1,5 +1,11 @@
 # WZ PDF
-<img width="1584" height="992" alt="image" src="https://github.com/user-attachments/assets/efbb3f04-74ce-442f-9fa1-7f45d58ff6d3" />
+
+https://whyzoo.com/WzPDF/
+
+
+<img width="1871" height="995" alt="image" src="https://github.com/user-attachments/assets/11aad7cd-0b71-4f2e-8dc4-670e90bf0cd7" />
+<img width="1590" height="870" alt="image" src="https://github.com/user-attachments/assets/a7eea157-9be1-4749-bda5-076134bed0db" />
+<img width="1455" height="1000" alt="image" src="https://github.com/user-attachments/assets/2fa5af89-d1c0-434c-b5ab-96172fa2f551" />
 
 
 > Presentation-focused PDF viewer, editor & distribution platform.
@@ -34,6 +40,10 @@ Built with React, Konva, pdfjs, pdf-lib, and Electron. Ships with an optional
 - **i18n** — UI and help auto-switch to Korean on Korean OS/browser locale,
   English everywhere else.
 - **Responsive** — works on desktop, tablet, and phone.
+
+## Demo (web)
+Open <https://whyzoo.i234.me>.
+
 
 ## Quick start (web)
 
