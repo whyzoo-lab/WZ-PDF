@@ -1,7 +1,7 @@
 {
   "name": "wz-pdf",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Lightweight PDF viewer / editor with annotation, page management, multi-format export, and an MCP server. Built with React, Konva, pdfjs, pdf-lib, and Electron.",
   "license": "MIT",
   "author": "WhyZOO",
@@ -19,6 +19,7 @@
     "dev:vite": "vite",
     "build": "tsc -b && vite build",
     "build:icon": "node scripts/build-icon.cjs",
+    "build:og": "node scripts/build-og.cjs",
     "build:exe": "npm run build:icon && tsc -p tsconfig.electron.json && tsc -b && vite build && electron-builder --win portable && electron-builder --win nsis",
     "lint": "eslint .",
     "preview": "vite preview",

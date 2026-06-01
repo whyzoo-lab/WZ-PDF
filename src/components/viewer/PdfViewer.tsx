@@ -6,6 +6,8 @@ import { GridView } from './GridView'
 import { FullscreenView } from './FullscreenView'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import type { AppMode, ViewMode } from '../../types/viewModes'
+import type { SearchMatch } from '../../hooks/useSearch'
+import type { TextLayerHighlight } from './PdfTextLayer'
 
 interface PdfViewerProps {
   pdfDoc: PDFDocumentProxy
@@ -28,6 +30,8 @@ interface PdfViewerProps {
   onGridPageClick: (pageNumber: number) => void
   onFullscreenExit: () => void
   onCurrentPageChange: (page: number) => void
+  /** Active search results (single-view highlighting). */
+  search?: { matches: SearchMatch[]; activeIndex: number }
 }
 
 export function PdfViewer({
@@ -49,7 +53,20 @@ export function PdfViewer({
   onGridPageClick,
   onFullscreenExit,
   onCurrentPageChange,
+  search,
 }: PdfViewerProps) {
+  // Group search hits by page → highlight descriptors, marking the active one.
+  const highlightsByPage = React.useMemo(() => {
+    const map = new Map<number, TextLayerHighlight[]>()
+    if (!search) return map
+    search.matches.forEach((m, i) => {
+      const arr = map.get(m.page) ?? []
+      arr.push({ itemStart: m.itemStart, itemEnd: m.itemEnd, active: i === search.activeIndex })
+      map.set(m.page, arr)
+    })
+    return map
+  }, [search])
+
   const sharedAnnotationProps = {
     pdfDoc,
     zoom,
@@ -149,7 +166,11 @@ export function PdfViewer({
     <div ref={singleScrollRef} className="flex flex-col items-center gap-4 py-6 px-4 overflow-auto h-full bg-gray-300" id="pdf-single-container">
       {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
         <div key={pageNum} id={`pdf-page-${pageNum}`} data-page-num={pageNum} className="shadow-xl">
-          <LazyPdfPage {...sharedAnnotationProps} pageNumber={pageNum} />
+          <LazyPdfPage
+            {...sharedAnnotationProps}
+            pageNumber={pageNum}
+            searchHighlights={highlightsByPage.get(pageNum)}
+          />
         </div>
       ))}
     </div>

@@ -5,6 +5,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { usePdfPage } from '../../hooks/usePdfPage'
 import { AnnotationLayer } from '../annotations/AnnotationLayer'
 import { PdfTextLayer } from './PdfTextLayer'
+import type { TextLayerHighlight } from './PdfTextLayer'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { annotationsForPage } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
@@ -32,6 +33,8 @@ interface PdfPageProps {
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void
   onAnnotationAdd: (annotation: OmitId<Annotation>) => void
+  /** Search hits to highlight on this page (single-view search). */
+  searchHighlights?: TextLayerHighlight[]
 }
 
 function PdfPageInner({
@@ -48,6 +51,7 @@ function PdfPageInner({
   onAnnotationSelect,
   onAnnotationUpdate,
   onAnnotationAdd,
+  searchHighlights,
 }: PdfPageProps) {
   const { pageData, isLoading } = usePdfPage(pdfDoc, pageNumber)
 
@@ -313,11 +317,12 @@ function PdfPageInner({
         </Stage>
       </div>
 
-      {/* Selectable text overlay — only when no tool is active, so it doesn't
-          steal drag events from the drawing tools or click-to-place tools.
+      {/* Selectable text overlay — shown when no tool is active (so it doesn't
+          steal drag events from drawing/placement tools), OR whenever there are
+          search highlights to render on this page.
           In editor mode, double-clicking a text span opens an edit prompt
           and creates a text-patch annotation. */}
-      {(activeMode === null || activeMode === 'select') && (
+      {(activeMode === null || activeMode === 'select' || (searchHighlights && searchHighlights.length > 0)) && (
         <PdfTextLayer
           pdfDoc={pdfDoc}
           pageNumber={pageNumber}
@@ -325,6 +330,7 @@ function PdfPageInner({
           rotation={rotation}
           width={stageWidth}
           height={stageHeight}
+          highlights={searchHighlights}
           onEditCommit={appMode === 'editor' ? (edit) => {
             onAnnotationAdd({
               type: 'textEdit',

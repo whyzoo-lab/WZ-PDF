@@ -17,6 +17,7 @@ const defaultProps = {
   numPages: 1,
   currentPage: 1,
   onUpload: vi.fn(),
+  onOpenUrl: vi.fn(),
   onPrint: vi.fn(),
   onAppModeChange: vi.fn(),
   onViewModeChange: vi.fn(),
@@ -30,6 +31,7 @@ const defaultProps = {
   onWatermarkClick: vi.fn(),
   onDeleteSelected: vi.fn(),
   onResetMarkups: vi.fn(),
+  hasMarkups: false,
   onExportPdf: vi.fn(),
   onExportHtml: vi.fn(),
   onExportImages: vi.fn(),
@@ -196,15 +198,22 @@ describe('ActionBar', () => {
     expect(screen.getByRole('button', { name: /export/i })).toBeDisabled()
   })
 
+  it('shows the eraser only when markups exist', () => {
+    const { rerender } = render(<ActionBar {...defaultProps} hasMarkups={false} />)
+    expect(screen.queryByRole('button', { name: /clear markups/i })).not.toBeInTheDocument()
+    rerender(<ActionBar {...defaultProps} hasMarkups={true} />)
+    expect(screen.getByRole('button', { name: /clear markups/i })).toBeInTheDocument()
+  })
+
   it('calls onResetMarkups when Reset button clicked', () => {
     const onResetMarkups = vi.fn()
-    render(<ActionBar {...defaultProps} onResetMarkups={onResetMarkups} />)
+    render(<ActionBar {...defaultProps} hasMarkups={true} onResetMarkups={onResetMarkups} />)
     fireEvent.click(screen.getByRole('button', { name: /clear markups/i }))
     expect(onResetMarkups).toHaveBeenCalled()
   })
 
   it('hides Reset button in fullscreen mode', () => {
-    render(<ActionBar {...defaultProps} viewMode="fullscreen" />)
+    render(<ActionBar {...defaultProps} hasMarkups={true} viewMode="fullscreen" />)
     expect(screen.queryByRole('button', { name: /clear markups/i })).not.toBeInTheDocument()
   })
 })

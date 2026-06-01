@@ -38,3 +38,6 @@ build/
 # your own server. Keeps internal hosts/paths out of the public repo.
 deploy.bat
 
+# Claude Code session data (launch configs, transcripts, allow-list) — local-only.
+.claude/
+

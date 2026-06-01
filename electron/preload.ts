@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFile: (filePath: string): Promise<ArrayBuffer> =>
     ipcRenderer.invoke('read-file', filePath),
 
+  /** Download a PDF from an http(s) URL via the main process (bypasses CORS). */
+  fetchUrl: (url: string): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke('fetch-url', url),
+
   // ── Export EXE ──────────────────────────────────────────────────────────
   /**
    * Export the current PDF as a standalone viewer exe.

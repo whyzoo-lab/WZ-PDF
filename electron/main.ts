@@ -208,6 +208,44 @@ ipcMain.handle('export-exe', async (_event, pdfData: ArrayBuffer) => {
 //   - extension is `.pdf`
 //   - path resolves to a real, regular file
 //   - size is below MAX_FILE_SIZE
+// ── IPC: fetch-url ───────────────────────────────────────────────────────
+// Download a PDF from an http(s) URL in the main process. Unlike the renderer,
+// the main process isn't bound by CORS, so this works for any reachable host.
+// Hardened: only http/https, follows the same MAX_FILE_SIZE cap, and verifies
+// the response looks like a PDF.
+ipcMain.handle('fetch-url', async (_event, rawUrl: unknown): Promise<ArrayBuffer> => {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
+    throw new Error('Invalid URL')
+  }
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    throw new Error('Malformed URL')
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Only http(s) URLs are allowed')
+  }
+  const res = await fetch(url.href, { redirect: 'follow' })
+  if (!res.ok) throw new Error(`Download failed (HTTP ${res.status})`)
+
+  const len = Number(res.headers.get('content-length') ?? '0')
+  if (len > MAX_FILE_SIZE) {
+    throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
+  }
+  const buf = await res.arrayBuffer()
+  if (buf.byteLength > MAX_FILE_SIZE) {
+    throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
+  }
+  // Sanity-check the PDF magic bytes (%PDF).
+  const head = new Uint8Array(buf.slice(0, 5))
+  const sig = String.fromCharCode(...head)
+  if (!sig.startsWith('%PDF')) {
+    throw new Error('The URL did not return a PDF file')
+  }
+  return buf
+})
+
 ipcMain.handle('read-file', async (_event, filePath: unknown): Promise<ArrayBuffer> => {
   if (typeof filePath !== 'string' || filePath.length === 0) {
     throw new Error('Invalid file path')

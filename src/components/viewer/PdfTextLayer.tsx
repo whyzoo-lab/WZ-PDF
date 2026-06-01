@@ -14,6 +14,13 @@ export interface TextEditCommit {
   fontSize: number
 }
 
+/** A search hit on this page, expressed as a span (text-item) index range. */
+export interface TextLayerHighlight {
+  itemStart: number
+  itemEnd: number
+  active: boolean
+}
+
 interface PdfTextLayerProps {
   pdfDoc: PDFDocumentProxy
   pageNumber: number
@@ -28,6 +35,8 @@ interface PdfTextLayerProps {
    *  confirmation this callback fires with the new text and original bounds
    *  (in PDF points). Omit to keep the layer read-only (text selection only). */
   onEditCommit?: (edit: TextEditCommit) => void
+  /** Search hits to highlight on this page (span backgrounds). */
+  highlights?: TextLayerHighlight[]
 }
 
 interface EditState {
@@ -52,11 +61,14 @@ interface EditState {
  * the commit callback fires.
  */
 export function PdfTextLayer({
-  pdfDoc, pageNumber, scale, rotation, width, height, onEditCommit,
+  pdfDoc, pageNumber, scale, rotation, width, height, onEditCommit, highlights,
 }: PdfTextLayerProps) {
   const ref = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [editing, setEditing] = useState<EditState | null>(null)
+  // Bumped after each TextLayer render so the highlight effect re-applies
+  // once the spans actually exist in the DOM.
+  const [renderNonce, setRenderNonce] = useState(0)
 
   // ── Render the pdfjs TextLayer ────────────────────────────────────────────
   useEffect(() => {
@@ -81,6 +93,7 @@ export function PdfTextLayer({
           viewport,
         })
         await layer.render()
+        if (!cancelled) setRenderNonce(n => n + 1)
       } catch (err) {
         // Text layer is a nice-to-have — never crash the viewer if it fails.
         console.warn(`[PdfTextLayer] page ${pageNumber} render failed:`, err)
@@ -89,6 +102,37 @@ export function PdfTextLayer({
 
     return () => { cancelled = true }
   }, [pdfDoc, pageNumber, scale, rotation])
+
+  // ── Search highlights ─────────────────────────────────────────────────────
+  // pdfjs renders one <span> per text item, in order, so item index maps to
+  // span index. We background the matched spans (text is transparent, so the
+  // background shows as a highlight aligned with the glyphs) and scroll the
+  // active match into view.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const spans = el.querySelectorAll<HTMLElement>(':scope > span')
+
+    // Clear any previous highlight classes.
+    spans.forEach(s => s.classList.remove('wz-search-hl', 'wz-search-hl-active'))
+    if (!highlights || highlights.length === 0) return
+
+    let activeSpan: HTMLElement | null = null
+    for (const h of highlights) {
+      for (let i = h.itemStart; i <= h.itemEnd && i < spans.length; i++) {
+        const span = spans[i]
+        if (!span) continue
+        span.classList.add('wz-search-hl')
+        if (h.active) {
+          span.classList.add('wz-search-hl-active')
+          activeSpan ??= span
+        }
+      }
+    }
+    // Bring the active match into view (the inner PDF scroll container scrolls;
+    // App's scroll-pin guard absorbs any stray window scroll).
+    activeSpan?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [highlights, renderNonce])
 
   // ── Editor mode: double-click a span to start editing ─────────────────────
   useEffect(() => {
@@ -164,12 +208,15 @@ export function PdfTextLayer({
         // Wrapper doesn't catch events; the spans inside opt in via CSS.
         pointerEvents: 'none',
         // pdfjs's TextLayer overwrites style.width/height via setLayerDimensions
-        // using `calc(var(--total-scale-factor) * pageWidth px)`. Without these
-        // CSS variables the container would resolve to invalid dimensions and
-        // the spans inside become invisible / unselectable.
+        // using `calc(round(down, var(--total-scale-factor) * pageWidth px, var(--scale-round-x)))`.
+        // These vars are required or the dimensions resolve to invalid values.
+        // We use a sub-pixel round step (not 1px) so the text-layer box matches
+        // the Konva canvas *exactly* — a 1px step left the box up to ~1px
+        // narrower/shorter, and `overflow:hidden` then clipped edge glyphs,
+        // making text near the right/bottom margin unselectable at some zooms.
         ['--total-scale-factor' as never]: String(scale),
-        ['--scale-round-x' as never]: '1px',
-        ['--scale-round-y' as never]: '1px',
+        ['--scale-round-x' as never]: '0.001px',
+        ['--scale-round-y' as never]: '0.001px',
       }}
     >
       {editing && (

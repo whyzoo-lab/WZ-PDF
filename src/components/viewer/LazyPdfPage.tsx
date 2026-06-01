@@ -25,6 +25,7 @@ interface LazyPdfPageProps {
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void
   onAnnotationAdd: (annotation: OmitId<Annotation>) => void
+  searchHighlights?: import('./PdfTextLayer').TextLayerHighlight[]
 }
 
 /**

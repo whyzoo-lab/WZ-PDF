@@ -68,6 +68,15 @@ canvas {
   user-select: text;
   -webkit-user-select: text;
 }
+
+/* pdfjs sets `--font-height` and `--scale-x` on each text span; we have to
+   apply them to font-size/transform ourselves, or every glyph falls back to
+   the browser default 16px and overflows the layer. That mis-alignment is
+   what made drag-selection grab the wrong region at certain zoom levels. */
+.pdf-text-layer > span {
+  font-size: calc(var(--font-height, 1px) * var(--total-scale-factor, 1));
+  transform: scaleX(var(--scale-x, 1));
+}
 .pdf-text-layer ::selection {
   background: rgba(56, 189, 248, 0.35); /* sky-400 @ 35% */
   color: transparent;
@@ -75,6 +84,15 @@ canvas {
 .pdf-text-layer ::-moz-selection {
   background: rgba(56, 189, 248, 0.35);
   color: transparent;
+}
+
+/* Search highlights — background behind the transparent glyphs. */
+.pdf-text-layer > span.wz-search-hl {
+  background: rgba(251, 191, 36, 0.45);   /* amber */
+  border-radius: 2px;
+}
+.pdf-text-layer > span.wz-search-hl-active {
+  background: rgba(249, 115, 22, 0.75);   /* orange — current match */
 }
 
 /* ── Print styles ────────────────────────────────────────────────────────── */

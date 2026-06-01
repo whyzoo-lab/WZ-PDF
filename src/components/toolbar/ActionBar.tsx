@@ -84,6 +84,12 @@ const IconUpload = () => (
     <path d="M4 15h12" strokeLinecap="round"/>
   </svg>
 )
+const IconLink = () => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
+    <path d="M8 11a3 3 0 004.24 0l2.5-2.5a3 3 0 00-4.24-4.24L11 5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M12 9a3 3 0 00-4.24 0l-2.5 2.5a3 3 0 004.24 4.24L9 15" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
 const IconDownload = () => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
     <path d="M10 5v8M7 10l3 3 3-3" strokeLinecap="round" strokeLinejoin="round"/>
@@ -116,10 +122,12 @@ const IconPrint = () => (
     <circle cx="15" cy="11" r="0.8" fill="currentColor" stroke="none"/>
   </svg>
 )
+// Eraser — distinct from the (similar-looking) view/rotate icons.
 const IconReset = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M4 10a6 6 0 1 0 1.76-4.24" strokeLinecap="round"/>
-    <path d="M3 3v4h4" strokeLinecap="round" strokeLinejoin="round"/>
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="w-4 h-4">
+    <path d="M8.5 16.5l-3.8-3.8a1.5 1.5 0 0 1 0-2.12l6-6a1.5 1.5 0 0 1 2.12 0l3.3 3.3a1.5 1.5 0 0 1 0 2.12L11.5 16.5H8.5z" strokeLinejoin="round"/>
+    <path d="M16.5 16.5H8.5" strokeLinecap="round"/>
+    <path d="M6.2 8.8l5 5" />
   </svg>
 )
 const IconExe = () => (
@@ -161,6 +169,8 @@ export interface ActionBarProps {
   numPages: number
   currentPage: number
   onUpload: (file: File) => void
+  /** Open the "load from URL" modal. */
+  onOpenUrl: () => void
   onPrint: () => void
   onAppModeChange: (mode: AppMode) => void
   onViewModeChange: (mode: ViewMode) => void
@@ -173,8 +183,10 @@ export interface ActionBarProps {
   onSignatureClick: () => void
   onWatermarkClick: () => void
   onDeleteSelected: () => void
-  /** Clears volatile pen / rectangle markups. Always shown when hasPdf. */
+  /** Clears volatile pen / rectangle markups. */
   onResetMarkups: () => void
+  /** True when any pen/rectangle markup exists — gates the eraser button. */
+  hasMarkups: boolean
   // ── Export menu ────────────────────────────────────────────────────────────
   onExportPdf: () => void
   onExportHtml: () => void
@@ -197,6 +209,7 @@ export function ActionBar({
   numPages,
   currentPage,
   onUpload,
+  onOpenUrl,
   onPrint,
   onAppModeChange,
   onViewModeChange,
@@ -210,6 +223,7 @@ export function ActionBar({
   onWatermarkClick,
   onDeleteSelected,
   onResetMarkups,
+  hasMarkups,
   onExportPdf,
   onExportHtml,
   onExportImages,
@@ -218,10 +232,12 @@ export function ActionBar({
   const [stampPanelOpen, setStampPanelOpen] = useState(false)
   const [stampMenuRect, setStampMenuRect] = useState<DOMRect | null>(null)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [openMenuOpen, setOpenMenuOpen] = useState(false)
   const fileInputRef  = useRef<HTMLInputElement>(null)
   const stampBtnRef   = useRef<HTMLButtonElement>(null)
   const stampPortalRef = useRef<HTMLDivElement>(null)
   const exportRef     = useRef<HTMLDivElement>(null)
+  const openRef       = useRef<HTMLDivElement>(null)
 
   // Close stamp menu on outside click (portal is in body, so check both refs)
   useEffect(() => {
@@ -246,6 +262,18 @@ export function ActionBar({
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [exportMenuOpen])
+
+  // Close open menu on outside click
+  useEffect(() => {
+    if (!openMenuOpen) return
+    const onMouseDown = (e: MouseEvent) => {
+      if (openRef.current && !openRef.current.contains(e.target as Node)) {
+        setOpenMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [openMenuOpen])
 
   const openStampMenu = () => {
     if (stampPanelOpen) { setStampPanelOpen(false); return }
@@ -438,15 +466,17 @@ export function ActionBar({
                     </svg>
                   </button>
 
-                  {/* Reset markups (clears pen / rectangle) — viewer & editor */}
-                  <button
-                    className={iconBtn('Reset markups')}
-                    onClick={onResetMarkups}
-                    title={t('tool.reset')}
-                    aria-label={t('tool.reset')}
-                  >
-                    <IconReset />
-                  </button>
+                  {/* Eraser — only shown once pen/rectangle markup exists. */}
+                  {hasMarkups && (
+                    <button
+                      className={iconBtn('Reset markups')}
+                      onClick={onResetMarkups}
+                      title={t('tool.reset')}
+                      aria-label={t('tool.reset')}
+                    >
+                      <IconReset />
+                    </button>
+                  )}
                 </>
               )}
 
@@ -521,13 +551,32 @@ export function ActionBar({
 
           <Sep />
 
-          {/* Open */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
-            title={t('tool.open')}
-            aria-label={t('tool.open')}
-          ><IconUpload /></button>
+          {/* Open dropdown — file or URL */}
+          <div ref={openRef} className="relative">
+            <button
+              onClick={() => setOpenMenuOpen(v => !v)}
+              aria-expanded={openMenuOpen}
+              className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
+              title={t('tool.open')}
+              aria-label={t('tool.open')}
+            ><IconUpload /></button>
+            {openMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[170px]">
+                <button
+                  onClick={() => { fileInputRef.current?.click(); setOpenMenuOpen(false) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
+                >
+                  <IconUpload /><span>{t('tool.openFile')}</span>
+                </button>
+                <button
+                  onClick={() => { onOpenUrl(); setOpenMenuOpen(false) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
+                >
+                  <IconLink /><span>{t('tool.openUrl')}</span>
+                </button>
+              </div>
+            )}
+          </div>
           <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={handleFileChange} />
 
           {/* Print */}

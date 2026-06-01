@@ -69,6 +69,25 @@ export const en = {
   'panel.readError': 'Could not read the PDF: {error}',
   'panel.processing': 'Processing…',
 
+  // ── Open from URL ─────────────────────────────────────────────────────────
+  'url.title': 'Open PDF from URL',
+  'url.hint': 'Paste a direct link to a PDF file.',
+  'url.load': 'Load',
+  'url.loading': 'Loading…',
+  'url.cancel': 'Cancel',
+  'url.invalid': 'Please enter a valid http(s) URL.',
+  'url.loadFailed': 'Could not load the PDF: {error}',
+  'url.corsBlocked': "Could not load the PDF — the host blocks cross-origin requests (CORS). Try downloading the file and opening it directly, or use the desktop app.",
+  'tool.openFile': 'Open file…',
+  'tool.openUrl': 'Open from URL…',
+
+  // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
+  'search.placeholder': 'Find in document',
+  'search.noResults': 'No results',
+  'search.next': 'Next match (Enter)',
+  'search.prev': 'Previous match (Shift+Enter)',
+  'search.close': 'Close (Esc)',
+
   // ── Error boundary ────────────────────────────────────────────────────────
   'errorBoundary.title': 'Something went wrong',
   'errorBoundary.body': 'The viewer hit an unexpected error. Reloading usually fixes it.',

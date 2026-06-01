@@ -2,15 +2,84 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- ── Primary SEO ─────────────────────────────────────────────────── -->
+    <title>WZ PDF — PDF Viewer, Editor &amp; Annotator (free, no upload)</title>
+    <meta name="description" content="WZ PDF is a free, fully in-browser PDF viewer and editor. Add stamps, signatures and watermarks, manage pages, present fullscreen, and export to PDF, HTML, images or a standalone EXE — your file never leaves your device." />
+    <meta name="keywords" content="PDF viewer, PDF editor, PDF annotator, add signature to PDF, PDF watermark, PDF stamp, merge PDF, split PDF, edit PDF text, free PDF tool, browser PDF, no upload PDF" />
+    <meta name="author" content="WhyZOO" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="canonical" href="https://whyzoo.i234.me/" />
+
+    <!-- ── Icons / PWA ─────────────────────────────────────────────────── -->
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="theme-color" content="#0f172a" />
-    <title>WZ PDF</title>
+    <meta name="apple-mobile-web-app-title" content="WZ PDF" />
+
+    <!-- ── Open Graph (Facebook / KakaoTalk / LinkedIn) ────────────────── -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="WZ PDF" />
+    <meta property="og:title" content="WZ PDF — PDF Viewer, Editor &amp; Annotator" />
+    <meta property="og:description" content="Free, fully in-browser PDF tool: stamps, signatures, watermarks, page management, fullscreen presenting, and multi-format export. Your file never leaves your device." />
+    <meta property="og:url" content="https://whyzoo.i234.me/" />
+    <meta property="og:image" content="https://whyzoo.i234.me/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="ko_KR" />
+
+    <!-- ── Twitter Card ────────────────────────────────────────────────── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="WZ PDF — PDF Viewer, Editor &amp; Annotator" />
+    <meta name="twitter:description" content="Free, fully in-browser PDF tool. No upload — your file never leaves your device." />
+    <meta name="twitter:image" content="https://whyzoo.i234.me/og-image.png" />
+
+    <!-- ── Structured data (GEO: helps AI engines describe the app) ────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "WZ PDF",
+      "description": "A free, fully client-side PDF viewer and editor. View, annotate (stamps, signatures, watermarks), edit text, manage pages, present fullscreen, and export to PDF, HTML, images, or a standalone EXE. No backend and no upload — the document is processed entirely in the browser.",
+      "url": "https://whyzoo.i234.me/",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web, Windows",
+      "browserRequirements": "Requires a modern browser (Chrome, Edge, Firefox, Safari).",
+      "inLanguage": ["en", "ko"],
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "View PDF (single, spread, grid, fullscreen presentation)",
+        "Stamps, hand-drawn signatures, full-page watermarks",
+        "Selectable text and inline text editing",
+        "Page management: reorder, insert, delete, merge",
+        "Export to PDF, HTML, images (ZIP), and standalone EXE",
+        "Korean and English UI",
+        "Privacy-first: no upload, processed in-browser"
+      ],
+      "creator": {
+        "@type": "Organization",
+        "name": "WhyZOO",
+        "url": "https://github.com/whyzoo-lab/WZ-PDF"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <!-- Crawlable fallback: visible to bots before the SPA mounts, replaced on load. -->
+    <noscript>
+      WZ PDF is a free, in-browser PDF viewer and editor — add stamps, signatures,
+      and watermarks, manage pages, and export to PDF, HTML, images, or EXE.
+      JavaScript is required to run the app.
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

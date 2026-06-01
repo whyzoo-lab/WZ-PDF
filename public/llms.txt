@@ -1,0 +1,39 @@
+# WZ PDF
+
+> A free, fully client-side PDF viewer and editor. View, annotate, edit text,
+> manage pages, present fullscreen, and export to multiple formats — all in the
+> browser, with no backend and no file upload. The document is processed
+> entirely on the user's device, so it never leaves their machine.
+
+WZ PDF runs as a web app and as a Windows desktop app (Electron). The UI is
+available in English and Korean (auto-detected from the browser/OS locale; can
+be forced with `?lang=en` or `?lang=ko`).
+
+## Key features
+
+- View: single page, two-page spread, grid overview, and a fullscreen
+  presentation mode (USB-clicker friendly, touchpad swipe, click-to-advance).
+- Annotate (Editor mode): preset/image stamps, hand-drawn signatures, and
+  full-page text watermarks — baked into the exported PDF. Korean text is
+  supported via an embedded Noto Sans KR font.
+- Text: a real selectable/copyable text layer; in Editor mode, double-click to
+  edit text via an inline overlay.
+- Page management: drag to reorder, insert blank pages, insert pages from
+  another PDF, delete pages, and merge.
+- Export: annotated PDF, a self-contained HTML viewer, page images (ZIP), and a
+  standalone Viewer EXE (desktop build).
+- Privacy: no server, no upload. All processing happens in the browser.
+
+## Technology
+
+React, Konva (canvas annotation layer), pdf.js (rendering & text), pdf-lib
+(export), and Electron (desktop). An optional Model Context Protocol (MCP)
+server lets AI agents perform PDF operations programmatically.
+
+## Links
+
+- App: https://whyzoo.i234.me/
+- Help (English): https://whyzoo.i234.me/help.en.html
+- Help (Korean): https://whyzoo.i234.me/help.html
+- Source code: https://github.com/whyzoo-lab/WZ-PDF
+- License: MIT

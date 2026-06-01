@@ -12,6 +12,9 @@ interface Window {
     /** Read a local file by path — avoids fetch('file://') CORS issues. */
     readFile: (filePath: string) => Promise<ArrayBuffer>
 
+    /** Download a PDF from an http(s) URL via the main process (bypasses CORS). */
+    fetchUrl: (url: string) => Promise<ArrayBuffer>
+
     /**
      * Export the current PDF as a standalone viewer exe.
      * Appends the PDF bytes to a copy of the running portable exe.

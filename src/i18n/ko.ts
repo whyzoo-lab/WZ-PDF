@@ -69,6 +69,25 @@ export const ko = {
   'panel.readError': 'PDF를 읽을 수 없습니다: {error}',
   'panel.processing': '처리 중…',
 
+  // ── Open from URL ─────────────────────────────────────────────────────────
+  'url.title': 'URL로 PDF 열기',
+  'url.hint': 'PDF 파일의 직접 링크를 붙여넣으세요.',
+  'url.load': '불러오기',
+  'url.loading': '불러오는 중…',
+  'url.cancel': '취소',
+  'url.invalid': '올바른 http(s) URL을 입력하세요.',
+  'url.loadFailed': 'PDF를 불러올 수 없습니다: {error}',
+  'url.corsBlocked': 'PDF를 불러올 수 없습니다 — 해당 사이트가 외부 접근(CORS)을 차단합니다. 파일을 내려받아 직접 열거나 데스크탑 앱을 사용하세요.',
+  'tool.openFile': '파일 열기…',
+  'tool.openUrl': 'URL로 열기…',
+
+  // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
+  'search.placeholder': '문서에서 찾기',
+  'search.noResults': '결과 없음',
+  'search.next': '다음 일치 (Enter)',
+  'search.prev': '이전 일치 (Shift+Enter)',
+  'search.close': '닫기 (Esc)',
+
   // ── Error boundary ────────────────────────────────────────────────────────
   'errorBoundary.title': '문제가 발생했습니다',
   'errorBoundary.body': '뷰어에서 예기치 못한 오류가 발생했어요. 새로고침하면 대부분 해결됩니다.',

@@ -8,6 +8,8 @@ import { useFitZoom } from './hooks/useFitZoom'
 import { usePrint } from './hooks/usePrint'
 import { useExporters } from './hooks/useExporters'
 import { usePageOperations } from './hooks/usePageOperations'
+import { useSearch } from './hooks/useSearch'
+import { SearchBar } from './components/SearchBar'
 import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
@@ -21,6 +23,7 @@ import { t, LANG } from './i18n'
 // to fetch the chunk happens during otherwise-idle interaction time.
 const SignaturePad     = lazy(() => import('./components/modals/SignaturePad').then(m => ({ default: m.SignaturePad })))
 const WatermarkConfig  = lazy(() => import('./components/modals/WatermarkConfig').then(m => ({ default: m.WatermarkConfig })))
+const OpenUrlModal     = lazy(() => import('./components/modals/OpenUrlModal').then(m => ({ default: m.OpenUrlModal })))
 
 export default function App() {
   // ── Document state ────────────────────────────────────────────────────────
@@ -42,6 +45,9 @@ export default function App() {
   const [pendingSignature, setPendingSignature] = useState<string | null>(null)
   const [showSignaturePad, setShowSignaturePad] = useState(false)
   const [showWatermarkConfig, setShowWatermarkConfig] = useState(false)
+
+  // ── Search state ──────────────────────────────────────────────────────────
+  const [showSearch, setShowSearch] = useState(false)
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [toast, setToast] = useState<{ id: number; message: string } | null>(null)
@@ -69,6 +75,7 @@ export default function App() {
 
   // ── Hooks: feature bundles ────────────────────────────────────────────────
   useFitZoom({ pdfDoc, viewMode, rotation, setZoom })
+  const search = useSearch(pdfDoc, numPages)
   const { handlePrint, isPrinting, printProgress } = usePrint({ pdfDoc, numPages, annotations })
   const {
     isExporting,
@@ -140,6 +147,14 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault()
         document.dispatchEvent(new CustomEvent('wz-print'))
+        return
+      }
+      // Ctrl/Cmd+F → open the find bar (replaces the browser's native find).
+      // Highlighting is single-view only, so switch out of grid/spread.
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && pdfDoc && viewMode !== 'fullscreen') {
+        e.preventDefault()
+        if (viewMode === 'grid' || viewMode === 'spread') setViewMode('single')
+        setShowSearch(true)
         return
       }
       if (e.key === 'F2' && viewMode !== 'fullscreen') {
@@ -237,6 +252,20 @@ export default function App() {
     return () => window.removeEventListener('scroll', pin, true)
   }, [])
 
+  // ── Scroll to the active search match ─────────────────────────────────────
+  // Navigate to the match's page (reusing the single-view scroll mechanism);
+  // PdfTextLayer then scrolls the exact match span into view.
+  const activeMatchPage = search.active?.page ?? null
+  useEffect(() => {
+    if (activeMatchPage == null) return
+    // Navigating to the active match is an intentional effect-driven action,
+    // not a render-cascade smell. Re-runs when the active index changes (even
+    // to the same page), so repeated matches on one page still re-scroll.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setViewMode(v => (v === 'single' ? v : 'single'))
+    setScrollToPage(activeMatchPage)
+  }, [activeMatchPage, search.activeIndex])
+
   // ── File loading ──────────────────────────────────────────────────────────
 
   /** Reset state and load a PDF File object into the viewer. */
@@ -247,7 +276,9 @@ export default function App() {
     setPendingSignature(null)
     setRotation(0)
     setViewMode('single')
-  }, [setActiveMode])
+    setShowSearch(false)
+    search.clear()
+  }, [setActiveMode, search])
 
   /** Main upload handler — accepts PDF files only. */
   const handleUpload = useCallback((f: File) => {
@@ -256,6 +287,44 @@ export default function App() {
       return
     }
     loadPdfFile(f)
+  }, [loadPdfFile])
+
+  // ── Open from URL ─────────────────────────────────────────────────────────
+  const [showUrlModal, setShowUrlModal] = useState(false)
+  const [urlLoading, setUrlLoading] = useState(false)
+
+  /** Fetch an online PDF and load it. Electron uses the main process (no CORS);
+   *  the web build uses fetch() and surfaces a clear error on CORS failure. */
+  const handleOpenUrl = useCallback(async (rawUrl: string) => {
+    const url = rawUrl.trim()
+    if (!/^https?:\/\//i.test(url)) {
+      alert(t('url.invalid'))
+      return
+    }
+    setUrlLoading(true)
+    try {
+      let bytes: ArrayBuffer
+      if (window.electronAPI?.fetchUrl) {
+        bytes = await window.electronAPI.fetchUrl(url)
+      } else {
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        bytes = await res.arrayBuffer()
+      }
+      const name = (() => {
+        try { return decodeURIComponent(new URL(url).pathname.split('/').pop() || '') } catch { return '' }
+      })() || 'document.pdf'
+      const filename = name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`
+      loadPdfFile(new File([bytes], filename, { type: 'application/pdf' }))
+      setShowUrlModal(false)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      // On the web, a thrown TypeError usually means a CORS block.
+      const isCors = !window.electronAPI && err instanceof TypeError
+      alert(isCors ? t('url.corsBlocked') : t('url.loadFailed', { error: msg }))
+    } finally {
+      setUrlLoading(false)
+    }
   }, [loadPdfFile])
 
   // ── Electron: open-file (file association / CLI arg) ──────────────────────
@@ -414,6 +483,7 @@ export default function App() {
     isPanelOpen,
     onTogglePanel: () => setIsPanelOpen(v => !v),
     onUpload: handleUpload,
+    onOpenUrl: () => setShowUrlModal(true),
     onExportPdf: handleExportPdf,
     onExportHtml: handleExportHtml,
     onExportImages: handleExportImages,
@@ -434,6 +504,7 @@ export default function App() {
     onWatermarkClick: handleWatermarkClick,
     onDeleteSelected: handleDeleteSelected,
     onResetMarkups: handleResetMarkups,
+    hasMarkups: annotations.some(a => a.type === 'pen' || a.type === 'rectangle'),
   }
 
   const panelVisible = isPanelOpen && !!pdfDoc && viewMode !== 'fullscreen'
@@ -547,11 +618,25 @@ export default function App() {
                 onGridPageClick={handleGridPageClick}
                 onFullscreenExit={handleFullscreenExit}
                 onCurrentPageChange={setCurrentPage}
+                search={showSearch ? { matches: search.matches, activeIndex: search.activeIndex } : undefined}
               />
             </ErrorBoundary>
           )}
         </main>
       </div>
+
+      {/* Find bar (Ctrl+F) */}
+      {showSearch && pdfDoc && (
+        <SearchBar
+          total={search.matches.length}
+          activeIndex={search.activeIndex}
+          isSearching={search.isSearching}
+          onChange={q => search.run(q)}
+          onNext={search.next}
+          onPrev={search.prev}
+          onClose={() => { setShowSearch(false); search.clear() }}
+        />
+      )}
 
       {/* Lazy-loaded modals — Suspense fallback is `null` because the user
           clicked a button, so a tiny load delay is acceptable. */}
@@ -561,6 +646,13 @@ export default function App() {
         )}
         {showWatermarkConfig && (
           <WatermarkConfig onConfirm={handleWatermarkConfirm} onCancel={handleWatermarkCancel} />
+        )}
+        {showUrlModal && (
+          <OpenUrlModal
+            loading={urlLoading}
+            onSubmit={handleOpenUrl}
+            onCancel={() => { if (!urlLoading) setShowUrlModal(false) }}
+          />
         )}
       </Suspense>
       {toast && (
