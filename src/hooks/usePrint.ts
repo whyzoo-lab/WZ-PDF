@@ -2,8 +2,22 @@ import { useCallback, useEffect, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { Annotation } from '../types/annotation'
 import { annotationsForPage } from '../types/annotation'
-import { PDF_RENDER_SCALE } from '../utils/constants'
 import { getOrRenderPage } from './usePdfPage'
+
+/**
+ * Print render scale, independent of the on-screen render scale.
+ *
+ * The cached canvas in `usePdfPage` is rendered at 1.5x (≈108 DPI) — fine for
+ * the display, blurry on paper. Re-render fresh at 2.5x for print (≈180 DPI
+ * baseline, scaled up further by the printer driver) so output matches what
+ * Chrome's built-in PDF viewer produces.
+ *
+ * Tradeoff: each A4 canvas is ~3.1M pixels (~12 MB raw RGBA) at this scale.
+ * For very large documents (100+ pages) this still fits in a typical
+ * browser's memory because images are serialized to JPEG (~500 KB each).
+ */
+const PRINT_RENDER_SCALE = 2.5
+const PRINT_JPEG_QUALITY = 0.98  // higher than display because text is unforgiving
 
 interface UsePrintArgs {
   pdfDoc: PDFDocumentProxy | null
@@ -37,16 +51,23 @@ async function renderPageWithAnnotations(
   pageNumber: number,
   annotations: Annotation[],
 ): Promise<HTMLImageElement> {
-  const data = await getOrRenderPage(pdfDoc, pageNumber)
-  const scale = PDF_RENDER_SCALE  // cached canvas is rendered at this scale
-
-  // Composite onto a FRESH canvas — never mutate the cached one.
+  // Re-render the page fresh at print scale instead of reusing the cached
+  // on-screen canvas — that one is at PDF_RENDER_SCALE (1.5x) and prints fuzzy.
+  // `getOrRenderPage` is still called so other view code's cache stays warm,
+  // but the bytes we paint are the high-res ones.
+  await getOrRenderPage(pdfDoc, pageNumber)
+  const page = await pdfDoc.getPage(pageNumber)
+  const viewport = page.getViewport({ scale: PRINT_RENDER_SCALE })
   const out = document.createElement('canvas')
-  out.width = data.canvas.width
-  out.height = data.canvas.height
+  out.width = viewport.width
+  out.height = viewport.height
   const ctx = out.getContext('2d')
   if (!ctx) throw new Error('2d context unavailable')
-  ctx.drawImage(data.canvas, 0, 0)
+  await page.render({ canvas: out, viewport }).promise
+
+  // Annotation coordinates are in PDF points; multiply by the same scale to
+  // match the freshly-rendered canvas pixel grid.
+  const scale = PRINT_RENDER_SCALE
 
   const pageAnnotations = annotationsForPage(annotations, pageNumber)
 
@@ -93,7 +114,7 @@ async function renderPageWithAnnotations(
     }
   }
 
-  return loadImage(out.toDataURL('image/jpeg', 0.95))
+  return loadImage(out.toDataURL('image/jpeg', PRINT_JPEG_QUALITY))
 }
 
 /**
@@ -108,7 +129,8 @@ async function renderPageWithAnnotations(
  *   2. Drop them into a single `#wz-print-root` container under <body>.
  *   3. Toggle `data-wz-printing` on <body> so the print CSS hides the app
  *      shell and shows only the print root.
- *   4. Call window.print() (web) or electronAPI.printWindow() (desktop).
+ *   4. Call window.print() (web AND desktop — Electron's Chromium shows the
+ *      same rich print-preview UI as a browser, so we use it everywhere).
  *   5. Clean up after the print dialog closes.
  *
  * `isPrinting` is exposed so the UI can show a "준비 중..." overlay because
@@ -145,11 +167,14 @@ export function usePrint({ pdfDoc, numPages, annotations }: UsePrintArgs) {
       // Give the browser one frame to apply the print stylesheet
       await new Promise(r => requestAnimationFrame(() => r(null)))
 
-      if (window.electronAPI?.printWindow) {
-        await window.electronAPI.printWindow()
-      } else {
-        window.print()
-      }
+      // Always use window.print() — the renderer's Chromium gives us the rich
+      // Chrome print-preview UI in both the web build AND Electron. We used to
+      // route through electronAPI.printWindow → webContents.print() in the
+      // desktop build, but that opens the OS *system* print dialog (no real
+      // preview on Windows) and ignored some of our print CSS. window.print()
+      // is synchronous-ish — it returns after the dialog closes, which is what
+      // our cleanup code below depends on.
+      window.print()
     } catch (err) {
       console.error('[print] failed:', err)
       alert(`인쇄 준비 실패: ${err instanceof Error ? err.message : String(err)}`)

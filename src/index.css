@@ -148,11 +148,22 @@ canvas {
     background: white !important;
   }
 
+  /* Each page-image must occupy EXACTLY one printed sheet.
+     Old approach (`width: 100%; height: auto`) failed when the PDF's aspect
+     ratio differed even slightly from the paper's: the image then exceeded
+     the sheet by a hair, spilled to a second sheet that was almost empty,
+     and the `break-after: always` advanced to the next image → every other
+     printed page came out blank.
+     Fix: force the image into a 100vw × 100vh box and let `object-fit:
+     contain` letterbox it to preserve aspect ratio. The image can never
+     overflow the page anymore. */
   body[data-wz-printing] #wz-print-root img[data-wz-print] {
     display: block !important;
-    width: 100% !important;
-    height: auto !important;
-    max-width: 100% !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    object-fit: contain !important;
     margin: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;

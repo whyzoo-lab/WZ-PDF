@@ -41,10 +41,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     error?: string
   }> => ipcRenderer.invoke('export-exe', pdfData),
 
-  // ── Print ───────────────────────────────────────────────────────────────
-  /** Invoke the native OS print dialog. */
-  printWindow: (): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('print-window'),
+  // (No print IPC: the renderer calls window.print() directly so the Chrome
+  // print-preview UI shows up in the desktop app instead of the OS dialog.)
 
   // ── Help ────────────────────────────────────────────────────────────────
   /** Open the help document in the user's default browser (lang: 'ko' | 'en'). */

@@ -27,8 +27,8 @@ interface Window {
       error?: string
     }>
 
-    /** Open the native OS print dialog. */
-    printWindow: () => Promise<{ success: boolean; error?: string }>
+    // printWindow removed — renderer uses window.print() directly to get the
+    // Chrome-style print-preview UI in the desktop app.
 
     /** Open the help document in the user's default browser (lang: 'ko' | 'en'). */
     openHelp: (lang?: string) => Promise<{ success: boolean; error?: string }>

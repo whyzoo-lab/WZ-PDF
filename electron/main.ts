@@ -313,16 +313,10 @@ ipcMain.handle('open-help', async (_event, lang?: unknown) => {
   }
 })
 
-// ── IPC: print-window ───────────────────────────────────────────────────────
-ipcMain.handle('print-window', async (event) => {
-  const targetWin = BrowserWindow.fromWebContents(event.sender)
-  if (!targetWin) return { success: false, error: 'No window found' }
-  return new Promise((resolve) => {
-    targetWin.webContents.print({ silent: false, printBackground: true }, (success, failureReason) => {
-      resolve({ success, error: failureReason })
-    })
-  })
-})
+// (The previous `print-window` IPC used `webContents.print()`, which opens
+// the OS system print dialog with no real preview on Windows. The renderer
+// now calls `window.print()` directly instead — same Chromium under Electron
+// gives us the proper Chrome-style print preview in the desktop app too.)
 
 // ── App lifecycle ───────────────────────────────────────────────────────────
 
