@@ -6,6 +6,8 @@ import { usePdfPage } from '../../hooks/usePdfPage'
 import { AnnotationLayer } from '../annotations/AnnotationLayer'
 import { PdfTextLayer } from './PdfTextLayer'
 import type { TextLayerHighlight } from './PdfTextLayer'
+import { OcrTextLayer } from './OcrTextLayer'
+import type { OcrPageResult } from '../../types/ocr'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { annotationsForPage } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
@@ -35,6 +37,7 @@ interface PdfPageProps {
   onAnnotationAdd: (annotation: OmitId<Annotation>) => void
   /** Search hits to highlight on this page (single-view search). */
   searchHighlights?: TextLayerHighlight[]
+  ocrResult?: OcrPageResult
 }
 
 function PdfPageInner({
@@ -52,6 +55,7 @@ function PdfPageInner({
   onAnnotationUpdate,
   onAnnotationAdd,
   searchHighlights,
+  ocrResult,
 }: PdfPageProps) {
   const { pageData, isLoading } = usePdfPage(pdfDoc, pageNumber)
 
@@ -346,6 +350,15 @@ function PdfPageInner({
               background: '#FFFFFF',
             })
           } : undefined}
+        />
+      )}
+      {ocrResult && ocrResult.words.length > 0 && (
+        <OcrTextLayer
+          words={ocrResult.words}
+          scale={effectiveZoom}
+          width={stageWidth}
+          height={stageHeight}
+          highlights={searchHighlights}
         />
       )}
     </div>

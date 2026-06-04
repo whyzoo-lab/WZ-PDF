@@ -8,6 +8,7 @@ import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import type { AppMode, ViewMode } from '../../types/viewModes'
 import type { SearchMatch } from '../../hooks/useSearch'
 import type { TextLayerHighlight } from './PdfTextLayer'
+import type { OcrPageResult } from '../../types/ocr'
 
 interface PdfViewerProps {
   pdfDoc: PDFDocumentProxy
@@ -32,6 +33,8 @@ interface PdfViewerProps {
   onCurrentPageChange: (page: number) => void
   /** Active search results (single-view highlighting). */
   search?: { matches: SearchMatch[]; activeIndex: number }
+  /** Per-page OCR results (single-view text layer + search). */
+  ocrResults?: Map<number, OcrPageResult>
 }
 
 export function PdfViewer({
@@ -54,6 +57,7 @@ export function PdfViewer({
   onFullscreenExit,
   onCurrentPageChange,
   search,
+  ocrResults,
 }: PdfViewerProps) {
   // Group search hits by page → highlight descriptors, marking the active one.
   const highlightsByPage = React.useMemo(() => {
@@ -170,6 +174,7 @@ export function PdfViewer({
             {...sharedAnnotationProps}
             pageNumber={pageNum}
             searchHighlights={highlightsByPage.get(pageNum)}
+            ocrResult={ocrResults?.get(pageNum)}
           />
         </div>
       ))}
