@@ -399,6 +399,13 @@ export function ActionBar({
                 WZ PDF
               </span>
               <span className="hidden sm:inline text-xs text-gray-500 ml-1">{t('app.tagline')}</span>
+              {/* Version pill — injected at build time from package.json via Vite's `define`. */}
+              <span
+                className="ml-1 hidden sm:inline rounded-full border border-gray-700 px-2 py-px text-[10px] font-medium text-gray-400 tabular-nums"
+                title="App version"
+              >
+                v{__APP_VERSION__}
+              </span>
             </div>
           )}
 
