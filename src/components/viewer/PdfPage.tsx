@@ -15,6 +15,7 @@ import { annotationsForPage } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
 import { toStoredCoords } from '../../utils/coordinates'
 import { PDF_RENDER_SCALE } from '../../utils/constants'
+import { sampleBackgroundColor } from '../../utils/sampleBgColor'
 
 // Visual constants for volatile markups
 const PEN_COLOR        = '#FFFF00'
@@ -271,8 +272,18 @@ function PdfPageInner({
   const isDrawing = activeMode === 'pen' || activeMode === 'rectangle'
 
   // Shared by the pdfjs text layer and the OCR text layer: turn an inline text
-  // edit into a `textEdit` annotation (white patch + new text over the region).
+  // edit into a `textEdit` annotation. The patch is filled with the region's
+  // sampled background colour (not plain white) so it blends into coloured /
+  // off-white / scanned paper; falls back to white if the canvas can't be read.
   const commitTextEdit = (edit: TextEditCommit) => {
+    const background =
+      sampleBackgroundColor(
+        pageData.canvas,
+        edit.x * PDF_RENDER_SCALE,
+        edit.y * PDF_RENDER_SCALE,
+        edit.width * PDF_RENDER_SCALE,
+        edit.height * PDF_RENDER_SCALE,
+      ) ?? '#FFFFFF'
     onAnnotationAdd({
       type: 'textEdit',
       page: pageNumber,
@@ -284,7 +295,7 @@ function PdfPageInner({
       text: edit.text,
       fontSize: edit.fontSize,
       color: '#000000',
-      background: '#FFFFFF',
+      background,
     })
   }
 
