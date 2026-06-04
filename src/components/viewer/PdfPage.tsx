@@ -6,7 +6,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { usePdfPage } from '../../hooks/usePdfPage'
 import { AnnotationLayer } from '../annotations/AnnotationLayer'
 import { PdfTextLayer } from './PdfTextLayer'
-import type { TextLayerHighlight } from './PdfTextLayer'
+import type { TextLayerHighlight, TextEditCommit } from './PdfTextLayer'
 import { OcrTextLayer } from './OcrTextLayer'
 import type { OcrPageResult } from '../../types/ocr'
 import { t } from '../../i18n'
@@ -270,6 +270,24 @@ function PdfPageInner({
 
   const isDrawing = activeMode === 'pen' || activeMode === 'rectangle'
 
+  // Shared by the pdfjs text layer and the OCR text layer: turn an inline text
+  // edit into a `textEdit` annotation (white patch + new text over the region).
+  const commitTextEdit = (edit: TextEditCommit) => {
+    onAnnotationAdd({
+      type: 'textEdit',
+      page: pageNumber,
+      x: edit.x,
+      y: edit.y,
+      width: edit.width,
+      height: edit.height,
+      rotation: 0,
+      text: edit.text,
+      fontSize: edit.fontSize,
+      color: '#000000',
+      background: '#FFFFFF',
+    })
+  }
+
   // Double-click an un-recognized page (not while a drawing/placement tool is
   // active) to OCR it, with the scanning animation radiating from the click.
   const handleDoubleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -363,21 +381,7 @@ function PdfPageInner({
           width={stageWidth}
           height={stageHeight}
           highlights={searchHighlights}
-          onEditCommit={appMode === 'editor' ? (edit) => {
-            onAnnotationAdd({
-              type: 'textEdit',
-              page: pageNumber,
-              x: edit.x,
-              y: edit.y,
-              width: edit.width,
-              height: edit.height,
-              rotation: 0,
-              text: edit.text,
-              fontSize: edit.fontSize,
-              color: '#000000',
-              background: '#FFFFFF',
-            })
-          } : undefined}
+          onEditCommit={appMode === 'editor' ? commitTextEdit : undefined}
         />
       )}
       {ocrResult && ocrResult.words.length > 0 && (
@@ -387,6 +391,7 @@ function PdfPageInner({
           width={stageWidth}
           height={stageHeight}
           highlights={searchHighlights}
+          onEditCommit={appMode === 'editor' ? commitTextEdit : undefined}
         />
       )}
       {/* Scanning animation while OCR recognizes this page. A double-click

@@ -206,6 +206,15 @@ canvas {
   0%   { width: 0; height: 0; opacity: 0.9; }
   100% { width: 260%; height: 260%; opacity: 0; }
 }
+/* Editor mode: hint that recognized regions can be double-clicked to edit. */
+.wz-ocr-span.wz-ocr-editable {
+  cursor: text;
+}
+.wz-ocr-span.wz-ocr-editable:hover {
+  background: rgba(56, 189, 248, 0.22);
+  outline: 1px dashed rgba(56, 189, 248, 0.8);
+  border-radius: 2px;
+}
 /* One-shot reveal flash on each recognized region when results first appear. */
 .wz-ocr-span.wz-ocr-reveal {
   animation: wz-ocr-reveal 0.7s ease-out both;
