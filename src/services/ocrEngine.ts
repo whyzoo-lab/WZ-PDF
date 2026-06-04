@@ -18,13 +18,22 @@ export function initOcr(): Promise<OcrInstance> {
   if (initPromise) return initPromise
   initPromise = (async () => {
     try {
+      // onnxruntime-web wasm location:
+      //   - Production (Electron file:// / static): bundled offline at /ocr/wasm/.
+      //   - Dev (vite): Vite's dev server refuses to serve a /public file as a
+      //     dynamically-imported module (ort imports its `.mjs` glue), so we load
+      //     the runtime from the version-matched jsDelivr CDN instead. Dev needs
+      //     internet for OCR; the shipped app is fully offline.
+      const ORT_VERSION = '1.26.0' // keep in sync with the onnxruntime-web dependency
+      const wasmPaths = import.meta.env.DEV
+        ? `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`
+        : '/ocr/wasm/'
       const ocr = await PaddleOCR.create({
         ocrVersion: 'PP-OCRv5',
         // numThreads:1 → single-threaded wasm so we don't depend on
         // SharedArrayBuffer / cross-origin isolation (which we can't guarantee
-        // under Electron file:// or static hosting). backend 'auto' still tries
-        // WebGPU first and falls back to (single-threaded) wasm.
-        ortOptions: { backend: 'wasm', wasmPaths: '/ocr/wasm/', numThreads: 1 },
+        // under Electron file:// or static hosting).
+        ortOptions: { backend: 'wasm', wasmPaths, numThreads: 1 },
         worker: true,
         textDetectionModelName: 'PP-OCRv5_mobile_det',
         textDetectionModelAsset: { url: '/ocr/models/PP-OCRv5_mobile_det.tar' },
