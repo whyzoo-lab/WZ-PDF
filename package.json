@@ -29,6 +29,7 @@
     "build": "tsc -b && vite build",
     "build:icon": "node scripts/build-icon.cjs",
     "build:og": "node scripts/build-og.cjs",
+    "setup:ocr": "python scripts/build-ocr-assets.py",
     "build:exe": "npm run build:icon && tsc -p tsconfig.electron.json && tsc -b && vite build && electron-builder --win portable && electron-builder --win nsis",
     "lint": "eslint .",
     "preview": "vite preview",

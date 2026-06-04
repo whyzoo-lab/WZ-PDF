@@ -20,7 +20,11 @@ export function initOcr(): Promise<OcrInstance> {
     try {
       const ocr = await PaddleOCR.create({
         ocrVersion: 'PP-OCRv5',
-        ortOptions: { backend: 'auto', wasmPaths: '/ocr/wasm/' },
+        // numThreads:1 → single-threaded wasm so we don't depend on
+        // SharedArrayBuffer / cross-origin isolation (which we can't guarantee
+        // under Electron file:// or static hosting). backend 'auto' still tries
+        // WebGPU first and falls back to (single-threaded) wasm.
+        ortOptions: { backend: 'wasm', wasmPaths: '/ocr/wasm/', numThreads: 1 },
         worker: true,
         textDetectionModelName: 'PP-OCRv5_mobile_det',
         textDetectionModelAsset: { url: '/ocr/models/PP-OCRv5_mobile_det.tar' },

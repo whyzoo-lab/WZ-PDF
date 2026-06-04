@@ -41,3 +41,6 @@ deploy.bat
 # Claude Code session data (launch configs, transcripts, allow-list) — local-only.
 .claude/
 
+
+# Bundled OCR model + wasm binaries (~56MB) — regenerate via: npm run setup:ocr
+public/ocr/
