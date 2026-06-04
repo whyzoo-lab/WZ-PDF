@@ -27,6 +27,7 @@ interface LazyPdfPageProps {
   onAnnotationAdd: (annotation: OmitId<Annotation>) => void
   searchHighlights?: import('./PdfTextLayer').TextLayerHighlight[]
   ocrResult?: import('../../types/ocr').OcrPageResult
+  ocrActive?: boolean
 }
 
 /**

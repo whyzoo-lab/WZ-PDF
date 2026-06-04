@@ -8,6 +8,7 @@ import { PdfTextLayer } from './PdfTextLayer'
 import type { TextLayerHighlight } from './PdfTextLayer'
 import { OcrTextLayer } from './OcrTextLayer'
 import type { OcrPageResult } from '../../types/ocr'
+import { t } from '../../i18n'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { annotationsForPage } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
@@ -38,6 +39,8 @@ interface PdfPageProps {
   /** Search hits to highlight on this page (single-view search). */
   searchHighlights?: TextLayerHighlight[]
   ocrResult?: OcrPageResult
+  /** True while OCR is recognizing this page — shows the scanning animation. */
+  ocrActive?: boolean
 }
 
 function PdfPageInner({
@@ -56,6 +59,7 @@ function PdfPageInner({
   onAnnotationAdd,
   searchHighlights,
   ocrResult,
+  ocrActive,
 }: PdfPageProps) {
   const { pageData, isLoading } = usePdfPage(pdfDoc, pageNumber)
 
@@ -360,6 +364,19 @@ function PdfPageInner({
           height={stageHeight}
           highlights={searchHighlights}
         />
+      )}
+      {/* Scanning animation while OCR recognizes this page. */}
+      {ocrActive && (
+        <div
+          className="wz-ocr-scanning no-print"
+          style={{ position: 'absolute', top: 0, left: 0, width: stageWidth, height: stageHeight }}
+        >
+          <div className="wz-ocr-scanline" />
+          <span className="wz-ocr-badge">
+            <span className="wz-ocr-badge-dot" />
+            {t('ocr.recognizing')}
+          </span>
+        </div>
       )}
     </div>
   )

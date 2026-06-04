@@ -644,6 +644,7 @@ export default function App() {
                 onCurrentPageChange={setCurrentPage}
                 search={showSearch ? { matches: search.matches, activeIndex: search.activeIndex } : undefined}
                 ocrResults={ocr.ocrResults}
+                ocrActivePage={ocr.ocrActivePage}
               />
             </ErrorBoundary>
           )}

@@ -9,6 +9,8 @@ export interface UseOcrReturn {
   ocrResults: Map<number, OcrPageResult>
   ocrProgress: { done: number; total: number } | null
   isOcrRunning: boolean
+  /** Page currently being recognized (drives the scanning animation), or null. */
+  ocrActivePage: number | null
   ocrError: string | null
   runPage: (page: number) => Promise<void>
   runAll: () => Promise<void>
@@ -20,6 +22,7 @@ export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOc
   const [ocrResults, setOcrResults] = useState<Map<number, OcrPageResult>>(new Map())
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null)
   const [isOcrRunning, setIsOcrRunning] = useState(false)
+  const [ocrActivePage, setOcrActivePage] = useState<number | null>(null)
   const [ocrError, setOcrError] = useState<string | null>(null)
   const resultsRef = useRef(ocrResults)
   resultsRef.current = ocrResults
@@ -30,6 +33,7 @@ export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOc
   useEffect(() => {
     setOcrResults(new Map())
     setOcrError(null)
+    setOcrActivePage(null)
   }, [pdfDoc])
 
   const ocrOnePage = useCallback(async (page: number): Promise<OcrPageResult> => {
@@ -37,6 +41,7 @@ export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOc
     if (cached && cached.status === 'done') return cached
     if (!pdfDoc) return { page, words: [], status: 'error', durationMs: 0 }
     const started = performance.now()
+    setOcrActivePage(page) // mark this page as "recognizing" for the overlay
     try {
       const { predict } = await import('../services/ocrEngine')
       const { canvas } = await getOrRenderPage(pdfDoc, page)
@@ -57,7 +62,7 @@ export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOc
     setIsOcrRunning(true)
     setOcrError(null)
     try { store(await ocrOnePage(page)) }
-    finally { setIsOcrRunning(false) }
+    finally { setIsOcrRunning(false); setOcrActivePage(null) }
   }, [ocrOnePage, store])
 
   const runAll = useCallback(async () => {
@@ -74,11 +79,16 @@ export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOc
     } finally {
       setIsOcrRunning(false)
       setOcrProgress(null)
+      setOcrActivePage(null)
     }
   }, [numPages, ocrOnePage, store])
 
   const cancel = useCallback(() => { abortRef.current = true }, [])
-  const clear = useCallback(() => { setOcrResults(new Map()); setOcrError(null) }, [])
+  const clear = useCallback(() => {
+    setOcrResults(new Map())
+    setOcrError(null)
+    setOcrActivePage(null)
+  }, [])
 
-  return { ocrResults, ocrProgress, isOcrRunning, ocrError, runPage, runAll, cancel, clear }
+  return { ocrResults, ocrProgress, isOcrRunning, ocrActivePage, ocrError, runPage, runAll, cancel, clear }
 }

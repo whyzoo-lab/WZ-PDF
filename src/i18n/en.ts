@@ -88,6 +88,7 @@ export const en = {
   'ocr.noText': 'No text recognized',
   'ocr.engineError': 'OCR engine failed to load',
   'ocr.cancel': 'Cancel OCR',
+  'ocr.recognizing': 'Recognizing…',
 
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': 'Find in document',

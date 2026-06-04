@@ -35,6 +35,8 @@ interface PdfViewerProps {
   search?: { matches: SearchMatch[]; activeIndex: number }
   /** Per-page OCR results (single-view text layer + search). */
   ocrResults?: Map<number, OcrPageResult>
+  /** Page currently being recognized (drives the scanning animation). */
+  ocrActivePage?: number | null
 }
 
 export function PdfViewer({
@@ -53,6 +55,7 @@ export function PdfViewer({
   onAnnotationSelect,
   onAnnotationUpdate,
   onAnnotationAdd,
+  ocrActivePage,
   onGridPageClick,
   onFullscreenExit,
   onCurrentPageChange,
@@ -175,6 +178,7 @@ export function PdfViewer({
             pageNumber={pageNum}
             searchHighlights={highlightsByPage.get(pageNum)}
             ocrResult={ocrResults?.get(pageNum)}
+            ocrActive={ocrActivePage === pageNum}
           />
         </div>
       ))}

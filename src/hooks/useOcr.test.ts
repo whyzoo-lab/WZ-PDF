@@ -32,6 +32,15 @@ describe('useOcr', () => {
     expect(predictMock).toHaveBeenCalledTimes(1)
   })
 
+  it('tracks the active page during a run and clears it afterwards', async () => {
+    predictMock.mockResolvedValue([{ box: [[0,0],[3,0],[3,3],[0,3]], text: 'a', score: 1 }])
+    const { result } = renderHook(() => useOcr(fakeDoc, 2))
+    expect(result.current.ocrActivePage).toBeNull()
+    await act(async () => { await result.current.runAll() })
+    // After the whole-doc run completes, the scanning indicator must be cleared.
+    expect(result.current.ocrActivePage).toBeNull()
+  })
+
   it('isolates a per-page failure during whole-doc run', async () => {
     predictMock
       .mockResolvedValueOnce([{ box: [[0,0],[3,0],[3,3],[0,3]], text: 'a', score: 1 }])

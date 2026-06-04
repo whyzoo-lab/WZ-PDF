@@ -88,6 +88,7 @@ export const ko = {
   'ocr.noText': '인식된 텍스트가 없습니다',
   'ocr.engineError': 'OCR 엔진 로드 실패',
   'ocr.cancel': 'OCR 취소',
+  'ocr.recognizing': '인식 중…',
 
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': '문서에서 찾기',
