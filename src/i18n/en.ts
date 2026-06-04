@@ -84,6 +84,10 @@ export const en = {
   // ── OCR ───────────────────────────────────────────────────────────────────
   'ocr.runCurrent': 'OCR (current page)',
   'ocr.runAll': 'OCR (whole document)',
+  'ocr.progress': 'OCR {done}/{total}',
+  'ocr.noText': 'No text recognized',
+  'ocr.engineError': 'OCR engine failed to load',
+  'ocr.cancel': 'Cancel OCR',
 
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': 'Find in document',

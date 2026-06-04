@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { getOrRenderPage } from './usePdfPage'
-import { predict } from '../services/ocrEngine'
 import { lineToWord } from '../utils/ocrCoords'
 import { PDF_RENDER_SCALE } from '../utils/constants'
 import type { OcrPageResult } from '../types/ocr'
@@ -32,6 +31,7 @@ export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOc
     if (!pdfDoc) return { page, words: [], status: 'error', durationMs: 0 }
     const started = performance.now()
     try {
+      const { predict } = await import('../services/ocrEngine')
       const { canvas } = await getOrRenderPage(pdfDoc, page)
       const lines = await predict(canvas)
       const words = lines.map(l => lineToWord(l, PDF_RENDER_SCALE)).filter(w => w.text.length > 0)

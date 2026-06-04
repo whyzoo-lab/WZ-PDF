@@ -84,6 +84,10 @@ export const ko = {
   // ── OCR ───────────────────────────────────────────────────────────────────
   'ocr.runCurrent': 'OCR (현재 페이지)',
   'ocr.runAll': 'OCR (전체 문서)',
+  'ocr.progress': 'OCR {done}/{total}',
+  'ocr.noText': '인식된 텍스트가 없습니다',
+  'ocr.engineError': 'OCR 엔진 로드 실패',
+  'ocr.cancel': 'OCR 취소',
 
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': '문서에서 찾기',

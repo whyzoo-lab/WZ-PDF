@@ -36,6 +36,9 @@ export default defineConfig({
           if (id.includes('node_modules/konva') || id.includes('node_modules/react-konva')) {
             return 'vendor-konva'
           }
+          if (id.includes('node_modules/@paddleocr') || id.includes('onnxruntime-web') || id.includes('@techstark/opencv-js')) {
+            return 'vendor-paddleocr'
+          }
         },
       },
     },
