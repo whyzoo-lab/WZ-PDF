@@ -35,7 +35,11 @@ export interface UseSearchReturn {
   active: SearchMatch | null
 }
 
-export function useSearch(pdfDoc: PDFDocumentProxy | null, numPages: number): UseSearchReturn {
+export function useSearch(
+  pdfDoc: PDFDocumentProxy | null,
+  numPages: number,
+  ocrProvider?: (page: number) => string[] | undefined,
+): UseSearchReturn {
   const [query, setQuery] = useState('')
   const [matches, setMatches] = useState<SearchMatch[]>([])
   const [activeIndex, setActiveIndex] = useState(0)
@@ -54,11 +58,16 @@ export function useSearch(pdfDoc: PDFDocumentProxy | null, numPages: number): Us
       cacheRef.current = { doc, pages: new Map() }
     }
     const hit = cacheRef.current.pages.get(page)
-    if (hit) return hit
+    if (hit && !(hit.concat.length === 0 && ocrProvider?.(page)?.length)) return hit
 
     const pg = await doc.getPage(page)
     const content = await pg.getTextContent()
-    const items = content.items.map(it => ('str' in it ? it.str : ''))
+    let items = content.items.map(it => ('str' in it ? it.str : ''))
+    // Scanned page (no pdfjs text) → use OCR words if available.
+    if (items.join('').trim().length === 0) {
+      const ocrItems = ocrProvider?.(page)
+      if (ocrItems && ocrItems.length > 0) items = ocrItems
+    }
     const offsets: number[] = []
     let concat = ''
     for (const s of items) {
@@ -68,7 +77,7 @@ export function useSearch(pdfDoc: PDFDocumentProxy | null, numPages: number): Us
     const result: PageText = { items, concat: concat.toLowerCase(), offsets }
     cacheRef.current.pages.set(page, result)
     return result
-  }, [])
+  }, [ocrProvider])
 
   const run = useCallback(async (q: string) => {
     setQuery(q)

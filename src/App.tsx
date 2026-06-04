@@ -77,7 +77,10 @@ export default function App() {
   // ── Hooks: feature bundles ────────────────────────────────────────────────
   useFitZoom({ pdfDoc, viewMode, rotation, setZoom })
   const ocr = useOcr(pdfDoc, numPages)
-  const search = useSearch(pdfDoc, numPages)
+  const search = useSearch(pdfDoc, numPages, (page) => {
+    const r = ocr.ocrResults.get(page)
+    return r && r.status === 'done' ? r.words.map(w => w.text) : undefined
+  })
   const { handlePrint, isPrinting, printProgress } = usePrint({ pdfDoc, numPages, annotations })
   const {
     isExporting,
