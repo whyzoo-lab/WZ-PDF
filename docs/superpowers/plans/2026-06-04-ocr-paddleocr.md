@@ -296,11 +296,12 @@ describe('ocrEngine', () => {
   })
 
   it('predict normalizes SDK output to RawOcrLine[]', async () => {
+    // Real SDK shape (confirmed from @paddleocr/paddleocr-js types):
+    //   predict() -> OcrResult[]; OcrResult.items[] = { poly: [number,number][], text, score }
     predictMock.mockResolvedValue([{
-      // shape mirrors the SDK; adjust field names here only if Task 0 differs
-      rec_texts: ['hi'],
-      rec_scores: [0.8],
-      dt_polys: [[[1,2],[3,2],[3,4],[1,4]]],
+      image: { width: 100, height: 100 },
+      items: [{ poly: [[1,2],[3,2],[3,4],[1,4]], text: 'hi', score: 0.8 }],
+      metrics: {}, runtime: {},
     }])
     const canvas = document.createElement('canvas')
     const lines = await predict(canvas)
@@ -321,15 +322,17 @@ Expected: FAIL — `./ocrEngine` missing.
 
 - [ ] **Step 3: Implement**
 
-Create `src/services/ocrEngine.ts` (top comment records the Task 0 field names):
+Create `src/services/ocrEngine.ts` (shape confirmed from the SDK's own TypeScript types):
 ```typescript
-// SDK result shape confirmed in Task 0 PoC:
-//   predict(canvas) -> [{ dt_polys: number[][][], rec_texts: string[], rec_scores: number[] }]
-// If Task 0 found different field names, adjust ONLY the normalization below.
+// SDK result shape (from @paddleocr/paddleocr-js types):
+//   create(opts) -> PaddleOCR; predict(canvas) -> OcrResult[]
+//   OcrResult = { image:{width,height}, items: OcrResultItem[], metrics, runtime }
+//   OcrResultItem = { poly: [number,number][], text: string, score: number }
 import { PaddleOCR } from '@paddleocr/paddleocr-js'
+import type { OcrResult } from '@paddleocr/paddleocr-js'
 import type { RawOcrLine } from '../types/ocr'
 
-type OcrInstance = { predict: (img: HTMLCanvasElement) => Promise<unknown[]> }
+type OcrInstance = { predict: (img: HTMLCanvasElement) => Promise<OcrResult[]> }
 
 let instance: OcrInstance | null = null
 let initPromise: Promise<OcrInstance> | null = null
@@ -361,21 +364,17 @@ export function initOcr(): Promise<OcrInstance> {
 }
 
 /** Normalize the SDK's per-image result into RawOcrLine[]. */
-function normalize(raw: unknown): RawOcrLine[] {
-  const r = raw as { dt_polys?: number[][][]; rec_texts?: string[]; rec_scores?: number[] }
-  const polys = r.dt_polys ?? []
-  const texts = r.rec_texts ?? []
-  const scores = r.rec_scores ?? []
-  return polys.map((poly, i) => ({
-    box: poly.map(p => [p[0], p[1]] as [number, number]),
-    text: texts[i] ?? '',
-    score: scores[i] ?? 0,
+function normalize(result: OcrResult): RawOcrLine[] {
+  return result.items.map(it => ({
+    box: it.poly.map(p => [p[0], p[1]] as [number, number]),
+    text: it.text,
+    score: it.score,
   }))
 }
 
 export async function predict(canvas: HTMLCanvasElement): Promise<RawOcrLine[]> {
   const ocr = await initOcr()
-  const out = await ocr.predict(canvas)
+  const out = await ocr.predict(canvas) // OcrResult[] — one per input image
   const first = out[0]
   if (!first) return []
   return normalize(first)
