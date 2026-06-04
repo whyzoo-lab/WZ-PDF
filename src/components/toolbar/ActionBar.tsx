@@ -195,6 +195,7 @@ export interface ActionBarProps {
   hasMarkups: boolean
   onRunOcr: () => void
   onRunOcrAll: () => void
+  onCancelOcr: () => void
   isOcrRunning: boolean
   ocrProgress: { done: number; total: number } | null
   // ── Export menu ────────────────────────────────────────────────────────────
@@ -236,6 +237,7 @@ export function ActionBar({
   hasMarkups,
   onRunOcr,
   onRunOcrAll,
+  onCancelOcr,
   isOcrRunning,
   ocrProgress,
   onExportPdf,
@@ -626,6 +628,15 @@ export function ActionBar({
                 <span className="ml-1 text-[10px] text-gray-400 tabular-nums">
                   {ocrProgress.done}/{ocrProgress.total}
                 </span>
+              )}
+              {ocrProgress && (
+                <button
+                  type="button"
+                  onClick={onCancelOcr}
+                  aria-label={t('ocr.cancel')}
+                  title={t('ocr.cancel')}
+                  className="ml-1 px-1 text-[10px] rounded hover:bg-gray-700 text-red-300"
+                >✕</button>
               )}
             </div>
           )}

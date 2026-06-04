@@ -265,7 +265,9 @@ export default function App() {
 
   // ── Surface OCR engine errors as a Toast ──────────────────────────────────
   useEffect(() => {
-    if (ocr.ocrError) showToast(ocr.ocrError)
+    if (ocr.ocrError) {
+      showToast(ocr.ocrError.startsWith('OCR engine failed to load') ? t('ocr.engineError') : ocr.ocrError)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ocr.ocrError])
 
@@ -524,6 +526,7 @@ export default function App() {
     hasMarkups: annotations.some(a => a.type === 'pen' || a.type === 'rectangle'),
     onRunOcr: () => ocr.runPage(currentPage),
     onRunOcrAll: ocr.runAll,
+    onCancelOcr: ocr.cancel,
     isOcrRunning: ocr.isOcrRunning,
     ocrProgress: ocr.ocrProgress,
   }

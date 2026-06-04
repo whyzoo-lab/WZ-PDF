@@ -34,6 +34,7 @@ const defaultProps = {
   hasMarkups: false,
   onRunOcr: vi.fn(),
   onRunOcrAll: vi.fn(),
+  onCancelOcr: vi.fn(),
   isOcrRunning: false,
   ocrProgress: null,
   onExportPdf: vi.fn(),

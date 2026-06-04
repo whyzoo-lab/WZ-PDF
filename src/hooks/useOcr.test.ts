@@ -52,4 +52,15 @@ describe('useOcr', () => {
     await act(async () => { await result.current.runPage(1) })
     await waitFor(() => expect(result.current.ocrError).toMatch(/failed to load/))
   })
+
+  it('clears results when the pdfDoc changes', async () => {
+    predictMock.mockResolvedValue([{ box: [[0,0],[3,0],[3,3],[0,3]], text: 'a', score: 1 }])
+    const doc1 = {} as import('pdfjs-dist').PDFDocumentProxy
+    const doc2 = {} as import('pdfjs-dist').PDFDocumentProxy
+    const { result, rerender } = renderHook(({ doc }) => useOcr(doc, 1), { initialProps: { doc: doc1 } })
+    await act(async () => { await result.current.runPage(1) })
+    expect(result.current.ocrResults.size).toBe(1)
+    rerender({ doc: doc2 })
+    expect(result.current.ocrResults.size).toBe(0)
+  })
 })

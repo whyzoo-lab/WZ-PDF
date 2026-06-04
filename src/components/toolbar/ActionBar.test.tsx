@@ -13,7 +13,7 @@ function baseProps(over: Partial<ActionBarProps>): ActionBarProps {
     onViewModeChange: noop, onZoomIn: noop, onZoomOut: noop, onZoomReset: noop, onRotate: noop,
     onModeChange: noop, onStampSelect: noop, onSignatureClick: noop, onWatermarkClick: noop,
     onDeleteSelected: noop, onResetMarkups: noop, hasMarkups: false,
-    onRunOcr: noop, onRunOcrAll: noop, isOcrRunning: false, ocrProgress: null,
+    onRunOcr: noop, onRunOcrAll: noop, onCancelOcr: noop, isOcrRunning: false, ocrProgress: null,
     ...over,
   } as ActionBarProps
 }
@@ -29,5 +29,12 @@ describe('ActionBar OCR control', () => {
   it('disables the OCR control while running', () => {
     render(<ActionBar {...baseProps({ isOcrRunning: true })} />)
     expect(screen.getByRole('button', { name: /OCR \(current page\)|OCR \(현재 페이지\)/i })).toBeDisabled()
+  })
+
+  it('shows a cancel button during a whole-doc run and fires onCancelOcr', () => {
+    const onCancelOcr = vi.fn()
+    render(<ActionBar {...baseProps({ ocrProgress: { done: 2, total: 10 }, isOcrRunning: true, onCancelOcr })} />)
+    fireEvent.click(screen.getByRole('button', { name: /Cancel OCR|OCR 취소/i }))
+    expect(onCancelOcr).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { getOrRenderPage } from './usePdfPage'
 import { lineToWord } from '../utils/ocrCoords'
@@ -24,6 +24,13 @@ export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOc
   const resultsRef = useRef(ocrResults)
   resultsRef.current = ocrResults
   const abortRef = useRef(false)
+
+  // Reset OCR state whenever the document changes (new file, or page CRUD which
+  // produces a fresh PDFDocumentProxy). Stale results would map to wrong pages.
+  useEffect(() => {
+    setOcrResults(new Map())
+    setOcrError(null)
+  }, [pdfDoc])
 
   const ocrOnePage = useCallback(async (page: number): Promise<OcrPageResult> => {
     const cached = resultsRef.current.get(page)
