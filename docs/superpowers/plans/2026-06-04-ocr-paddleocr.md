@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-04-ocr-paddleocr-design.md`
 
+**Release version:** This feature ships as **1.2.0** (minor bump — new user-facing capability). The version bump happens in Task 8.
+
 ---
 
 ## Key existing code this plan builds on
@@ -1162,11 +1164,18 @@ Run `npm run dev`, open a **Korean scanned PDF**, then verify:
 - A page with native pdfjs text is unaffected (no duplicate OCR overlay).
 - Forcing an engine-load failure (temporarily rename `public/ocr/wasm/`) shows a Toast and does not crash the app.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Bump version to 1.2.0**
+
+In `package.json`, change `"version"` to `"1.2.0"` (minor bump — new user-facing OCR capability). The ActionBar version pill (`v{__APP_VERSION__}`) then reflects it automatically.
+
+Run: `npm run test:run`
+Expected: all PASS (pill shows `v1.2.0` in dev).
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add vite.config.ts src/hooks/useOcr.ts src/i18n/en.ts src/i18n/ko.ts THIRD-PARTY-NOTICES.md
-git commit -m "feat: lazy-load OCR chunk, i18n keys, third-party notices"
+git add vite.config.ts src/hooks/useOcr.ts src/i18n/en.ts src/i18n/ko.ts THIRD-PARTY-NOTICES.md package.json
+git commit -m "feat: lazy-load OCR chunk, i18n keys, third-party notices; release 1.2.0"
 ```
 
 ---
