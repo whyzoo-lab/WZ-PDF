@@ -645,6 +645,7 @@ export default function App() {
                 search={showSearch ? { matches: search.matches, activeIndex: search.activeIndex } : undefined}
                 ocrResults={ocr.ocrResults}
                 ocrActivePage={ocr.ocrActivePage}
+                onOcrRequest={ocr.runPage}
               />
             </ErrorBoundary>
           )}

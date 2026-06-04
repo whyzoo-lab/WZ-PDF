@@ -28,6 +28,7 @@ interface LazyPdfPageProps {
   searchHighlights?: import('./PdfTextLayer').TextLayerHighlight[]
   ocrResult?: import('../../types/ocr').OcrPageResult
   ocrActive?: boolean
+  onOcrRequest?: (page: number) => void
 }
 
 /**

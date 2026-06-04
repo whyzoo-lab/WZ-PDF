@@ -35,6 +35,10 @@ export function OcrTextLayer({ words, scale, width, height, highlights }: OcrTex
         const cls = ['wz-ocr-span']
         if (hlSet.has(i)) cls.push('wz-search-hl')
         if (activeSet.has(i)) cls.push('wz-search-hl-active')
+        // One-shot reveal flash that plays when the layer first mounts (i.e.
+        // right after recognition completes), staggered so the regions light up
+        // in reading order. Capped so large pages still finish quickly.
+        cls.push('wz-ocr-reveal')
         return (
           <span
             key={i}
@@ -52,6 +56,7 @@ export function OcrTextLayer({ words, scale, width, height, highlights }: OcrTex
               cursor: 'text',
               pointerEvents: 'auto',
               userSelect: 'text',
+              animationDelay: `${Math.min(i * 0.04, 0.6)}s`,
             }}
           >
             {w.text}

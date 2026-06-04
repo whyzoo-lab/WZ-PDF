@@ -1,4 +1,5 @@
 import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva'
 import type Konva from 'konva'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
@@ -41,6 +42,8 @@ interface PdfPageProps {
   ocrResult?: OcrPageResult
   /** True while OCR is recognizing this page — shows the scanning animation. */
   ocrActive?: boolean
+  /** Request OCR for this page (e.g. on double-click of an un-recognized page). */
+  onOcrRequest?: (page: number) => void
 }
 
 function PdfPageInner({
@@ -60,6 +63,7 @@ function PdfPageInner({
   searchHighlights,
   ocrResult,
   ocrActive,
+  onOcrRequest,
 }: PdfPageProps) {
   const { pageData, isLoading } = usePdfPage(pdfDoc, pageNumber)
 
@@ -71,6 +75,13 @@ function PdfPageInner({
   type RectDraw = { kind: 'rect'; x: number; y: number; w: number; h: number }
   const [draft, setDraft] = useState<PenDraw | RectDraw | null>(null)
   const draftRef = useRef<PenDraw | RectDraw | null>(null)
+
+  // Origin point (CSS px, relative to the page box) for the OCR scanning
+  // animation when it was kicked off by a double-click. null → the default
+  // top→bottom sweep (e.g. when triggered from the toolbar button).
+  const [ocrOrigin, setOcrOrigin] = useState<{ x: number; y: number } | null>(null)
+  // Drop the origin once recognition ends so the next run starts clean.
+  useEffect(() => { if (!ocrActive) setOcrOrigin(null) }, [ocrActive])
 
   // Commit the in-progress draft as a real annotation. Reused by Stage's
   // own onMouseUp and the window-level safety net below.
@@ -259,10 +270,23 @@ function PdfPageInner({
 
   const isDrawing = activeMode === 'pen' || activeMode === 'rectangle'
 
+  // Double-click an un-recognized page (not while a drawing/placement tool is
+  // active) to OCR it, with the scanning animation radiating from the click.
+  const handleDoubleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (!onOcrRequest || ocrResult || ocrActive) return
+    if (!(activeMode === null || activeMode === 'select')) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    setOcrOrigin({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+    onOcrRequest(pageNumber)
+  }
+
   // The outer div holds the layout box (swapped dimensions for 90/270).
   // The inner Stage is rendered at the original orientation and rotated via CSS.
   return (
-    <div style={{ width: stageWidth, height: stageHeight, overflow: 'hidden', position: 'relative' }}>
+    <div
+      onDoubleClick={handleDoubleClick}
+      style={{ width: stageWidth, height: stageHeight, overflow: 'hidden', position: 'relative' }}
+    >
       <div style={{ position: 'absolute', top: 0, left: 0, ...rotationStyle }}>
         <Stage
           width={renderedW}
@@ -365,13 +389,18 @@ function PdfPageInner({
           highlights={searchHighlights}
         />
       )}
-      {/* Scanning animation while OCR recognizes this page. */}
+      {/* Scanning animation while OCR recognizes this page. A double-click
+          origin radiates a ripple from the click; otherwise a top→bottom sweep. */}
       {ocrActive && (
         <div
           className="wz-ocr-scanning no-print"
           style={{ position: 'absolute', top: 0, left: 0, width: stageWidth, height: stageHeight }}
         >
-          <div className="wz-ocr-scanline" />
+          {ocrOrigin ? (
+            <div className="wz-ocr-radial" style={{ left: ocrOrigin.x, top: ocrOrigin.y }} />
+          ) : (
+            <div className="wz-ocr-scanline" />
+          )}
           <span className="wz-ocr-badge">
             <span className="wz-ocr-badge-dot" />
             {t('ocr.recognizing')}

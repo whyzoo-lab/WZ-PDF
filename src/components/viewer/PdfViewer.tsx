@@ -37,6 +37,8 @@ interface PdfViewerProps {
   ocrResults?: Map<number, OcrPageResult>
   /** Page currently being recognized (drives the scanning animation). */
   ocrActivePage?: number | null
+  /** Request OCR for a page (double-click on an un-recognized page). */
+  onOcrRequest?: (page: number) => void
 }
 
 export function PdfViewer({
@@ -56,6 +58,7 @@ export function PdfViewer({
   onAnnotationUpdate,
   onAnnotationAdd,
   ocrActivePage,
+  onOcrRequest,
   onGridPageClick,
   onFullscreenExit,
   onCurrentPageChange,
@@ -179,6 +182,7 @@ export function PdfViewer({
             searchHighlights={highlightsByPage.get(pageNum)}
             ocrResult={ocrResults?.get(pageNum)}
             ocrActive={ocrActivePage === pageNum}
+            onOcrRequest={onOcrRequest}
           />
         </div>
       ))}
