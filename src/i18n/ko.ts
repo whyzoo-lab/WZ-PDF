@@ -81,6 +81,10 @@ export const ko = {
   'tool.openFile': '파일 열기…',
   'tool.openUrl': 'URL로 열기…',
 
+  // ── OCR ───────────────────────────────────────────────────────────────────
+  'ocr.runCurrent': 'OCR (현재 페이지)',
+  'ocr.runAll': 'OCR (전체 문서)',
+
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': '문서에서 찾기',
   'search.noResults': '결과 없음',

@@ -81,6 +81,10 @@ export const en = {
   'tool.openFile': 'Open file…',
   'tool.openUrl': 'Open from URL…',
 
+  // ── OCR ───────────────────────────────────────────────────────────────────
+  'ocr.runCurrent': 'OCR (current page)',
+  'ocr.runAll': 'OCR (whole document)',
+
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': 'Find in document',
   'search.noResults': 'No results',

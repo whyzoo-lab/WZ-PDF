@@ -8,6 +8,7 @@ import { useFitZoom } from './hooks/useFitZoom'
 import { usePrint } from './hooks/usePrint'
 import { useExporters } from './hooks/useExporters'
 import { usePageOperations } from './hooks/usePageOperations'
+import { useOcr } from './hooks/useOcr'
 import { useSearch } from './hooks/useSearch'
 import { SearchBar } from './components/SearchBar'
 import type { Annotation, OmitId } from './types/annotation'
@@ -75,6 +76,7 @@ export default function App() {
 
   // ── Hooks: feature bundles ────────────────────────────────────────────────
   useFitZoom({ pdfDoc, viewMode, rotation, setZoom })
+  const ocr = useOcr(pdfDoc, numPages)
   const search = useSearch(pdfDoc, numPages)
   const { handlePrint, isPrinting, printProgress } = usePrint({ pdfDoc, numPages, annotations })
   const {
@@ -257,6 +259,12 @@ export default function App() {
     window.addEventListener('scroll', pin, true)
     return () => window.removeEventListener('scroll', pin, true)
   }, [])
+
+  // ── Surface OCR engine errors as a Toast ──────────────────────────────────
+  useEffect(() => {
+    if (ocr.ocrError) showToast(ocr.ocrError)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ocr.ocrError])
 
   // ── Scroll to the active search match ─────────────────────────────────────
   // Navigate to the match's page (reusing the single-view scroll mechanism);
@@ -511,6 +519,10 @@ export default function App() {
     onDeleteSelected: handleDeleteSelected,
     onResetMarkups: handleResetMarkups,
     hasMarkups: annotations.some(a => a.type === 'pen' || a.type === 'rectangle'),
+    onRunOcr: () => ocr.runPage(currentPage),
+    onRunOcrAll: ocr.runAll,
+    isOcrRunning: ocr.isOcrRunning,
+    ocrProgress: ocr.ocrProgress,
   }
 
   const panelVisible = isPanelOpen && !!pdfDoc && viewMode !== 'fullscreen'
@@ -625,6 +637,7 @@ export default function App() {
                 onFullscreenExit={handleFullscreenExit}
                 onCurrentPageChange={setCurrentPage}
                 search={showSearch ? { matches: search.matches, activeIndex: search.activeIndex } : undefined}
+                ocrResults={ocr.ocrResults}
               />
             </ErrorBoundary>
           )}

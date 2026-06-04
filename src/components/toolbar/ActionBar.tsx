@@ -122,6 +122,12 @@ const IconPrint = () => (
     <circle cx="15" cy="11" r="0.8" fill="currentColor" stroke="none"/>
   </svg>
 )
+const IconOcr = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+    <path d="M7 8h6M7 12h10M7 16h8" />
+  </svg>
+)
 // Eraser — distinct from the (similar-looking) view/rotate icons.
 const IconReset = () => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="w-4 h-4">
@@ -187,6 +193,10 @@ export interface ActionBarProps {
   onResetMarkups: () => void
   /** True when any pen/rectangle markup exists — gates the eraser button. */
   hasMarkups: boolean
+  onRunOcr: () => void
+  onRunOcrAll: () => void
+  isOcrRunning: boolean
+  ocrProgress: { done: number; total: number } | null
   // ── Export menu ────────────────────────────────────────────────────────────
   onExportPdf: () => void
   onExportHtml: () => void
@@ -224,6 +234,10 @@ export function ActionBar({
   onDeleteSelected,
   onResetMarkups,
   hasMarkups,
+  onRunOcr,
+  onRunOcrAll,
+  isOcrRunning,
+  ocrProgress,
   onExportPdf,
   onExportHtml,
   onExportImages,
@@ -587,6 +601,33 @@ export function ActionBar({
               title={t('tool.print')}
               aria-label={t('tool.print')}
             ><IconPrint /></button>
+          )}
+
+          {/* OCR — visible for any loaded PDF, both viewer and editor modes */}
+          {hasPdf && (
+            <div className="relative inline-flex items-center">
+              <button
+                type="button"
+                onClick={onRunOcr}
+                disabled={isOcrRunning || numPages === 0}
+                aria-label={t('ocr.runCurrent')}
+                title={t('ocr.runCurrent')}
+                className="p-2 rounded hover:bg-gray-700 disabled:opacity-40 text-gray-200"
+              ><IconOcr /></button>
+              <button
+                type="button"
+                onClick={onRunOcrAll}
+                disabled={isOcrRunning || numPages === 0}
+                aria-label={t('ocr.runAll')}
+                title={t('ocr.runAll')}
+                className="px-1 text-[10px] rounded hover:bg-gray-700 disabled:opacity-40 text-gray-300"
+              >ALL</button>
+              {ocrProgress && (
+                <span className="ml-1 text-[10px] text-gray-400 tabular-nums">
+                  {ocrProgress.done}/{ocrProgress.total}
+                </span>
+              )}
+            </div>
           )}
 
           {/* Export dropdown — absolute child renders below this section, no overflow parent */}
