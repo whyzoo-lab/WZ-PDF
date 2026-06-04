@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session, protocol } from 'electron'
 import path from 'path'
 import fs from 'fs'
 
@@ -13,11 +13,19 @@ const MAX_FILE_SIZE = 500 * 1024 * 1024  // 500 MB — defensive cap on read-fil
 // We only inject CSP for packaged builds where those aren't needed.
 const PROD_CSP = [
   "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",  // wasm-unsafe-eval: required by pdfjs
+  // 'wasm-unsafe-eval': pdfjs + onnxruntime-web compile WebAssembly.
+  // 'unsafe-eval': the OCR runtime (onnxruntime-web + @techstark/opencv-js, both
+  //   Emscripten builds) calls new Function()/eval() unconditionally; without it
+  //   the OCR worker throws. Risk is contained: script-src still forbids loading
+  //   external or inline scripts, eval is only reached by these bundled libs, and
+  //   pdfjs does not execute PDF-embedded JavaScript, so no attacker-controlled
+  //   string reaches eval.
+  "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",      // inline style attrs from React/Konva
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' blob:",
+  // data:: onnxruntime-web fetches its inlined wasm via a data: URL.
+  "connect-src 'self' blob: data:",
   "worker-src 'self' blob:",                // pdfjs worker is a blob URL
   "frame-src 'none'",
   "object-src 'none'",
@@ -33,6 +41,56 @@ function installCsp() {
         'Content-Security-Policy': [PROD_CSP],
       },
     })
+  })
+}
+
+// ── Custom app:// scheme for the packaged renderer ──────────────────────────
+// The packaged app cannot load the renderer from file://: PaddleOCR.js (and
+// onnxruntime-web) refuse to run under a file: origin — they require an
+// http(s)/app origin so model assets can be fetched. We register a privileged
+// `app://` scheme (standard + secure + fetch-enabled, so it behaves like a
+// normal web origin for fetch() and CSP 'self') and serve the Vite build from
+// it. Registration must happen before `app.whenReady()`.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, codeCache: true },
+  },
+])
+
+const APP_MIME: Record<string, string> = {
+  '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
+  '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm',
+  '.tar': 'application/x-tar', '.png': 'image/png', '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff',
+  '.txt': 'text/plain', '.map': 'application/json',
+}
+
+/**
+ * Serve the Vite-built renderer (and the bundled OCR model/wasm assets under
+ * dist/ocr/) over app://, attaching the production CSP to every response. The
+ * onHeadersReceived CSP does not fire for custom protocols, so the CSP lives
+ * here instead.
+ */
+function serveAppProtocol() {
+  const dist = path.join(__dirname, '..', 'dist')
+  protocol.handle('app', async (request) => {
+    const url = new URL(request.url)
+    let pathname = decodeURIComponent(url.pathname)
+    if (pathname === '/' || pathname === '') pathname = '/index.html'
+    const filePath = path.normalize(path.join(dist, pathname))
+    // Never serve outside the dist directory.
+    if (!filePath.startsWith(dist)) return new Response('forbidden', { status: 403 })
+    try {
+      const data = await fs.promises.readFile(filePath)
+      const type = APP_MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+      return new Response(data, {
+        status: 200,
+        headers: { 'Content-Type': type, 'Content-Security-Policy': PROD_CSP },
+      })
+    } catch {
+      return new Response('not found', { status: 404 })
+    }
   })
 }
 
@@ -73,7 +131,7 @@ function createWindow() {
   // PDF content shouldn't be able to navigate the host window.
   win.webContents.on('will-navigate', (event, navUrl) => {
     const allowed =
-      navUrl.startsWith('file://') ||
+      navUrl.startsWith('app://') ||
       navUrl.startsWith('http://localhost:5173')
     if (!allowed) {
       event.preventDefault()
@@ -90,8 +148,9 @@ function createWindow() {
   })
 
   if (app.isPackaged) {
-    // Production: load the Vite-built renderer from the asar bundle
-    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+    // Production: serve the Vite build over app:// (NOT file://) so the OCR
+    // runtime, which refuses to run on a file: origin, works. See serveAppProtocol.
+    win.loadURL('app://bundle/index.html')
   } else {
     // Development: load from the Vite dev server
     win.loadURL('http://localhost:5173')
@@ -322,6 +381,7 @@ ipcMain.handle('open-help', async (_event, lang?: unknown) => {
 
 app.whenReady().then(() => {
   installCsp()
+  if (app.isPackaged) serveAppProtocol()
   Menu.setApplicationMenu(null)
   createWindow()
 

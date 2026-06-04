@@ -18,8 +18,13 @@ export function initOcr(): Promise<OcrInstance> {
   if (initPromise) return initPromise
   initPromise = (async () => {
     try {
+      // Resolve OCR asset URLs against the document, so they work both over
+      // http(s) (web: http://host/ocr/…) AND under Electron's file:// production
+      // load (file:///…/dist/ocr/…). A leading-slash absolute path like
+      // `/ocr/…` would resolve to the FILESYSTEM ROOT under file:// and 404.
+      const assetBase = new URL('./', document.baseURI).href // ends with '/'
       // onnxruntime-web wasm location:
-      //   - Production (Electron file:// / static): bundled offline at /ocr/wasm/.
+      //   - Production (Electron file:// / static): bundled offline next to the app.
       //   - Dev (vite): Vite's dev server refuses to serve a /public file as a
       //     dynamically-imported module (ort imports its `.mjs` glue), so we load
       //     the runtime from the version-matched jsDelivr CDN instead. Dev needs
@@ -27,7 +32,7 @@ export function initOcr(): Promise<OcrInstance> {
       const ORT_VERSION = '1.26.0' // keep in sync with the onnxruntime-web dependency
       const wasmPaths = import.meta.env.DEV
         ? `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`
-        : '/ocr/wasm/'
+        : `${assetBase}ocr/wasm/`
       const ocr = await PaddleOCR.create({
         ocrVersion: 'PP-OCRv5',
         // numThreads:1 → single-threaded wasm so we don't depend on
@@ -36,14 +41,15 @@ export function initOcr(): Promise<OcrInstance> {
         ortOptions: { backend: 'wasm', wasmPaths, numThreads: 1 },
         worker: true,
         textDetectionModelName: 'PP-OCRv5_mobile_det',
-        textDetectionModelAsset: { url: '/ocr/models/PP-OCRv5_mobile_det.tar' },
+        textDetectionModelAsset: { url: `${assetBase}ocr/models/PP-OCRv5_mobile_det.tar` },
         textRecognitionModelName: 'korean_PP-OCRv5_mobile_rec',
-        textRecognitionModelAsset: { url: '/ocr/models/korean_PP-OCRv5_mobile_rec.tar' },
+        textRecognitionModelAsset: { url: `${assetBase}ocr/models/korean_PP-OCRv5_mobile_rec.tar` },
       }) as OcrInstance
       instance = ocr
       return ocr
     } catch (err) {
       initPromise = null
+      console.error('[ocrEngine] init failed:', err)
       throw new Error(`OCR engine failed to load: ${err instanceof Error ? err.message : String(err)}`)
     }
   })()

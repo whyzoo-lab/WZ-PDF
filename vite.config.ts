@@ -29,15 +29,21 @@ export default defineConfig({
         // independently from app code. pdfjs is loaded as a separate Worker
         // (handled by Vite automatically) so it's not listed here. Rolldown
         // exposes manualChunks only via the function form.
+        //
+        // NOTE: do NOT add @paddleocr / onnxruntime-web / opencv-js here. Forcing
+        // them into a manual chunk made rolldown hoist that chunk into the entry's
+        // STATIC graph (a `import "./vendor-paddleocr.js"` at the top of the entry
+        // + a modulepreload), so the OCR runtime evaluated at startup. That runs
+        // opencv's emscripten `new Function(...)`, which the packaged app's CSP
+        // (script-src without 'unsafe-eval') blocks → the renderer died with a
+        // blank screen. Left alone, the OCR deps stay inside the dynamically
+        // imported `ocrEngine` chunk and only load when the user runs OCR.
         manualChunks: (id: string) => {
           if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
             return 'vendor-react'
           }
           if (id.includes('node_modules/konva') || id.includes('node_modules/react-konva')) {
             return 'vendor-konva'
-          }
-          if (id.includes('node_modules/@paddleocr') || id.includes('onnxruntime-web') || id.includes('@techstark/opencv-js')) {
-            return 'vendor-paddleocr'
           }
         },
       },
