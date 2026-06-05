@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session, protocol } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session, protocol, net } from 'electron'
 import path from 'path'
 import fs from 'fs'
 
@@ -370,6 +370,34 @@ ipcMain.handle('open-help', async (_event, lang?: unknown) => {
     console.error('[WZ PDF] open-help failed:', msg)
     return { success: false, error: msg }
   }
+})
+
+// ── Optional update check ───────────────────────────────────────────────────
+// The renderer asks the main process (no CORS) to read the version manifest;
+// it compares against the running version and shows a dismissible toast. The
+// download is opened in the user's browser — we never auto-install.
+const UPDATE_MANIFEST_URL = 'https://whyzoo.com/WzPDF/version.php'
+const UPDATE_HOST_PREFIX = 'https://whyzoo.com/'
+
+ipcMain.handle('check-update', async () => {
+  try {
+    const res = await net.fetch(UPDATE_MANIFEST_URL, { cache: 'no-store' })
+    if (!res.ok) return null
+    return await res.json()
+  } catch (err) {
+    console.error('[WZ PDF] check-update failed:', err instanceof Error ? err.message : String(err))
+    return null
+  }
+})
+
+ipcMain.handle('open-download', async (_event, rawUrl?: unknown) => {
+  // Only ever open the trusted update host — never an arbitrary renderer-supplied URL.
+  const target =
+    typeof rawUrl === 'string' && rawUrl.startsWith(UPDATE_HOST_PREFIX)
+      ? rawUrl
+      : 'https://whyzoo.com/WzPDF/download.php'
+  await shell.openExternal(target)
+  return { success: true }
 })
 
 // (The previous `print-window` IPC used `webContents.print()`, which opens

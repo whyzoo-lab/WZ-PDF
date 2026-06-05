@@ -32,7 +32,25 @@ interface Window {
 
     /** Open the help document in the user's default browser (lang: 'ko' | 'en'). */
     openHelp: (lang?: string) => Promise<{ success: boolean; error?: string }>
+
+    /** Fetch the version manifest via the main process (avoids CORS). null on error. */
+    checkUpdate: () => Promise<UpdateManifest | null>
+
+    /** Open the download page (validated to the update host) in the default browser. */
+    openDownload: (url?: string) => Promise<{ success: boolean }>
   }
+}
+
+/** Shape of https://whyzoo.com/WzPDF/version.php */
+interface UpdateManifest {
+  product?: string
+  available?: boolean
+  version?: string
+  filename?: string
+  size_bytes?: number
+  released_at?: string
+  download_url?: string
+  file_url?: string
 }
 
 /** App version, injected at build time from package.json via Vite's `define`. */

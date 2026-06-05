@@ -90,6 +90,11 @@ export const en = {
   'ocr.cancel': 'Cancel OCR',
   'ocr.recognizing': 'Recognizing…',
 
+  // ── Update notice ─────────────────────────────────────────────────────────
+  'update.available': 'New version {version} available',
+  'update.download': 'Download the latest',
+  'update.dismiss': 'Dismiss',
+
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': 'Find in document',
   'search.noResults': 'No results',

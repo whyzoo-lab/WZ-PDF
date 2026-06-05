@@ -16,6 +16,8 @@ import type { AppMode, ViewMode } from './types/viewModes'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
 import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
+import { UpdateToast } from './components/UpdateToast'
+import { useUpdateCheck } from './hooks/useUpdateCheck'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { t, LANG } from './i18n'
 
@@ -76,6 +78,7 @@ export default function App() {
 
   // ── Hooks: feature bundles ────────────────────────────────────────────────
   useFitZoom({ pdfDoc, viewMode, rotation, setZoom })
+  const update = useUpdateCheck()
   const ocr = useOcr(pdfDoc, numPages)
   const search = useSearch(pdfDoc, numPages, (page) => {
     const r = ocr.ocrResults.get(page)
@@ -266,7 +269,11 @@ export default function App() {
   // ── Surface OCR engine errors as a Toast ──────────────────────────────────
   useEffect(() => {
     if (ocr.ocrError) {
-      showToast(ocr.ocrError.startsWith('OCR engine failed to load') ? t('ocr.engineError') : ocr.ocrError)
+      // Keep the localized headline but append the underlying cause so failures
+      // on platforms we can't easily inspect (e.g. iOS Safari) are diagnosable.
+      const prefix = 'OCR engine failed to load: '
+      const detail = ocr.ocrError.startsWith(prefix) ? ocr.ocrError.slice(prefix.length) : ocr.ocrError
+      showToast(`${t('ocr.engineError')}: ${detail}`)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ocr.ocrError])
@@ -687,6 +694,13 @@ export default function App() {
           key={toast.id}
           message={toast.message}
           onDismiss={() => setToast(null)}
+        />
+      )}
+
+      {update && (
+        <UpdateToast
+          version={update.version}
+          onDownload={() => window.electronAPI?.openDownload?.(update.downloadUrl)}
         />
       )}
 

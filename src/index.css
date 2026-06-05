@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Update-available toast: slide in from the right. */
+.wz-update-toast { animation: wz-update-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes wz-update-in {
+  0%   { opacity: 0; transform: translateX(24px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wz-update-toast { animation: none; }
+}
+
 /* ── App shell sizing ────────────────────────────────────────────────────── */
 /* The whole app is a fixed-viewport SPA — inner panels (PdfViewer, PagePanel,
    modals) manage their own scroll. The outermost chrome must NEVER grow a

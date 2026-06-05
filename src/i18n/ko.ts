@@ -90,6 +90,11 @@ export const ko = {
   'ocr.cancel': 'OCR 취소',
   'ocr.recognizing': '인식 중…',
 
+  // ── 업데이트 알림 ─────────────────────────────────────────────────────────
+  'update.available': '새 버전 {version} 사용 가능',
+  'update.download': '최신 버전 다운로드',
+  'update.dismiss': '닫기',
+
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': '문서에서 찾기',
   'search.noResults': '결과 없음',

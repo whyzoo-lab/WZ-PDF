@@ -48,4 +48,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Open the help document in the user's default browser (lang: 'ko' | 'en'). */
   openHelp: (lang?: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('open-help', lang),
+
+  // ── Optional update check ─────────────────────────────────────────────────
+  /** Fetch the version manifest via the main process (avoids CORS). null on error. */
+  checkUpdate: (): Promise<unknown> => ipcRenderer.invoke('check-update'),
+  /** Open the download page (validated to the update host) in the default browser. */
+  openDownload: (url?: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('open-download', url),
 })
