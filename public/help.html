@@ -216,7 +216,7 @@
   <header>
     <div class="logo">WZ PDF</div>
     <div class="tagline">PDF를 쉽고 빠르게 — 사용 가이드</div>
-    <div class="version">v1.0.0</div>
+    <div class="version">v1.3.1</div>
   </header>
 
   <!-- ── 목차 ── -->
@@ -226,8 +226,10 @@
       <li><a href="#open">📂 파일 열기</a></li>
       <li><a href="#view">🖥️ 보기 방식</a></li>
       <li><a href="#pages">📄 페이지 관리</a></li>
+      <li><a href="#ocr">🔍 텍스트 인식 (OCR)</a></li>
       <li><a href="#stamp">🖊️ 도장·서명·워터마크</a></li>
       <li><a href="#markup">✏️ 화면 필기 도구</a></li>
+      <li><a href="#present">🎯 발표 도구</a></li>
       <li><a href="#export">💾 저장하기</a></li>
       <li><a href="#print">🖨️ 인쇄하기</a></li>
       <li><a href="#shortcuts">⌨️ 단축키 모음</a></li>
@@ -267,6 +269,10 @@
       <li>
         <span class="mi">📁</span>
         <span>윈도우 탐색기에서 <strong>PDF 파일을 더블클릭</strong>하면 WZ PDF가 자동으로 열립니다. <em>(설치 버전만 해당)</em></span>
+      </li>
+      <li>
+        <span class="mi">🔗</span>
+        <span>상단 <strong>Open ▾ → URL로 열기</strong>에서 PDF 직접 링크를 붙여넣으면 인터넷에 있는 PDF를 바로 불러와요. <em>(해당 사이트가 외부 접근을 막아둔 경우엔 파일을 내려받아 여세요)</em></span>
       </li>
     </ul>
   </section>
@@ -357,6 +363,47 @@
 
 
   <!-- ════════════════════════════════════════════════════════ -->
+  <!-- 텍스트 인식 (OCR)                                         -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="ocr">
+    <div class="s-head">
+      <div class="s-icon">🔍</div>
+      <div class="s-title">
+        <h2>텍스트 인식 (OCR)</h2>
+        <div class="sub">스캔한 문서·이미지 PDF에서 글자를 읽어내요 — 한국어·영어 지원</div>
+      </div>
+    </div>
+
+    <p class="lead">글자가 이미지로 들어 있어 복사·검색이 안 되는 PDF에서도, <strong>OCR</strong>을 돌리면 글자를 인식해 선택하고 복사할 수 있게 돼요. 별도 프로그램이나 인터넷 연결 없이 <strong>기기 안에서 바로</strong> 처리됩니다.</p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📄</span><span class="f-name">현재 페이지 인식</span></div>
+        <div class="f-desc">상단 <strong>OCR</strong> 메뉴에서 <strong>현재 페이지</strong>를 선택하면 지금 보고 있는 페이지만 빠르게 인식해요.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📚</span><span class="f-name">전체 문서 인식</span></div>
+        <div class="f-desc"><strong>전체 문서</strong>를 선택하면 모든 페이지를 차례로 인식해요. 진행 상황이 표시되고, 도중에 <strong>취소</strong>할 수 있어요.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🖱️</span><span class="f-name">선택 · 복사</span></div>
+        <div class="f-desc">인식이 끝나면 글자 위를 드래그해 선택하고 복사할 수 있어요. 원본 글자 위치에 맞춰 자연스럽게 잡혀요.</div>
+      </div>
+    </div>
+
+    <div class="tip tip-ok">
+      ✅ <strong>완전 오프라인:</strong> 인식은 모두 기기 안에서 처리돼요. 문서가 외부로 전송되지 않아 안심하고 쓸 수 있어요.
+    </div>
+    <div class="tip">
+      💡 <strong>이미 글자가 있는 PDF라면:</strong> OCR 없이도 <kbd>Ctrl</kbd>+<kbd>F</kbd>로 바로 검색할 수 있어요. OCR은 스캔본·사진처럼 글자가 이미지로 된 경우에 사용하세요.
+    </div>
+    <div class="tip tip-warn">
+      📱 <strong>휴대폰에서:</strong> 페이지가 크거나 기기 메모리가 빠듯하면 인식이 느리거나 멈출 수 있어요. 큰 문서는 PC에서 처리하는 것을 권장해요.
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
   <!-- 도장 / 서명 / 워터마크                                    -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="stamp">
@@ -422,6 +469,72 @@
     </div>
     <div class="tip">
       💡 <strong>전체화면에서 사용 중이라면:</strong> <kbd>ESC</kbd>를 한 번 누르면 필기가 지워지고, 한 번 더 누르면 전체화면에서 빠져나와요.
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- 발표 도구 (ZoomIt 스타일)                                 -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="present">
+    <div class="s-head">
+      <div class="s-icon">🎯</div>
+      <div class="s-title">
+        <h2>발표 도구</h2>
+        <div class="sub">전체화면에서 쓰는 강조 도구 모음 — 발표·강의에 딱 맞아요</div>
+      </div>
+    </div>
+
+    <p class="lead"><kbd>F5</kbd>로 <strong>전체화면</strong>에 들어가면 발표용 강조 도구가 켜져요. 키보드 한 글자로 도구를 바꿔가며 화면에 그리거나, 레이저로 가리키거나, 특정 부분을 확대할 수 있어요. <strong>모든 표시는 화면에만 보이고 PDF에는 저장되지 않아요.</strong></p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">✒️</span><span class="f-name"><kbd>P</kbd> 펜</span></div>
+        <div class="f-desc">드래그해서 자유롭게 선을 그려요. 핵심을 짚어줄 때 좋아요.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🖍️</span><span class="f-name"><kbd>H</kbd> 형광펜</span></div>
+        <div class="f-desc">반투명 굵은 선으로 글자 위를 칠해 강조해요.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">▭</span><span class="f-name"><kbd>R</kbd> 사각형</span></div>
+        <div class="f-desc">드래그한 영역을 네모로 감싸 강조해요.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">➤</span><span class="f-name"><kbd>A</kbd> 화살표</span></div>
+        <div class="f-desc">시작점에서 끝점까지 화살표를 그려 특정 지점을 가리켜요.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🔴</span><span class="f-name"><kbd>L</kbd> 레이저 포인터</span></div>
+        <div class="f-desc">마우스를 따라다니는 빨간 점이 떠요. 자국을 남기지 않고 가리킬 때 써요.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🔎</span><span class="f-name"><kbd>Z</kbd> 스팟 줌</span></div>
+        <div class="f-desc">마우스 위치를 중심으로 화면을 확대해요. <kbd>Ctrl</kbd>+휠로 배율을 조절할 수 있어요.</div>
+      </div>
+    </div>
+
+    <p class="lead" style="margin-top:18px">그리기 도구를 쓰는 동안 색과 굵기를 바로 바꿀 수 있어요.</p>
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🎨</span><span class="f-name"><kbd>1</kbd>~<kbd>5</kbd> 색상</span></div>
+        <div class="f-desc">빨강 · 초록 · 파랑 · 노랑 · 주황으로 펜·형광펜·사각형·화살표 색을 바꿔요.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">↔️</span><span class="f-name"><kbd>[</kbd> <kbd>]</kbd> 굵기</span></div>
+        <div class="f-desc"><kbd>[</kbd>는 가늘게, <kbd>]</kbd>는 굵게. 선 굵기를 단계별로 조절해요.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">↩️</span><span class="f-name"><kbd>Ctrl</kbd>+<kbd>Z</kbd> · <kbd>E</kbd></span></div>
+        <div class="f-desc"><kbd>Ctrl</kbd>+<kbd>Z</kbd>는 마지막 선 하나를 지우고, <kbd>E</kbd>는 그린 것을 모두 지워요.</div>
+      </div>
+    </div>
+
+    <div class="tip">
+      💡 <strong>같은 키를 다시 누르면 꺼져요:</strong> 예를 들어 <kbd>P</kbd>를 한 번 더 누르면 펜이 꺼지고 일반 보기로 돌아와요.
+    </div>
+    <div class="tip tip-warn">
+      ⎋ <strong>ESC 두 단계:</strong> 그린 내용이나 켜진 도구가 있으면 <kbd>ESC</kbd> 한 번으로 모두 정리돼요. 깨끗한 상태에서 <kbd>ESC</kbd>를 한 번 더 누르면 전체화면에서 빠져나와요.
     </div>
   </section>
 
@@ -516,12 +629,54 @@
           <div class="sc-desc">전체화면으로 보기</div>
         </div>
         <div class="sc-row">
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>F</kbd></div>
+          <div class="sc-desc">문서에서 글자 찾기 (검색)</div>
+        </div>
+        <div class="sc-row">
           <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>P</kbd></div>
           <div class="sc-desc">인쇄하기</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>휠</kbd></div>
           <div class="sc-desc">화면 확대 · 축소 (전체화면 / 전체 보기 모드 제외)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sc-group">
+      <div class="sc-group-title">🎯 발표 도구 (전체화면)</div>
+      <div class="sc-list">
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>P</kbd><span class="sc-sep">/</span><kbd>H</kbd><span class="sc-sep">/</span><kbd>R</kbd><span class="sc-sep">/</span><kbd>A</kbd></div>
+          <div class="sc-desc">펜 / 형광펜 / 사각형 / 화살표 (같은 키 다시 누르면 끄기)</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>L</kbd></div>
+          <div class="sc-desc">레이저 포인터</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Z</kbd></div>
+          <div class="sc-desc">스팟 줌 — <kbd>Ctrl</kbd>+휠로 배율 조절</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>1</kbd><span class="sc-sep">~</span><kbd>5</kbd></div>
+          <div class="sc-desc">색상 바꾸기 (빨강 · 초록 · 파랑 · 노랑 · 주황)</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>[</kbd><span class="sc-sep">/</span><kbd>]</kbd></div>
+          <div class="sc-desc">선 굵기 가늘게 / 굵게</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Z</kbd></div>
+          <div class="sc-desc">마지막 선 하나 지우기</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>E</kbd></div>
+          <div class="sc-desc">그린 것 모두 지우기</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>ESC</kbd></div>
+          <div class="sc-desc">표시 정리 → (한 번 더) 전체화면 종료</div>
         </div>
       </div>
     </div>
@@ -595,7 +750,8 @@
   </section>
 
   <footer>
-    WZ PDF &nbsp;·&nbsp; <kbd>F1</kbd> 키를 누르면 언제든 이 도움말을 다시 볼 수 있어요 😊
+    WZ PDF &nbsp;·&nbsp; <kbd>F1</kbd> 키를 누르면 언제든 이 도움말을 다시 볼 수 있어요 😊<br>
+    새 버전이 나오면 실행 시 오른쪽 위에 알림이 떠요. 클릭하면 최신 버전을 받을 수 있어요. <em>(설치 버전, 인터넷 연결 시)</em>
   </footer>
 
 </div>

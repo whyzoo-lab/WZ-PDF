@@ -216,7 +216,7 @@
   <header>
     <div class="logo">WZ PDF</div>
     <div class="tagline">Fast and simple PDF — User Guide</div>
-    <div class="version">v1.0.0</div>
+    <div class="version">v1.3.1</div>
   </header>
 
   <!-- ── Table of Contents ── -->
@@ -226,8 +226,10 @@
       <li><a href="#open">📂 Opening files</a></li>
       <li><a href="#view">🖥️ View modes</a></li>
       <li><a href="#pages">📄 Page management</a></li>
+      <li><a href="#ocr">🔍 Text recognition (OCR)</a></li>
       <li><a href="#stamp">🖊️ Stamp · Signature · Watermark</a></li>
       <li><a href="#markup">✏️ On-screen markup</a></li>
+      <li><a href="#present">🎯 Presenter tools</a></li>
       <li><a href="#export">💾 Exporting</a></li>
       <li><a href="#print">🖨️ Printing</a></li>
       <li><a href="#shortcuts">⌨️ Keyboard shortcuts</a></li>
@@ -267,6 +269,10 @@
       <li>
         <span class="mi">📁</span>
         <span><strong>Double-click a PDF in Windows Explorer</strong> and WZ PDF opens it automatically. <em>(installed version only)</em></span>
+      </li>
+      <li>
+        <span class="mi">🔗</span>
+        <span>Use <strong>Open ▾ → Open from URL</strong> and paste a direct link to load a PDF from the web. <em>(If the site blocks cross-origin access, download the file and open it directly.)</em></span>
       </li>
     </ul>
   </section>
@@ -357,6 +363,47 @@
 
 
   <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Text recognition (OCR)                                    -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="ocr">
+    <div class="s-head">
+      <div class="s-icon">🔍</div>
+      <div class="s-title">
+        <h2>Text recognition (OCR)</h2>
+        <div class="sub">Read text from scanned or image-only PDFs — Korean &amp; English</div>
+      </div>
+    </div>
+
+    <p class="lead">When a PDF holds its text as images — so you can't select or search it — running <strong>OCR</strong> recognizes the characters so you can select and copy them. It runs <strong>entirely on your device</strong>, with no extra software and no internet connection.</p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📄</span><span class="f-name">Current page</span></div>
+        <div class="f-desc">Choose <strong>Current page</strong> from the <strong>OCR</strong> menu to quickly recognize just the page you're viewing.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📚</span><span class="f-name">Whole document</span></div>
+        <div class="f-desc">Choose <strong>Whole document</strong> to recognize every page in turn. Progress is shown, and you can <strong>cancel</strong> midway.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🖱️</span><span class="f-name">Select &amp; copy</span></div>
+        <div class="f-desc">Once recognition finishes, drag over the text to select and copy it — aligned naturally to the original characters.</div>
+      </div>
+    </div>
+
+    <div class="tip tip-ok">
+      ✅ <strong>Fully offline:</strong> Recognition happens entirely on your device. Your document is never sent anywhere.
+    </div>
+    <div class="tip">
+      💡 <strong>Already has real text?</strong> You can search it directly with <kbd>Ctrl</kbd>+<kbd>F</kbd> — no OCR needed. Use OCR for scans and photos where the text is an image.
+    </div>
+    <div class="tip tip-warn">
+      📱 <strong>On phones:</strong> Large pages or tight device memory can make recognition slow or stall. For big documents, prefer running OCR on a PC.
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
   <!-- Stamp / Signature / Watermark                             -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="stamp">
@@ -422,6 +469,72 @@
     </div>
     <div class="tip">
       💡 <strong>In fullscreen:</strong> Press <kbd>ESC</kbd> once to clear markup, and again to leave fullscreen.
+    </div>
+  </section>
+
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Presenter tools (ZoomIt-style)                            -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="present">
+    <div class="s-head">
+      <div class="s-icon">🎯</div>
+      <div class="s-title">
+        <h2>Presenter tools</h2>
+        <div class="sub">A set of emphasis tools for fullscreen — built for talks &amp; lectures</div>
+      </div>
+    </div>
+
+    <p class="lead">Press <kbd>F5</kbd> to enter <strong>fullscreen</strong> and the presenter tools come alive. Switch tools with a single keystroke to draw on screen, point with a laser, or zoom into a spot. <strong>Everything shows on screen only and is never saved to the PDF.</strong></p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">✒️</span><span class="f-name"><kbd>P</kbd> Pen</span></div>
+        <div class="f-desc">Drag to draw freehand lines. Great for underlining a key point.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🖍️</span><span class="f-name"><kbd>H</kbd> Highlighter</span></div>
+        <div class="f-desc">A thick, translucent stroke that highlights over text.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">▭</span><span class="f-name"><kbd>R</kbd> Rectangle</span></div>
+        <div class="f-desc">Drag to frame an area with a box.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">➤</span><span class="f-name"><kbd>A</kbd> Arrow</span></div>
+        <div class="f-desc">Draw an arrow from start to end to point at a spot.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🔴</span><span class="f-name"><kbd>L</kbd> Laser pointer</span></div>
+        <div class="f-desc">A red dot follows your mouse. Point without leaving any marks.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🔎</span><span class="f-name"><kbd>Z</kbd> Spotlight zoom</span></div>
+        <div class="f-desc">Magnify around the cursor. Adjust the level with <kbd>Ctrl</kbd>+wheel.</div>
+      </div>
+    </div>
+
+    <p class="lead" style="margin-top:18px">While a drawing tool is active, change color and width on the fly.</p>
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🎨</span><span class="f-name"><kbd>1</kbd>–<kbd>5</kbd> Color</span></div>
+        <div class="f-desc">Red · green · blue · yellow · orange for the pen, highlighter, rectangle, and arrow.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">↔️</span><span class="f-name"><kbd>[</kbd> <kbd>]</kbd> Width</span></div>
+        <div class="f-desc"><kbd>[</kbd> thinner, <kbd>]</kbd> thicker — adjust the stroke width in steps.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">↩️</span><span class="f-name"><kbd>Ctrl</kbd>+<kbd>Z</kbd> · <kbd>E</kbd></span></div>
+        <div class="f-desc"><kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes the last stroke; <kbd>E</kbd> erases everything you drew.</div>
+      </div>
+    </div>
+
+    <div class="tip">
+      💡 <strong>Press the same key again to turn it off:</strong> e.g. press <kbd>P</kbd> once more to drop the pen and return to plain viewing.
+    </div>
+    <div class="tip tip-warn">
+      ⎋ <strong>Two-step ESC:</strong> If anything is drawn or a tool is active, one <kbd>ESC</kbd> clears it all. From a clean state, press <kbd>ESC</kbd> again to leave fullscreen.
     </div>
   </section>
 
@@ -516,12 +629,54 @@
           <div class="sc-desc">View in fullscreen</div>
         </div>
         <div class="sc-row">
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>F</kbd></div>
+          <div class="sc-desc">Find text in the document (search)</div>
+        </div>
+        <div class="sc-row">
           <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>P</kbd></div>
           <div class="sc-desc">Print</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Wheel</kbd></div>
           <div class="sc-desc">Zoom in / out (except in Fullscreen / Grid)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sc-group">
+      <div class="sc-group-title">🎯 Presenter tools (fullscreen)</div>
+      <div class="sc-list">
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>P</kbd><span class="sc-sep">/</span><kbd>H</kbd><span class="sc-sep">/</span><kbd>R</kbd><span class="sc-sep">/</span><kbd>A</kbd></div>
+          <div class="sc-desc">Pen / Highlighter / Rectangle / Arrow (press again to turn off)</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>L</kbd></div>
+          <div class="sc-desc">Laser pointer</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Z</kbd></div>
+          <div class="sc-desc">Spotlight zoom — adjust level with <kbd>Ctrl</kbd>+wheel</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>1</kbd><span class="sc-sep">–</span><kbd>5</kbd></div>
+          <div class="sc-desc">Change color (red · green · blue · yellow · orange)</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>[</kbd><span class="sc-sep">/</span><kbd>]</kbd></div>
+          <div class="sc-desc">Thinner / thicker stroke</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Z</kbd></div>
+          <div class="sc-desc">Undo the last stroke</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>E</kbd></div>
+          <div class="sc-desc">Erase everything you drew</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>ESC</kbd></div>
+          <div class="sc-desc">Clear marks → (again) exit fullscreen</div>
         </div>
       </div>
     </div>
@@ -595,7 +750,8 @@
   </section>
 
   <footer>
-    WZ PDF &nbsp;·&nbsp; Press <kbd>F1</kbd> anytime to reopen this guide 😊
+    WZ PDF &nbsp;·&nbsp; Press <kbd>F1</kbd> anytime to reopen this guide 😊<br>
+    When a new version is out, a notice appears at the top-right on launch — click it to grab the latest. <em>(installed version, with internet)</em>
   </footer>
 
 </div>
