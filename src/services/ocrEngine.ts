@@ -5,6 +5,7 @@
 import { PaddleOCR } from '@paddleocr/paddleocr-js'
 import type { OcrResult } from '@paddleocr/paddleocr-js'
 import type { RawOcrLine } from '../types/ocr'
+import { isIosWebkit } from '../utils/ocrInput'
 
 type OcrInstance = { predict: (img: HTMLCanvasElement) => Promise<OcrResult[]> }
 
@@ -40,6 +41,10 @@ export function initOcr(): Promise<OcrInstance> {
         // under Electron file:// or static hosting).
         ortOptions: { backend: 'wasm', wasmPaths, numThreads: 1 },
         worker: true,
+        // iOS WebKit has a tight memory budget; cap the detection input side so
+        // peak memory stays under the limit (the page is also downscaled before
+        // predict — see useOcr). Desktop/PC keeps the SDK default for accuracy.
+        ...(isIosWebkit() ? { textDetLimitSideLen: 736 } : {}),
         textDetectionModelName: 'PP-OCRv5_mobile_det',
         textDetectionModelAsset: { url: `${assetBase}ocr/models/PP-OCRv5_mobile_det.tar` },
         textRecognitionModelName: 'korean_PP-OCRv5_mobile_rec',
