@@ -187,6 +187,10 @@ export default function App() {
       // ── Markup shortcuts — require a PDF and not typing in an input ────────
       if (!pdfDoc || inInput) return
 
+      // In fullscreen, FullscreenView owns the (ZoomIt-style) presenter keymap,
+      // so skip the normal-view markup shortcuts (Esc two-step, 1=pen, 2=rect).
+      const inPresentation = viewMode === 'fullscreen'
+
       // ESC two-step priority:
       //   1st press — drawing mode active OR pen/rectangle markups exist:
       //               exit drawing mode + clear all markups (fullscreen stays).
@@ -194,7 +198,7 @@ export default function App() {
       //               exits fullscreen.
       // Keyboard Lock API (in FullscreenView) keeps the browser from
       // auto-exiting fullscreen on ESC, giving this handler first crack.
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !inPresentation) {
         const drawingMode = activeMode === 'pen' || activeMode === 'rectangle'
         const hasMarkups  = annotations.some(a => a.type === 'pen' || a.type === 'rectangle')
         if (drawingMode || hasMarkups) {
@@ -207,11 +211,11 @@ export default function App() {
       }
 
       // "1" → highlighter pen, "2" → red rectangle. Toggle off when re-pressed.
-      if (e.key === '1') {
+      if (e.key === '1' && !inPresentation) {
         setActiveMode(activeMode === 'pen' ? null : 'pen')
         return
       }
-      if (e.key === '2') {
+      if (e.key === '2' && !inPresentation) {
         setActiveMode(activeMode === 'rectangle' ? null : 'rectangle')
         return
       }

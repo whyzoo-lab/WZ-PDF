@@ -106,4 +106,12 @@ export const ko = {
   'errorBoundary.title': '문제가 발생했습니다',
   'errorBoundary.body': '뷰어에서 예기치 못한 오류가 발생했어요. 새로고침하면 대부분 해결됩니다.',
   'errorBoundary.reload': '새로고침',
+
+  // ── Presenter tools (fullscreen ZoomIt-style HUD) ─────────────────────────
+  'present.pen': '펜',
+  'present.highlighter': '형광펜',
+  'present.rect': '사각형',
+  'present.arrow': '화살표',
+  'present.laser': '레이저',
+  'present.zoom': '스팟 줌',
 } as const

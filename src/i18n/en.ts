@@ -106,4 +106,12 @@ export const en = {
   'errorBoundary.title': 'Something went wrong',
   'errorBoundary.body': 'The viewer hit an unexpected error. Reloading usually fixes it.',
   'errorBoundary.reload': 'Reload',
+
+  // ── Presenter tools (fullscreen ZoomIt-style HUD) ─────────────────────────
+  'present.pen': 'Pen',
+  'present.highlighter': 'Highlighter',
+  'present.rect': 'Rectangle',
+  'present.arrow': 'Arrow',
+  'present.laser': 'Laser',
+  'present.zoom': 'Spotlight zoom',
 } as const

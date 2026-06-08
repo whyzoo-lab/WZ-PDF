@@ -3,6 +3,10 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { PdfPage } from './PdfPage'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { PDF_RENDER_SCALE, ZOOM_STEP, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants'
+import { PresentationOverlay } from './PresentationOverlay'
+import { PresentationHud } from './PresentationHud'
+import { reducePresentTool, spotZoomStyle, isDrawingTool, DEFAULT_TOOL_STATE, MIN_ZOOM_SPOT, MAX_ZOOM_SPOT } from '../../utils/presentTools'
+import type { PresentStroke, PresentToolState } from '../../types/present'
 
 interface FullscreenViewProps {
   pdfDoc: PDFDocumentProxy
@@ -40,6 +44,9 @@ export function FullscreenView({
   const [currentPage, setCurrentPage] = useState(1)
   const [showOverlay, setShowOverlay] = useState(true)
   const [zoom, setZoom] = useState(1)
+  const [tool, setTool] = useState<PresentToolState>(DEFAULT_TOOL_STATE)
+  const [strokes, setStrokes] = useState<PresentStroke[]>([])
+  const [spot, setSpot] = useState<{ scale: number; x: number; y: number } | null>(null)
   const overlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wheelCooldownRef = useRef(false)
   const deltaXAccRef     = useRef(0)     // 수평 스와이프 누산기
@@ -85,6 +92,9 @@ export function FullscreenView({
     onCurrentPageChange?.(currentPage)
   }, [currentPage, onCurrentPageChange])
 
+  // Presenter strokes are per-slide and transient.
+  useEffect(() => { setStrokes([]); setSpot(null) }, [currentPage])
+
   // ── OS fullscreen lifecycle ───────────────────────────────────────────────
   // We use the Keyboard Lock API (Chrome / Electron) to capture the ESC key
   // ourselves. Without this, the browser/OS auto-exits fullscreen on ESC
@@ -119,12 +129,33 @@ export function FullscreenView({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
+        // 1st press: clear any presenter state. 2nd press (clean): exit.
+        if (strokes.length > 0 || tool.kind !== null || spot) {
+          setStrokes([]); setTool(DEFAULT_TOOL_STATE); setSpot(null)
+          return
+        }
         if (document.fullscreenElement) {
           document.exitFullscreen().then(safeExit).catch(safeExit)
         } else {
           safeExit()
         }
         return
+      }
+
+      // ── Presenter tools (ZoomIt-style) ──────────────────────────────────────
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { // undo last stroke
+        e.preventDefault(); setStrokes(s => s.slice(0, -1)); return
+      }
+      if (e.key.toLowerCase() === 'e') { e.preventDefault(); setStrokes([]); return } // erase all
+      {
+        const next = reducePresentTool(tool, e.key)
+        if (next) {
+          e.preventDefault()
+          setTool(next)
+          if (next.kind === 'zoom') setSpot({ scale: 2, x: window.innerWidth / 2, y: window.innerHeight / 2 })
+          else if (tool.kind === 'zoom') setSpot(null)
+          return
+        }
       }
 
       // ── Next page: Arrow→, Arrow↓, PageDown, Space, Enter
@@ -175,12 +206,26 @@ export function FullscreenView({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [step, maxPage, safeExit])
+  }, [step, maxPage, safeExit, tool, strokes, spot])
+
+  // ── Spotlight follows cursor ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!spot) return
+    const onMove = (e: MouseEvent) => setSpot(s => (s ? { ...s, x: e.clientX, y: e.clientY } : s))
+    window.addEventListener('mousemove', onMove)
+    return () => window.removeEventListener('mousemove', onMove)
+  }, [spot])
 
   // ── Mouse wheel ───────────────────────────────────────────────────────────
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
+
+      if (spot) {
+        const d = e.deltaY < 0 ? 0.25 : -0.25
+        setSpot(s => (s ? { ...s, scale: Math.max(MIN_ZOOM_SPOT, Math.min(MAX_ZOOM_SPOT, s.scale + d)) } : s))
+        return
+      }
 
       // Ctrl + wheel → 줌
       if (e.ctrlKey) {
@@ -218,7 +263,7 @@ export function FullscreenView({
     }
     window.addEventListener('wheel', onWheel, { passive: false })
     return () => window.removeEventListener('wheel', onWheel)
-  }, [step, maxPage])
+  }, [step, maxPage, spot])
 
   // ── Page overlay ──────────────────────────────────────────────────────────
   const resetOverlay = useCallback(() => {
@@ -260,7 +305,7 @@ export function FullscreenView({
         resetOverlay()
         // While drawing (pen / rectangle) suppress auto-advance so margin
         // clicks don't accidentally skip pages mid-stroke.
-        if (activeMode === 'pen' || activeMode === 'rectangle') return
+        if (activeMode === 'pen' || activeMode === 'rectangle' || isDrawingTool(tool.kind) || spot) return
         // Left-click on the black background (not on the PDF canvas) → next page.
         // This mirrors PowerPoint/Keynote presentation UX.
         // Canvas clicks are excluded so annotation selection still works.
@@ -270,12 +315,22 @@ export function FullscreenView({
         }
       }}
     >
-      <div className="flex items-center justify-center gap-0">
+      <div
+        className="flex items-center justify-center gap-0"
+        style={spot ? spotZoomStyle(spot.scale, spot.x, spot.y) : undefined}
+      >
         <PdfPage {...pageProps} pageNumber={currentPage} />
         {rightPage !== null && (
           <PdfPage {...pageProps} pageNumber={rightPage} />
         )}
       </div>
+
+      <PresentationOverlay
+        strokes={strokes}
+        tool={tool}
+        onAddStroke={(s) => setStrokes(prev => [...prev, s])}
+      />
+      <PresentationHud tool={tool} />
 
       {/* Page N / M overlay */}
       <div

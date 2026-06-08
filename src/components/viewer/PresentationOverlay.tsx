@@ -36,13 +36,17 @@ function renderStroke(s: PresentStroke) {
     const w = Math.abs(s.x2 - s.x1), h = Math.abs(s.y2 - s.y1)
     return <rect key={s.id} x={x} y={y} width={w} height={h} fill="none" stroke={s.color} strokeWidth={s.width} />
   }
-  const head = arrowHead(s.x1, s.y1, s.x2, s.y2, Math.max(12, s.width * 3))
-  return (
-    <g key={s.id}>
-      <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={s.color} strokeWidth={s.width} strokeLinecap="round" />
-      <polygon points={head.map(p => `${p[0]},${p[1]}`).join(' ')} fill={s.color} />
-    </g>
-  )
+  // s is narrowed to arrow here (the only remaining union member)
+  if (s.kind === 'arrow') {
+    const head = arrowHead(s.x1, s.y1, s.x2, s.y2, Math.max(12, s.width * 3))
+    return (
+      <g key={s.id}>
+        <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={s.color} strokeWidth={s.width} strokeLinecap="round" />
+        <polygon points={head.map(p => `${p[0]},${p[1]}`).join(' ')} fill={s.color} />
+      </g>
+    )
+  }
+  return null
 }
 
 export function PresentationOverlay({ strokes, tool, onAddStroke }: PresentationOverlayProps) {
