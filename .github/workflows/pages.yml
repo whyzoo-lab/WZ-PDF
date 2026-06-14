@@ -40,10 +40,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # OCR assets (~56 MB) are gitignored, so regenerate them in CI before the
-      # build copies public/ into dist/. setup:ocr needs pyyaml; the ort wasm is
-      # pulled from node_modules (hence after `npm ci`).
+      # OCR assets (~56 MB) are gitignored. Cache them keyed on the build script
+      # + lockfile (the ort wasm is copied from node_modules), so we hit Baidu
+      # CDN / HuggingFace only when those change. This avoids slow re-downloads
+      # and the anonymous-HF rate limiting (429) we hit when Pages + Release
+      # raced. The cache is OS-independent, so Pages (ubuntu) and Release
+      # (windows) share it — whichever populates it first spares the others.
+      - name: Cache OCR assets
+        id: ocr-cache
+        uses: actions/cache@v4
+        with:
+          path: public/ocr
+          key: ocr-assets-${{ hashFiles('scripts/build-ocr-assets.py', 'package-lock.json') }}
+
+      # Only download/regenerate on a cache miss. setup:ocr needs pyyaml; the
+      # ort wasm is pulled from node_modules (hence after `npm ci`).
       - name: Build OCR assets
+        if: steps.ocr-cache.outputs.cache-hit != 'true'
         run: |
           pip install pyyaml
           npm run setup:ocr
