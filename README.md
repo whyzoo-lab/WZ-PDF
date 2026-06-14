@@ -1,7 +1,7 @@
 # WZ PDF
 
-https://whyzoo.com/WzPDF/
-
+Introduce : https://whyzoo.com/WzPDF/
+Demo : https://whyzoo-lab.github.io/WZ-PDF/
 
 <img width="1871" height="995" alt="image" src="https://github.com/user-attachments/assets/11aad7cd-0b71-4f2e-8dc4-670e90bf0cd7" />
 <img width="1590" height="870" alt="image" src="https://github.com/user-attachments/assets/a7eea157-9be1-4749-bda5-076134bed0db" />
