@@ -22,8 +22,20 @@ jobs:
           node-version: 20
           cache: npm
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install dependencies
         run: npm ci
+
+      # OCR assets (~56 MB) are gitignored, so regenerate them in CI before
+      # build:exe bundles public/ — otherwise the released installer ships
+      # without OCR. setup:ocr needs pyyaml; the ort wasm comes from node_modules.
+      - name: Build OCR assets
+        run: |
+          pip install pyyaml
+          npm run setup:ocr
 
       - name: Build portable + NSIS installer
         run: npm run build:exe

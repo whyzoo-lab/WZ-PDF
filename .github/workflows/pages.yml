@@ -1,0 +1,65 @@
+name: Deploy Pages
+
+# Publish the web build to GitHub Pages on every push to main.
+# (The internal-server deploy.bat path still works; this is an additional,
+#  public, HTTPS target — required for OCR, which rejects file:// origins.)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time; cancel superseded runs.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build (web + OCR) and deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # OCR assets (~56 MB) are gitignored, so regenerate them in CI before the
+      # build copies public/ into dist/. setup:ocr needs pyyaml; the ort wasm is
+      # pulled from node_modules (hence after `npm ci`).
+      - name: Build OCR assets
+        run: |
+          pip install pyyaml
+          npm run setup:ocr
+
+      - name: Build (web)
+        run: npm run build
+
+      # configure-pages with enablement turns Pages on (source = Actions) if it
+      # isn't already; harmless once enabled.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
