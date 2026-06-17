@@ -66,7 +66,14 @@ function PdfPageInner({
   ocrActive,
   onOcrRequest,
 }: PdfPageProps) {
-  const { pageData, isLoading } = usePdfPage(pdfDoc, pageNumber)
+  // Rasterize the page to match how big it's actually shown: logical scale ×
+  // current zoom × the display's pixel density. Quantized (round up to 0.5) so
+  // small zoom nudges don't re-render; capped by MAX_RENDER_SCALE inside the hook.
+  // Zooming out keeps the higher-res canvas (the hook only upgrades), so this is
+  // effectively "max scale shown so far".
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
+  const desiredRenderScale = Math.ceil(PDF_RENDER_SCALE * zoom * dpr * 2) / 2
+  const { pageData, isLoading } = usePdfPage(pdfDoc, pageNumber, desiredRenderScale)
 
   // ── Drawing state for volatile markups (pen / rectangle) ─────────────────────
   // Stored in PDF points so it scales naturally during in-flight zoom.
@@ -276,13 +283,16 @@ function PdfPageInner({
   // sampled background colour (not plain white) so it blends into coloured /
   // off-white / scanned paper; falls back to white if the canvas can't be read.
   const commitTextEdit = (edit: TextEditCommit) => {
+    // Index into the canvas in its own pixel space: canvas px = PDF points ×
+    // the scale the page was actually rasterized at (not the logical scale).
+    const px = pageData.renderScale
     const background =
       sampleBackgroundColor(
         pageData.canvas,
-        edit.x * PDF_RENDER_SCALE,
-        edit.y * PDF_RENDER_SCALE,
-        edit.width * PDF_RENDER_SCALE,
-        edit.height * PDF_RENDER_SCALE,
+        edit.x * px,
+        edit.y * px,
+        edit.width * px,
+        edit.height * px,
       ) ?? '#FFFFFF'
     onAnnotationAdd({
       type: 'textEdit',

@@ -3,7 +3,6 @@ import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { getOrRenderPage } from './usePdfPage'
 import { lineToWord } from '../utils/ocrCoords'
 import { computeOcrScale, ocrMaxDimension } from '../utils/ocrInput'
-import { PDF_RENDER_SCALE } from '../utils/constants'
 import type { OcrPageResult } from '../types/ocr'
 
 export interface UseOcrReturn {
@@ -45,7 +44,7 @@ export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOc
     setOcrActivePage(page) // mark this page as "recognizing" for the overlay
     try {
       const { predict } = await import('../services/ocrEngine')
-      const { canvas } = await getOrRenderPage(pdfDoc, page)
+      const { canvas, renderScale } = await getOrRenderPage(pdfDoc, page)
       // Downscale the input on memory-constrained platforms (iOS) so OCR fits
       // the per-tab budget. Coordinates are recovered via the effective scale.
       const scale = computeOcrScale(canvas.width, canvas.height, ocrMaxDimension())
@@ -58,10 +57,11 @@ export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOc
         input = small
       }
       const lines = await predict(input)
-      // input px → PDF points: the page was rendered at PDF_RENDER_SCALE and then
-      // possibly shrunk by `scale`, so divide boxes by the product.
+      // input px → PDF points: the page canvas was rasterized at `renderScale`
+      // pixels-per-point (variable now, no longer fixed) and then possibly shrunk
+      // by `scale`, so divide boxes by the product.
       const words = lines
-        .map(l => lineToWord(l, PDF_RENDER_SCALE * scale))
+        .map(l => lineToWord(l, renderScale * scale))
         .filter(w => w.text.length > 0)
       if (input !== canvas) { input.width = 0; input.height = 0 } // release the temp canvas
       return { page, words, status: 'done', durationMs: performance.now() - started }

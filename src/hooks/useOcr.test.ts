@@ -10,7 +10,9 @@ vi.mock('./usePdfPage', () => ({ getOrRenderPage: (...a: unknown[]) => getOrRend
 import { useOcr } from './useOcr'
 
 const fakeDoc = {} as import('pdfjs-dist').PDFDocumentProxy
-const fakeCanvas = () => ({ canvas: document.createElement('canvas'), width: 15, height: 15 })
+// Shape mirrors PageData: logical width/height + the raster `renderScale` used
+// to map OCR box pixels back to PDF points (renderScale * downscale).
+const fakeCanvas = () => ({ canvas: document.createElement('canvas'), width: 15, height: 15, renderScale: 1.5 })
 
 beforeEach(() => {
   predictMock.mockReset()

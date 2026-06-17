@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import { PDF_RENDER_SCALE } from '../utils/constants'
+import { PDF_RENDER_SCALE, MAX_RENDER_SCALE } from '../utils/constants'
 
 export interface PageData {
   canvas: HTMLCanvasElement  // rendered page canvas (Konva accepts this directly)
-  width: number              // rendered pixel width (= PDF points * PDF_RENDER_SCALE)
-  height: number             // rendered pixel height
+  width: number              // LOGICAL width  (= PDF points * PDF_RENDER_SCALE) — display/coords
+  height: number             // LOGICAL height (= PDF points * PDF_RENDER_SCALE)
+  renderScale: number        // actual pixels-per-point of `canvas` (canvas.width = points * renderScale)
 }
 
 interface UsePdfPageReturn {
@@ -14,11 +15,15 @@ interface UsePdfPageReturn {
 }
 
 // ─── Module-level render cache ───────────────────────────────────────────────
-// Pages are rendered ONCE per document and reused across view-mode transitions
+// Pages are rendered per document and reused across view-mode transitions
 // (single ↔ spread ↔ grid ↔ fullscreen) and StrictMode double-mounts.
+// The cached canvas is rasterized at `renderScale` pixels-per-point, decoupled
+// from the logical (coordinate) size: a page shown bigger or on a HiDPI screen
+// is re-rendered at a higher renderScale so it stays sharp. We only ever upgrade
+// the cached scale (zooming out keeps the higher-res canvas and downsamples).
 // WeakMap keys: cache is automatically released when the PDFDocumentProxy is GC'd.
 const pageCache = new WeakMap<PDFDocumentProxy, Map<number, PageData>>()
-const inflightRenders = new WeakMap<PDFDocumentProxy, Map<number, Promise<PageData>>>()
+const inflightRenders = new WeakMap<PDFDocumentProxy, Map<number, { p: Promise<PageData>; scale: number }>>()
 
 function getCacheMap(doc: PDFDocumentProxy): Map<number, PageData> {
   let m = pageCache.get(doc)
@@ -26,65 +31,88 @@ function getCacheMap(doc: PDFDocumentProxy): Map<number, PageData> {
   return m
 }
 
-function getInflightMap(doc: PDFDocumentProxy): Map<number, Promise<PageData>> {
+function getInflightMap(doc: PDFDocumentProxy): Map<number, { p: Promise<PageData>; scale: number }> {
   let m = inflightRenders.get(doc)
   if (!m) { m = new Map(); inflightRenders.set(doc, m) }
   return m
 }
 
-async function renderPage(pdfDoc: PDFDocumentProxy, pageNumber: number): Promise<PageData> {
+/** Peek the cached page (any resolution), used for synchronous mount-time hits. */
+export function peekCachedPage(doc: PDFDocumentProxy, pageNumber: number): PageData | null {
+  return pageCache.get(doc)?.get(pageNumber) ?? null
+}
+
+function clampScale(scale: number): number {
+  return Math.min(MAX_RENDER_SCALE, Math.max(PDF_RENDER_SCALE, scale))
+}
+
+async function renderPage(pdfDoc: PDFDocumentProxy, pageNumber: number, renderScale: number): Promise<PageData> {
   const page = await pdfDoc.getPage(pageNumber)
-  const viewport = page.getViewport({ scale: PDF_RENDER_SCALE })
+  // Logical viewport drives display size + the coordinate system; the raster
+  // viewport drives the actual pixel resolution of the bitmap.
+  const logical = page.getViewport({ scale: PDF_RENDER_SCALE })
+  const raster = page.getViewport({ scale: renderScale })
   const canvas = document.createElement('canvas')
-  canvas.width = viewport.width
-  canvas.height = viewport.height
+  canvas.width = raster.width
+  canvas.height = raster.height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error(`canvas.getContext('2d') returned null for page ${pageNumber}`)
-  await page.render({ canvas, viewport }).promise
-  return { canvas, width: viewport.width, height: viewport.height }
+  await page.render({ canvas, viewport: raster }).promise
+  return { canvas, width: logical.width, height: logical.height, renderScale }
 }
 
 /**
- * Render-or-fetch from cache. Concurrent calls for the same page de-duplicate
- * onto a single inflight promise. Exposed so non-React code paths (e.g. the
- * print pipeline) can reuse the shared cache instead of re-rendering pages.
+ * Render-or-fetch from cache at (at least) `minRenderScale` pixels-per-point.
+ * A cached page at an equal-or-higher scale is reused; a lower-res cache is
+ * upgraded by re-rendering. Concurrent calls de-duplicate onto a single
+ * inflight promise (per page) as long as it targets a sufficient scale.
+ * Exposed so non-React paths (print, OCR) can reuse the shared cache.
  */
-export function getOrRenderPage(pdfDoc: PDFDocumentProxy, pageNumber: number): Promise<PageData> {
-  return getOrRender(pdfDoc, pageNumber)
+export function getOrRenderPage(
+  pdfDoc: PDFDocumentProxy,
+  pageNumber: number,
+  minRenderScale: number = PDF_RENDER_SCALE,
+): Promise<PageData> {
+  return getOrRender(pdfDoc, pageNumber, minRenderScale)
 }
 
-function getOrRender(pdfDoc: PDFDocumentProxy, pageNumber: number): Promise<PageData> {
+function getOrRender(pdfDoc: PDFDocumentProxy, pageNumber: number, minRenderScale: number): Promise<PageData> {
+  const target = clampScale(minRenderScale)
   const cache = getCacheMap(pdfDoc)
   const hit = cache.get(pageNumber)
-  if (hit) return Promise.resolve(hit)
+  if (hit && hit.renderScale >= target - 1e-3) return Promise.resolve(hit)
 
   const inflight = getInflightMap(pdfDoc)
   const pending = inflight.get(pageNumber)
-  if (pending) return pending
+  if (pending && pending.scale >= target - 1e-3) return pending.p
 
-  const p = renderPage(pdfDoc, pageNumber)
+  const p = renderPage(pdfDoc, pageNumber, target)
     .then(data => {
-      cache.set(pageNumber, data)
-      inflight.delete(pageNumber)
-      return data
+      // Only keep the highest-resolution result (renders may finish out of order).
+      const cur = cache.get(pageNumber)
+      if (!cur || data.renderScale >= cur.renderScale) cache.set(pageNumber, data)
+      if (inflight.get(pageNumber)?.p === p) inflight.delete(pageNumber)
+      return cache.get(pageNumber) ?? data
     })
     .catch(err => {
-      inflight.delete(pageNumber)
+      if (inflight.get(pageNumber)?.p === p) inflight.delete(pageNumber)
       throw err
     })
-  inflight.set(pageNumber, p)
+  inflight.set(pageNumber, { p, scale: target })
   return p
 }
 
 export function usePdfPage(
   pdfDoc: PDFDocumentProxy | null,
   pageNumber: number,
+  desiredRenderScale: number = PDF_RENDER_SCALE,
 ): UsePdfPageReturn {
   // Synchronous cache hit on first render — avoids the loading flash when
-  // re-mounting after a view-mode change.
+  // re-mounting after a view-mode change. Any cached resolution is shown
+  // immediately; the effect upgrades it if a higher scale is now needed.
   const [pageData, setPageData] = useState<PageData | null>(() => {
     if (!pdfDoc) return null
-    return pageCache.get(pdfDoc)?.get(pageNumber) ?? null
+    return peekCachedPage(pdfDoc, pageNumber)
   })
   const [isLoading, setIsLoading] = useState(false)
 
@@ -93,19 +121,23 @@ export function usePdfPage(
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!pdfDoc) { setPageData(null); return }
 
-    // Cache hit: hand over the cached canvas synchronously, no loading state.
-    const hit = pageCache.get(pdfDoc)?.get(pageNumber)
-    if (hit) {
+    const target = clampScale(desiredRenderScale)
+    const hit = peekCachedPage(pdfDoc, pageNumber)
+    // Cache already meets the requested resolution: hand it over synchronously.
+    if (hit && hit.renderScale >= target - 1e-3) {
       setPageData(hit)
       setIsLoading(false)
       return
     }
 
     let cancelled = false
-    setIsLoading(true)
-    setPageData(null)
+    // Only show the loading skeleton when nothing is on screen yet. When we
+    // already have a lower-res canvas, keep displaying it while the higher-res
+    // render runs in the background, then swap — no blank flash on zoom-in.
+    if (!hit) { setIsLoading(true); setPageData(null) }
+    else setPageData(hit)
 
-    getOrRender(pdfDoc, pageNumber)
+    getOrRender(pdfDoc, pageNumber, target)
       .then(data => {
         if (cancelled) return
         setPageData(data)
@@ -118,7 +150,7 @@ export function usePdfPage(
       })
 
     return () => { cancelled = true }
-  }, [pdfDoc, pageNumber])
+  }, [pdfDoc, pageNumber, desiredRenderScale])
 
   return { pageData, isLoading }
 }
