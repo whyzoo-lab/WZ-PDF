@@ -38,7 +38,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: public/ocr
-          key: ocr-assets-${{ hashFiles('scripts/build-ocr-assets.py', 'package-lock.json') }}
+          # Key on the build script only — NOT package-lock.json (see pages.yml):
+          # a version bump changes the lockfile every release and would bust this
+          # cache. Bump the `v1` epoch when upgrading onnxruntime-web.
+          key: ocr-assets-v1-${{ hashFiles('scripts/build-ocr-assets.py') }}
 
       # Only download/regenerate on a cache miss — otherwise the released
       # installer would ship without OCR. setup:ocr needs pyyaml; the ort wasm

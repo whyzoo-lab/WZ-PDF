@@ -51,7 +51,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: public/ocr
-          key: ocr-assets-${{ hashFiles('scripts/build-ocr-assets.py', 'package-lock.json') }}
+          # Key on the build script only — NOT package-lock.json. A version bump
+          # changes the lockfile on every release and would needlessly bust this
+          # cache (re-downloading from Baidu/HuggingFace, risking the 429). The
+          # `v1` epoch: bump it when upgrading onnxruntime-web (its wasm is copied
+          # from node_modules and isn't captured by the script hash).
+          key: ocr-assets-v1-${{ hashFiles('scripts/build-ocr-assets.py') }}
 
       # Only download/regenerate on a cache miss. setup:ocr needs pyyaml; the
       # ort wasm is pulled from node_modules (hence after `npm ci`).
