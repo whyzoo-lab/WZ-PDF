@@ -27,6 +27,7 @@ import { t, LANG } from './i18n'
 const SignaturePad     = lazy(() => import('./components/modals/SignaturePad').then(m => ({ default: m.SignaturePad })))
 const WatermarkConfig  = lazy(() => import('./components/modals/WatermarkConfig').then(m => ({ default: m.WatermarkConfig })))
 const OpenUrlModal     = lazy(() => import('./components/modals/OpenUrlModal').then(m => ({ default: m.OpenUrlModal })))
+const PrintPreviewModal = lazy(() => import('./components/modals/PrintPreviewModal').then(m => ({ default: m.PrintPreviewModal })))
 
 export default function App() {
   // ── Document state ────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ export default function App() {
     const r = ocr.ocrResults.get(page)
     return r && r.status === 'done' ? r.words.map(w => w.text) : undefined
   })
-  const { handlePrint, isPrinting, printProgress } = usePrint({ pdfDoc, numPages, annotations })
+  const { handlePrint, isPrinting, printProgress, previewPages, confirmPrint, cancelPrint } = usePrint({ pdfDoc, numPages, annotations })
   const {
     isExporting,
     handleExportPdf,
@@ -690,6 +691,13 @@ export default function App() {
             loading={urlLoading}
             onSubmit={handleOpenUrl}
             onCancel={() => { if (!urlLoading) setShowUrlModal(false) }}
+          />
+        )}
+        {previewPages && (
+          <PrintPreviewModal
+            pages={previewPages}
+            onConfirm={confirmPrint}
+            onCancel={cancelPrint}
           />
         )}
       </Suspense>

@@ -50,6 +50,11 @@ export const en = {
   // ── Print ─────────────────────────────────────────────────────────────────
   'print.preparing': 'Preparing to print…',
   'print.progress': '{done} / {total} pages',
+  'print.previewTitle': 'Print preview',
+  'print.previewHint': 'Shows exactly what will print — stamps, signatures and watermarks included',
+  'print.pageCount': '{total} pages',
+  'print.doPrint': 'Print',
+  'print.cancel': 'Cancel',
 
   // ── Upload / file errors ──────────────────────────────────────────────────
   'error.pdfOnly': 'Only PDF files can be opened.',

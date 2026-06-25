@@ -50,7 +50,7 @@ async function renderPageWithAnnotations(
   pdfDoc: PDFDocumentProxy,
   pageNumber: number,
   annotations: Annotation[],
-): Promise<HTMLImageElement> {
+): Promise<string> {
   // Re-render the page fresh at print scale instead of reusing the cached
   // on-screen canvas — that one is at PDF_RENDER_SCALE (1.5x) and prints fuzzy.
   // `getOrRenderPage` is still called so other view code's cache stays warm,
@@ -114,7 +114,7 @@ async function renderPageWithAnnotations(
     }
   }
 
-  return loadImage(out.toDataURL('image/jpeg', PRINT_JPEG_QUALITY))
+  return out.toDataURL('image/jpeg', PRINT_JPEG_QUALITY)
 }
 
 /**
@@ -139,52 +139,68 @@ async function renderPageWithAnnotations(
 export function usePrint({ pdfDoc, numPages, annotations }: UsePrintArgs) {
   const [isPrinting, setIsPrinting] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
+  // Composited page images (data URLs) awaiting the in-app preview. Non-null ⇒
+  // the preview modal is open. We show our own WYSIWYG preview because Electron
+  // ships without Chrome's print preview, so window.print() there only opens the
+  // bare OS dialog ("이 앱은 인쇄 미리 보기를 지원하지 않습니다").
+  const [previewPages, setPreviewPages] = useState<string[] | null>(null)
 
+  // Build every page (page + annotations) into a JPEG data URL, then open the
+  // preview. Printing itself happens on confirm.
   const handlePrint = useCallback(async () => {
     if (!pdfDoc || numPages === 0) return
     setIsPrinting(true)
     setProgress({ done: 0, total: numPages })
-
-    let root: HTMLDivElement | null = null
     try {
-      // Build images sequentially so cache lookups stay cheap and progress
-      // updates feel responsive. Parallel would saturate memory.
-      const images: HTMLImageElement[] = []
+      // Sequential so cache lookups stay cheap and progress feels responsive;
+      // parallel would saturate memory on large documents.
+      const pages: string[] = []
       for (let p = 1; p <= numPages; p++) {
-        const img = await renderPageWithAnnotations(pdfDoc, p, annotations)
-        img.setAttribute('data-wz-print', '')
-        images.push(img)
+        pages.push(await renderPageWithAnnotations(pdfDoc, p, annotations))
         setProgress({ done: p, total: numPages })
       }
-
-      // Mount the print container
-      root = document.createElement('div')
-      root.id = 'wz-print-root'
-      images.forEach(img => root!.appendChild(img))
-      document.body.appendChild(root)
-      document.body.setAttribute('data-wz-printing', '')
-
-      // Give the browser one frame to apply the print stylesheet
-      await new Promise(r => requestAnimationFrame(() => r(null)))
-
-      // Always use window.print() — the renderer's Chromium gives us the rich
-      // Chrome print-preview UI in both the web build AND Electron. We used to
-      // route through electronAPI.printWindow → webContents.print() in the
-      // desktop build, but that opens the OS *system* print dialog (no real
-      // preview on Windows) and ignored some of our print CSS. window.print()
-      // is synchronous-ish — it returns after the dialog closes, which is what
-      // our cleanup code below depends on.
-      window.print()
+      setPreviewPages(pages)
     } catch (err) {
       console.error('[print] failed:', err)
       alert(`인쇄 준비 실패: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
-      document.body.removeAttribute('data-wz-printing')
-      root?.remove()
       setIsPrinting(false)
       setProgress({ done: 0, total: 0 })
     }
   }, [pdfDoc, numPages, annotations])
+
+  const cancelPrint = useCallback(() => setPreviewPages(null), [])
+
+  // Send the already-composited pages to the printer. Mounts them into the
+  // hidden `#wz-print-root` (the print CSS shows only that) and calls
+  // window.print(); cleans up after the dialog closes.
+  const confirmPrint = useCallback(async () => {
+    const pages = previewPages
+    if (!pages || pages.length === 0) return
+    let root: HTMLDivElement | null = null
+    try {
+      // Decode all images before printing so the dialog never captures blanks.
+      const images = await Promise.all(pages.map(loadImage))
+      root = document.createElement('div')
+      root.id = 'wz-print-root'
+      images.forEach(img => { img.setAttribute('data-wz-print', ''); root!.appendChild(img) })
+      document.body.appendChild(root)
+      document.body.setAttribute('data-wz-printing', '')
+
+      // One frame so the print stylesheet applies before the dialog opens.
+      await new Promise(r => requestAnimationFrame(() => r(null)))
+
+      // window.print() returns after the dialog closes, which our cleanup relies on.
+      window.print()
+    } catch (err) {
+      console.error('[print] failed:', err)
+      alert(`인쇄 실패: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      document.body.removeAttribute('data-wz-printing')
+      root?.remove()
+      setPreviewPages(null)
+    }
+  }, [previewPages])
 
   useEffect(() => {
     const onPrint = () => { handlePrint() }
@@ -192,5 +208,5 @@ export function usePrint({ pdfDoc, numPages, annotations }: UsePrintArgs) {
     return () => document.removeEventListener('wz-print', onPrint)
   }, [handlePrint])
 
-  return { handlePrint, isPrinting, printProgress: progress }
+  return { handlePrint, isPrinting, printProgress: progress, previewPages, confirmPrint, cancelPrint }
 }

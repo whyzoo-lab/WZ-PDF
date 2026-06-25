@@ -50,6 +50,11 @@ export const ko = {
   // ── Print ─────────────────────────────────────────────────────────────────
   'print.preparing': '인쇄 준비 중…',
   'print.progress': '{done} / {total} 페이지',
+  'print.previewTitle': '인쇄 미리보기',
+  'print.previewHint': '실제 인쇄물과 동일하게 보입니다 — 도장 · 서명 · 워터마크 포함',
+  'print.pageCount': '{total}페이지',
+  'print.doPrint': '인쇄',
+  'print.cancel': '취소',
 
   // ── Upload / file errors ──────────────────────────────────────────────────
   'error.pdfOnly': 'PDF 파일만 열 수 있습니다.',
