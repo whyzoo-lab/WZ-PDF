@@ -30,6 +30,8 @@ interface LazyPdfPageProps {
   ocrResult?: import('../../types/ocr').OcrPageResult
   ocrActive?: boolean
   onOcrRequest?: (page: number) => void
+  /** Ctrl+drag region → OCR → clipboard (view mode). Receives the recognized text. */
+  onRegionCopy?: (text: string) => void
 }
 
 /**

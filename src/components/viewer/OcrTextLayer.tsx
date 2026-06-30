@@ -13,6 +13,10 @@ interface OcrTextLayerProps {
    *  inline editor; committing fires this with the new text and the region's
    *  bounds (already in PDF points). Omit to keep the layer selection-only. */
   onEditCommit?: (edit: TextEditCommit) => void
+  /** Play the staggered reveal flash on mount. True for OCR (signals recognition
+   *  finished); pass false for always-present native text (e.g. HWP) so it doesn't
+   *  flash on every page scroll. Default true. */
+  reveal?: boolean
 }
 
 /**
@@ -25,7 +29,7 @@ interface OcrTextLayerProps {
  * swaps it for an inline <input>. Because OCR words already carry PDF-point
  * bounds, the commit passes them straight through (no CSS→PDF conversion).
  */
-export function OcrTextLayer({ words, scale, width, height, highlights, onEditCommit }: OcrTextLayerProps) {
+export function OcrTextLayer({ words, scale, width, height, highlights, onEditCommit, reveal = true }: OcrTextLayerProps) {
   const activeSet = new Set<number>()
   const hlSet = new Set<number>()
   for (const h of highlights ?? []) {
@@ -80,8 +84,9 @@ export function OcrTextLayer({ words, scale, width, height, highlights, onEditCo
         if (activeSet.has(i)) cls.push('wz-search-hl-active')
         // One-shot reveal flash that plays when the layer first mounts (i.e.
         // right after recognition completes), staggered so the regions light up
-        // in reading order. Capped so large pages still finish quickly.
-        cls.push('wz-ocr-reveal')
+        // in reading order. Capped so large pages still finish quickly. Skipped
+        // for always-present native text (HWP) so it doesn't flash on scroll.
+        if (reveal) cls.push('wz-ocr-reveal')
         return (
           <span
             key={i}

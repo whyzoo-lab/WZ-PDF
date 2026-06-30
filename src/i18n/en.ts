@@ -90,6 +90,12 @@ export const en = {
   'hwp.engineError': 'HWP engine failed to load',
   'hwp.badge': 'HWP',
 
+  // ── Region OCR (Ctrl+drag → copy) ─────────────────────────────────────────
+  'region.recognizing': 'Recognizing…',
+  'region.copied': 'Copied text to clipboard',
+  'region.noText': 'No text recognized',
+  'region.copyFailed': 'Copy to clipboard failed',
+
   // ── OCR ───────────────────────────────────────────────────────────────────
   'ocr.runCurrent': 'OCR (current page)',
   'ocr.runAll': 'OCR (whole document)',
