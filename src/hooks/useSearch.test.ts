@@ -6,7 +6,7 @@ import { useSearch } from './useSearch'
 function emptyTextDoc() {
   return {
     getPage: vi.fn(async () => ({ getTextContent: async () => ({ items: [] }) })),
-  } as unknown as import('pdfjs-dist').PDFDocumentProxy
+  } as unknown as import('../types/viewerDoc').ViewerDoc
 }
 
 describe('useSearch with OCR provider', () => {

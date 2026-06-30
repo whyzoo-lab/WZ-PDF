@@ -68,7 +68,7 @@ export default function App() {
   const prevViewModeRef = useRef<ViewMode>('single')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { pdfDoc, numPages, isLoading, error } = usePdfDocument(file)
+  const { pdfDoc, numPages, isLoading, error, kind } = usePdfDocument(file)
   const {
     annotations,
     selectedId,
@@ -98,7 +98,7 @@ export default function App() {
     handleExportImages,
     handleExportExe,
   } = useExporters({
-    file, fileBytes, pdfDoc, numPages, annotations, onSuccess: showToast,
+    file, fileBytes, pdfDoc, numPages, annotations, kind, onSuccess: showToast,
   })
 
   // Page CRUD ops: when one succeeds we rewrite `file`, remap annotations,
@@ -316,9 +316,12 @@ export default function App() {
     search.clear()
   }, [setActiveMode, search])
 
-  /** Main upload handler — accepts PDF files only. */
+  /** Main upload handler — accepts PDF and HWP/HWPX files. */
   const handleUpload = useCallback((f: File) => {
-    if (!f.type.includes('pdf') && !f.name.toLowerCase().endsWith('.pdf')) {
+    const name = f.name.toLowerCase()
+    const isPdf = f.type.includes('pdf') || name.endsWith('.pdf')
+    const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
+    if (!isPdf && !isHwp) {
       alert(t('error.pdfOnly'))
       return
     }
@@ -357,8 +360,8 @@ export default function App() {
       const name = (() => {
         try { return decodeURIComponent(new URL(url).pathname.split('/').pop() || '') } catch { return '' }
       })() || 'document.pdf'
-      const filename = name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`
-      loadPdfFile(new File([bytes], filename, { type: 'application/pdf' }))
+      const filename = name || 'document.pdf'
+      loadPdfFile(new File([bytes], filename))
       setShowUrlModal(false)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -587,7 +590,7 @@ export default function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,.pdf"
+        accept="application/pdf,.pdf,.hwp,.hwpx"
         className="hidden"
         onChange={e => {
           const f = e.target.files?.[0]
@@ -691,6 +694,7 @@ export default function App() {
                 zoom={zoom}
                 rotation={rotation}
                 appMode={appMode}
+                kind={kind}
                 annotations={annotations}
                 selectedId={selectedId}
                 activeMode={activeMode}

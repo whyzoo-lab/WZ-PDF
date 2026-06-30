@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
+import type { DocKind } from '../types/viewerDoc'
 import type { Annotation } from '../types/annotation'
 import { t } from '../i18n'
 import { downloadBlob, stripPdfExt } from '../utils/download'
@@ -7,9 +8,10 @@ import { downloadBlob, stripPdfExt } from '../utils/download'
 interface UseExportersArgs {
   file: File | null
   fileBytes: ArrayBuffer | null
-  pdfDoc: PDFDocumentProxy | null
+  pdfDoc: ViewerDoc | null
   numPages: number
   annotations: Annotation[]
+  kind: DocKind
   onSuccess: (message: string) => void
 }
 
@@ -34,26 +36,39 @@ export function useExporters({
   pdfDoc,
   numPages,
   annotations,
+  kind,
   onSuccess,
 }: UseExportersArgs) {
   const [isExporting, setIsExporting] = useState(false)
 
   const handleExportPdf = useCallback(async () => {
-    if (!fileBytes) return
     setIsExporting(true)
     try {
-      const { exportPdf } = await import('../services/pdfExporter')
-      const blob = await exportPdf(fileBytes, annotations)
       const baseName = file ? stripPdfExt(file.name) : 'document'
       const downloadName = `${baseName}_annotated.pdf`
-      downloadBlob(blob, downloadName)
+
+      if (kind === 'hwp') {
+        // HWP bytes are not a PDF — build a fresh PDF by compositing rendered
+        // page canvases with annotations (same technique as the print pipeline).
+        if (!pdfDoc) return
+        const { exportHwpToPdf } = await import('../services/pdfExporter')
+        const pdfBytes = await exportHwpToPdf(pdfDoc, annotations)
+        const blob = new Blob([pdfBytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
+        downloadBlob(blob, downloadName)
+      } else {
+        if (!fileBytes) return
+        const { exportPdf } = await import('../services/pdfExporter')
+        const blob = await exportPdf(fileBytes, annotations)
+        downloadBlob(blob, downloadName)
+      }
+
       onSuccess(t('export.pdfDone', { name: downloadName }))
     } catch (err) {
       console.error('PDF export failed:', err)
     } finally {
       setIsExporting(false)
     }
-  }, [fileBytes, annotations, file, onSuccess])
+  }, [fileBytes, pdfDoc, annotations, file, kind, onSuccess])
 
   const handleExportHtml = useCallback(async () => {
     if (!fileBytes) return

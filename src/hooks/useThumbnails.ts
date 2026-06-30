@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
 import { PDF_RENDER_SCALE } from '../utils/constants'
 
 /** 썸네일 렌더링 배율 (PDF_RENDER_SCALE * 0.2 = 약 90px 너비) */
@@ -12,7 +12,7 @@ const THUMBNAIL_SCALE = 0.2
  * - null = 아직 렌더링 중
  */
 export function useThumbnails(
-  pdfDoc: PDFDocumentProxy | null,
+  pdfDoc: ViewerDoc | null,
   numPages: number,
 ): (string | null)[] {
   const [dataUrls, setDataUrls] = useState<(string | null)[]>([])
@@ -35,7 +35,8 @@ export function useThumbnails(
         if (cancelled) break
         try {
           const page = await pdfDoc.getPage(pageNum)
-          const viewport = page.getViewport({ scale: PDF_RENDER_SCALE * THUMBNAIL_SCALE })
+          const thumbScale = PDF_RENDER_SCALE * THUMBNAIL_SCALE
+          const viewport = page.getViewport({ scale: thumbScale })
           const canvas = document.createElement('canvas')
           canvas.width  = Math.round(viewport.width)
           canvas.height = Math.round(viewport.height)

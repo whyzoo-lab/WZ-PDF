@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
 
 /**
  * A single search hit. `itemStart`/`itemEnd` are indices into the page's
@@ -36,7 +36,7 @@ export interface UseSearchReturn {
 }
 
 export function useSearch(
-  pdfDoc: PDFDocumentProxy | null,
+  pdfDoc: ViewerDoc | null,
   numPages: number,
   ocrProvider?: (page: number) => string[] | undefined,
 ): UseSearchReturn {
@@ -46,14 +46,14 @@ export function useSearch(
   const [isSearching, setIsSearching] = useState(false)
 
   // Per-document cache of extracted page text. Cleared when the doc changes.
-  const cacheRef = useRef<{ doc: PDFDocumentProxy | null; pages: Map<number, PageText> }>({
+  const cacheRef = useRef<{ doc: ViewerDoc | null; pages: Map<number, PageText> }>({
     doc: null,
     pages: new Map(),
   })
   // Guards against out-of-order async completions (fast typing).
   const runIdRef = useRef(0)
 
-  const getPageText = useCallback(async (doc: PDFDocumentProxy, page: number): Promise<PageText> => {
+  const getPageText = useCallback(async (doc: ViewerDoc, page: number): Promise<PageText> => {
     if (cacheRef.current.doc !== doc) {
       cacheRef.current = { doc, pages: new Map() }
     }
@@ -62,7 +62,7 @@ export function useSearch(
 
     const pg = await doc.getPage(page)
     const content = await pg.getTextContent()
-    let items = content.items.map(it => ('str' in it ? it.str : ''))
+    let items = content.items.map(it => (it && typeof it === 'object' && 'str' in it ? (it as Record<string, unknown>).str as string : ''))
     // Scanned page (no pdfjs text) → use OCR words if available.
     if (items.join('').trim().length === 0) {
       const ocrItems = ocrProvider?.(page)

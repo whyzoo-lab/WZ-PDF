@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
 import { getOrRenderPage } from './usePdfPage'
 import { lineToWord } from '../utils/ocrCoords'
 import { computeOcrScale, ocrMaxDimension } from '../utils/ocrInput'
@@ -18,7 +18,7 @@ export interface UseOcrReturn {
   clear: () => void
 }
 
-export function useOcr(pdfDoc: PDFDocumentProxy | null, numPages: number): UseOcrReturn {
+export function useOcr(pdfDoc: ViewerDoc | null, numPages: number): UseOcrReturn {
   const [ocrResults, setOcrResults] = useState<Map<number, OcrPageResult>>(new Map())
   const [ocrProgress, setOcrProgress] = useState<{ done: number; total: number } | null>(null)
   const [isOcrRunning, setIsOcrRunning] = useState(false)

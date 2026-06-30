@@ -2,6 +2,7 @@ import { PDFDocument, PDFFont, rgb, degrees, StandardFonts } from 'pdf-lib'
 import type { Annotation, WatermarkAnnotation } from '../types/annotation'
 import { annotationsForPage } from '../types/annotation'
 import { toPdfLibY, hexToRgb } from '../utils/coordinates'
+import type { ViewerDoc } from '../types/viewerDoc'
 
 /** Exported for unit testing */
 export function base64ToUint8Array(dataUrl: string): Uint8Array {
@@ -144,4 +145,107 @@ export async function exportPdf(
   // be a SharedArrayBuffer in some TS lib configs — cast to a plain Uint8Array
   // view to satisfy the BlobPart type without `any`.
   return new Blob([pdfBytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
+}
+
+/**
+ * Build a fresh PDF from a rendered HWP document by compositing each page
+ * canvas with its non-volatile annotations.
+ *
+ * Because HWP bytes are not a PDF we can't load them into pdf-lib directly.
+ * Instead we render every page via `getOrRenderPage`, draw the canvas as a
+ * JPEG into a pdf-lib page sized to the canvas, and return the resulting bytes.
+ * This doubles as an HWP → PDF converter.
+ *
+ * Volatile annotations (pen / rectangle) are intentionally skipped to match
+ * the existing PDF export semantics.
+ */
+export async function exportHwpToPdf(
+  doc: ViewerDoc,
+  annotations: Annotation[],
+): Promise<Uint8Array> {
+  const { getOrRenderPage } = await import('../hooks/usePdfPage')
+
+  const pdfDoc = await PDFDocument.create()
+
+  for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+    const { canvas, renderScale } = await getOrRenderPage(doc, pageNum)
+
+    // Composite non-volatile annotations onto a scratch canvas so the exported
+    // page contains stamps/signatures/watermarks/textEdits just like print does.
+    // `compositedCanvas` stays as `canvas` when 2d context is unavailable (e.g.
+    // jsdom in tests); in real browsers it's always the annotated scratch canvas.
+    let compositedCanvas: HTMLCanvasElement = canvas
+    const out = document.createElement('canvas')
+    out.width = canvas.width
+    out.height = canvas.height
+    const ctx = out.getContext('2d')
+    if (ctx) {
+      compositedCanvas = out
+      ctx.drawImage(canvas, 0, 0)
+
+      const pageAnnotations = annotationsForPage(annotations, pageNum)
+      // Annotation coords are in PDF points; the canvas is at renderScale px/pt.
+      const scale = renderScale
+
+      for (const ann of pageAnnotations) {
+        if (ann.type === 'pen' || ann.type === 'rectangle') continue  // volatile
+
+        if (ann.type === 'stamp' || ann.type === 'signature') {
+          try {
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const el = new Image()
+              el.onload = () => resolve(el)
+              el.onerror = () => reject(new Error('image load failed'))
+              el.src = ann.src
+            })
+            const cx = (ann.x + ann.width / 2) * scale
+            const cy = (ann.y + ann.height / 2) * scale
+            ctx.save()
+            ctx.translate(cx, cy)
+            ctx.rotate((ann.rotation * Math.PI) / 180)
+            ctx.drawImage(img, -(ann.width / 2) * scale, -(ann.height / 2) * scale, ann.width * scale, ann.height * scale)
+            ctx.restore()
+          } catch (err) {
+            console.error('[hwp-export] failed to draw annotation image:', err)
+          }
+        } else if (ann.type === 'watermark') {
+          ctx.save()
+          ctx.font = `${ann.fontSize * scale}px sans-serif`
+          ctx.fillStyle = ann.color
+          ctx.globalAlpha = ann.opacity
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.translate(out.width / 2, out.height / 2)
+          ctx.rotate((ann.rotation * Math.PI) / 180)
+          ctx.fillText(ann.text, 0, 0)
+          ctx.restore()
+        } else if (ann.type === 'textEdit') {
+          ctx.fillStyle = ann.background
+          ctx.fillRect(ann.x * scale, ann.y * scale, ann.width * scale, ann.height * scale)
+          ctx.fillStyle = ann.color
+          ctx.font = `${ann.fontSize * scale}px sans-serif`
+          ctx.textBaseline = 'top'
+          ctx.fillText(ann.text, ann.x * scale + 2, ann.y * scale + 2)
+        }
+      }
+    }
+
+    // Embed the composited canvas as JPEG into a pdf-lib page.
+    const jpegDataUrl = compositedCanvas.toDataURL('image/jpeg', 0.92)
+    const jpegBytes = base64ToUint8Array(jpegDataUrl)
+    const jpegImage = await pdfDoc.embedJpg(jpegBytes)
+
+    // Size the PDF page in PDF points (canvas pixels ÷ renderScale) so pdf-lib's
+    // point-unit page matches the document's logical dimensions. The image is
+    // drawn at the same point dimensions so it fills the page exactly.
+    const pageWidth = compositedCanvas.width / renderScale
+    const pageHeight = compositedCanvas.height / renderScale
+    // Known limitation: dimensions are scale-1 pixel sizes used directly as PDF
+    // points with no 96→72 DPI conversion, so the exported page's physical/print
+    // size may differ from the source's true physical dimensions; visual proportions are correct.
+    const page = pdfDoc.addPage([pageWidth, pageHeight])
+    page.drawImage(jpegImage, { x: 0, y: 0, width: pageWidth, height: pageHeight })
+  }
+
+  return pdfDoc.save()
 }

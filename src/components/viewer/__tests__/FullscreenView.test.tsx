@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { FullscreenView } from '../FullscreenView'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../../types/viewerDoc'
 
 vi.mock('../PdfPage', () => ({
   PdfPage: ({ pageNumber }: { pageNumber: number }) => (
@@ -16,10 +16,11 @@ const mockDoc = {
   getPage: vi.fn().mockResolvedValue({
     getViewport: vi.fn().mockReturnValue({ width: 600, height: 800 }),
   }),
-} as unknown as PDFDocumentProxy
+} as unknown as ViewerDoc
 
 const baseProps = {
   pdfDoc: mockDoc,
+  kind: 'pdf' as const,
   numPages: 5,
   annotations: [],
   selectedId: null as null | string,

@@ -1,5 +1,5 @@
 import React from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc, DocKind } from '../../types/viewerDoc'
 import { LazyPdfPage } from './LazyPdfPage'
 import { SpreadView } from './SpreadView'
 import { GridView } from './GridView'
@@ -11,12 +11,14 @@ import type { TextLayerHighlight } from './PdfTextLayer'
 import type { OcrPageResult } from '../../types/ocr'
 
 interface PdfViewerProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
   numPages: number
   zoom: number
   rotation: number
   /** Viewer/Editor toggle — enables text editing on double-click in editor mode. */
   appMode?: AppMode
+  /** Which engine produced the document — gates PDF-only features like PdfTextLayer. */
+  kind: DocKind
   annotations: Annotation[]
   selectedId: string | null
   activeMode: ActiveMode
@@ -47,6 +49,7 @@ export function PdfViewer({
   zoom,
   rotation,
   appMode,
+  kind,
   annotations,
   selectedId,
   activeMode,
@@ -79,6 +82,7 @@ export function PdfViewer({
 
   const sharedAnnotationProps = {
     pdfDoc,
+    kind,
     zoom,
     rotation,
     appMode,
@@ -144,6 +148,7 @@ export function PdfViewer({
     return (
       <GridView
         pdfDoc={pdfDoc}
+        kind={kind}
         numPages={numPages}
         rotation={rotation}
         annotations={annotations}
@@ -156,6 +161,7 @@ export function PdfViewer({
     return (
       <FullscreenView
         pdfDoc={pdfDoc}
+        kind={kind}
         numPages={numPages}
         annotations={annotations}
         selectedId={selectedId}

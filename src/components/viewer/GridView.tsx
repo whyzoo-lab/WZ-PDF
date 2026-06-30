@@ -1,18 +1,19 @@
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc, DocKind } from '../../types/viewerDoc'
 import { LazyPdfPage } from './LazyPdfPage'
 import type { Annotation } from '../../types/annotation'
 
 const GRID_ZOOM = 0.3
 
 interface GridViewProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
+  kind: DocKind
   numPages: number
   rotation?: number
   annotations: Annotation[]
   onPageClick: (pageNumber: number) => void
 }
 
-export function GridView({ pdfDoc, numPages, rotation, annotations, onPageClick }: GridViewProps) {
+export function GridView({ pdfDoc, kind, numPages, rotation, annotations, onPageClick }: GridViewProps) {
   return (
     <div className="grid grid-cols-3 gap-1 p-2 overflow-auto h-full bg-gray-400">
       {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
@@ -25,6 +26,7 @@ export function GridView({ pdfDoc, numPages, rotation, annotations, onPageClick 
           <div className="shadow-sm">
             <LazyPdfPage
               pdfDoc={pdfDoc}
+              kind={kind}
               pageNumber={pageNum}
               zoom={GRID_ZOOM}
               rotation={rotation}

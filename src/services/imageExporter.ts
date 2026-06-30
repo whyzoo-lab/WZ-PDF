@@ -10,7 +10,7 @@
  */
 
 import JSZip from 'jszip'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
 import { downloadBlob, stripPdfExt } from '../utils/download'
 
 /** Render scale for exported images — 2× gives ~144 DPI equivalent. */
@@ -29,13 +29,13 @@ function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 /**
  * Export all pages of a PDF as PNG images bundled in a ZIP file.
  *
- * @param pdfDoc      pdfjs PDFDocumentProxy
+ * @param pdfDoc      ViewerDoc
  * @param numPages    Total page count
  * @param filename    Source filename — used to derive file/folder names
  * @param onProgress  Called after each page is rendered: (current, total)
  */
 export async function exportAsImages(
-  pdfDoc: PDFDocumentProxy,
+  pdfDoc: ViewerDoc,
   numPages: number,
   filename: string,
   onProgress?: (current: number, total: number) => void,

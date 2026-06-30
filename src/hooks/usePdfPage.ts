@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
 import { PDF_RENDER_SCALE, MAX_RENDER_SCALE } from '../utils/constants'
 
 export interface PageData {
@@ -21,24 +21,24 @@ interface UsePdfPageReturn {
 // from the logical (coordinate) size: a page shown bigger or on a HiDPI screen
 // is re-rendered at a higher renderScale so it stays sharp. We only ever upgrade
 // the cached scale (zooming out keeps the higher-res canvas and downsamples).
-// WeakMap keys: cache is automatically released when the PDFDocumentProxy is GC'd.
-const pageCache = new WeakMap<PDFDocumentProxy, Map<number, PageData>>()
-const inflightRenders = new WeakMap<PDFDocumentProxy, Map<number, { p: Promise<PageData>; scale: number }>>()
+// WeakMap keys: cache is automatically released when the ViewerDoc is GC'd.
+const pageCache = new WeakMap<ViewerDoc, Map<number, PageData>>()
+const inflightRenders = new WeakMap<ViewerDoc, Map<number, { p: Promise<PageData>; scale: number }>>()
 
-function getCacheMap(doc: PDFDocumentProxy): Map<number, PageData> {
+function getCacheMap(doc: ViewerDoc): Map<number, PageData> {
   let m = pageCache.get(doc)
   if (!m) { m = new Map(); pageCache.set(doc, m) }
   return m
 }
 
-function getInflightMap(doc: PDFDocumentProxy): Map<number, { p: Promise<PageData>; scale: number }> {
+function getInflightMap(doc: ViewerDoc): Map<number, { p: Promise<PageData>; scale: number }> {
   let m = inflightRenders.get(doc)
   if (!m) { m = new Map(); inflightRenders.set(doc, m) }
   return m
 }
 
 /** Peek the cached page (any resolution), used for synchronous mount-time hits. */
-export function peekCachedPage(doc: PDFDocumentProxy, pageNumber: number): PageData | null {
+export function peekCachedPage(doc: ViewerDoc, pageNumber: number): PageData | null {
   return pageCache.get(doc)?.get(pageNumber) ?? null
 }
 
@@ -46,7 +46,7 @@ function clampScale(scale: number): number {
   return Math.min(MAX_RENDER_SCALE, Math.max(PDF_RENDER_SCALE, scale))
 }
 
-async function renderPage(pdfDoc: PDFDocumentProxy, pageNumber: number, renderScale: number): Promise<PageData> {
+async function renderPage(pdfDoc: ViewerDoc, pageNumber: number, renderScale: number): Promise<PageData> {
   const page = await pdfDoc.getPage(pageNumber)
   // Logical viewport drives display size + the coordinate system; the raster
   // viewport drives the actual pixel resolution of the bitmap.
@@ -69,14 +69,14 @@ async function renderPage(pdfDoc: PDFDocumentProxy, pageNumber: number, renderSc
  * Exposed so non-React paths (print, OCR) can reuse the shared cache.
  */
 export function getOrRenderPage(
-  pdfDoc: PDFDocumentProxy,
+  pdfDoc: ViewerDoc,
   pageNumber: number,
   minRenderScale: number = PDF_RENDER_SCALE,
 ): Promise<PageData> {
   return getOrRender(pdfDoc, pageNumber, minRenderScale)
 }
 
-function getOrRender(pdfDoc: PDFDocumentProxy, pageNumber: number, minRenderScale: number): Promise<PageData> {
+function getOrRender(pdfDoc: ViewerDoc, pageNumber: number, minRenderScale: number): Promise<PageData> {
   const target = clampScale(minRenderScale)
   const cache = getCacheMap(pdfDoc)
   const hit = cache.get(pageNumber)
@@ -103,7 +103,7 @@ function getOrRender(pdfDoc: PDFDocumentProxy, pageNumber: number, minRenderScal
 }
 
 export function usePdfPage(
-  pdfDoc: PDFDocumentProxy | null,
+  pdfDoc: ViewerDoc | null,
   pageNumber: number,
   desiredRenderScale: number = PDF_RENDER_SCALE,
 ): UsePdfPageReturn {

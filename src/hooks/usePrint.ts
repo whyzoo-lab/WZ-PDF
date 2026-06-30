@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
 import type { Annotation } from '../types/annotation'
 import { annotationsForPage } from '../types/annotation'
 import { getOrRenderPage } from './usePdfPage'
@@ -20,7 +20,7 @@ const PRINT_RENDER_SCALE = 2.5
 const PRINT_JPEG_QUALITY = 0.98  // higher than display because text is unforgiving
 
 interface UsePrintArgs {
-  pdfDoc: PDFDocumentProxy | null
+  pdfDoc: ViewerDoc | null
   numPages: number
   annotations: Annotation[]
 }
@@ -47,7 +47,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  * mirror the PDF export semantics and never leave the screen.
  */
 async function renderPageWithAnnotations(
-  pdfDoc: PDFDocumentProxy,
+  pdfDoc: ViewerDoc,
   pageNumber: number,
   annotations: Annotation[],
 ): Promise<string> {
