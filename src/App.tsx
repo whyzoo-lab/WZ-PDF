@@ -98,7 +98,7 @@ export default function App() {
     handleExportImages,
     handleExportExe,
   } = useExporters({
-    file, fileBytes, pdfDoc, numPages, annotations, onSuccess: showToast,
+    file, fileBytes, pdfDoc, numPages, annotations, kind, onSuccess: showToast,
   })
 
   // Page CRUD ops: when one succeeds we rewrite `file`, remap annotations,
