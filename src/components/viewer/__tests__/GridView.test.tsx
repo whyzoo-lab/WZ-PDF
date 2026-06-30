@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { GridView } from '../GridView'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../../types/viewerDoc'
 
 vi.mock('../LazyPdfPage', () => ({
   LazyPdfPage: ({ pageNumber }: { pageNumber: number }) => (
@@ -9,7 +9,7 @@ vi.mock('../LazyPdfPage', () => ({
   ),
 }))
 
-const mockDoc = {} as PDFDocumentProxy
+const mockDoc = {} as ViewerDoc
 
 describe('GridView', () => {
   it('renders all page thumbnails', () => {

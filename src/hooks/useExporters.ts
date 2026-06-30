@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
 import type { Annotation } from '../types/annotation'
 import { t } from '../i18n'
 import { downloadBlob, stripPdfExt } from '../utils/download'
@@ -7,7 +7,7 @@ import { downloadBlob, stripPdfExt } from '../utils/download'
 interface UseExportersArgs {
   file: File | null
   fileBytes: ArrayBuffer | null
-  pdfDoc: PDFDocumentProxy | null
+  pdfDoc: ViewerDoc | null
   numPages: number
   annotations: Annotation[]
   onSuccess: (message: string) => void

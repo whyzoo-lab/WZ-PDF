@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { PdfPage } from './PdfPage'
 import { useInViewport } from '../../hooks/useInViewport'
 import { PDF_RENDER_SCALE } from '../../utils/constants'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../types/viewerDoc'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
 
@@ -12,7 +12,7 @@ const PLACEHOLDER_W = 612 * PDF_RENDER_SCALE
 const PLACEHOLDER_H = 792 * PDF_RENDER_SCALE
 
 interface LazyPdfPageProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
   pageNumber: number
   zoom: number
   rotation?: number

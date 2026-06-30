@@ -1,9 +1,9 @@
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../types/viewerDoc'
 import { LazyPdfPage } from './LazyPdfPage'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 
 interface SpreadViewProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
   numPages: number
   zoom: number
   rotation?: number

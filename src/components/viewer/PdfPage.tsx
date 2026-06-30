@@ -2,7 +2,7 @@ import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva'
 import type Konva from 'konva'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../types/viewerDoc'
 import { usePdfPage } from '../../hooks/usePdfPage'
 import { AnnotationLayer } from '../annotations/AnnotationLayer'
 import { PdfTextLayer } from './PdfTextLayer'
@@ -25,7 +25,7 @@ const RECT_COLOR        = '#FF0000'
 const RECT_STROKE_WIDTH = 2   // PDF points
 
 interface PdfPageProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
   pageNumber: number
   zoom: number
   rotation?: number  // 0 | 90 | 180 | 270 (degrees, clockwise)

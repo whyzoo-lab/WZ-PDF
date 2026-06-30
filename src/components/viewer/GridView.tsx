@@ -1,11 +1,11 @@
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../types/viewerDoc'
 import { LazyPdfPage } from './LazyPdfPage'
 import type { Annotation } from '../../types/annotation'
 
 const GRID_ZOOM = 0.3
 
 interface GridViewProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
   numPages: number
   rotation?: number
   annotations: Annotation[]

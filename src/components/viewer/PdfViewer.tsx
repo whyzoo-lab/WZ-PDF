@@ -1,5 +1,5 @@
 import React from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../types/viewerDoc'
 import { LazyPdfPage } from './LazyPdfPage'
 import { SpreadView } from './SpreadView'
 import { GridView } from './GridView'
@@ -11,7 +11,7 @@ import type { TextLayerHighlight } from './PdfTextLayer'
 import type { OcrPageResult } from '../../types/ocr'
 
 interface PdfViewerProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
   numPages: number
   zoom: number
   rotation: number

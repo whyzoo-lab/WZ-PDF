@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { PdfViewer } from '../PdfViewer'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../../types/viewerDoc'
 
 vi.mock('../LazyPdfPage', () => ({
   LazyPdfPage: ({ pageNumber }: { pageNumber: number }) => (
@@ -18,7 +18,7 @@ vi.mock('../FullscreenView', () => ({
   FullscreenView: () => <div data-testid="fullscreen-view" />,
 }))
 
-const mockDoc = {} as PDFDocumentProxy
+const mockDoc = {} as ViewerDoc
 const baseProps = {
   pdfDoc: mockDoc,
   numPages: 3,

@@ -1,10 +1,10 @@
 import { useCallback, useEffect } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
 import type { ViewMode } from '../types/viewModes'
 import { MAX_ZOOM, PDF_RENDER_SCALE } from '../utils/constants'
 
 interface UseFitZoomArgs {
-  pdfDoc: PDFDocumentProxy | null
+  pdfDoc: ViewerDoc | null
   viewMode: ViewMode
   rotation: number
   setZoom: (zoom: number) => void
@@ -20,7 +20,7 @@ interface UseFitZoomArgs {
  */
 export function useFitZoom({ pdfDoc, viewMode, rotation, setZoom }: UseFitZoomArgs) {
   const calcFitZoom = useCallback(async (
-    doc: PDFDocumentProxy,
+    doc: ViewerDoc,
     mode: ViewMode,
     rot: number,
   ) => {

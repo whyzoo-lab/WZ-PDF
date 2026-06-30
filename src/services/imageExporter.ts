@@ -10,7 +10,7 @@
  */
 
 import JSZip from 'jszip'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../types/viewerDoc'
 import { downloadBlob, stripPdfExt } from '../utils/download'
 
 /** Render scale for exported images — 2× gives ~144 DPI equivalent. */
@@ -35,7 +35,7 @@ function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
  * @param onProgress  Called after each page is rendered: (current, total)
  */
 export async function exportAsImages(
-  pdfDoc: PDFDocumentProxy,
+  pdfDoc: ViewerDoc,
   numPages: number,
   filename: string,
   onProgress?: (current: number, total: number) => void,
@@ -48,7 +48,7 @@ export async function exportAsImages(
     onProgress?.(pageNum, numPages)
 
     const page     = await pdfDoc.getPage(pageNum)
-    const viewport = page.getViewport({ scale: EXPORT_SCALE })
+    const viewport = { ...page.getViewport({ scale: EXPORT_SCALE }), scale: EXPORT_SCALE }
 
     const canvas    = document.createElement('canvas')
     canvas.width    = Math.round(viewport.width)

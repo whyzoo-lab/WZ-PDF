@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../types/viewerDoc'
 import { PdfPage } from './PdfPage'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { PDF_RENDER_SCALE, ZOOM_STEP, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants'
@@ -9,7 +9,7 @@ import { reducePresentTool, spotZoomStyle, isDrawingTool, DEFAULT_TOOL_STATE, MI
 import type { PresentStroke, PresentToolState } from '../../types/present'
 
 interface FullscreenViewProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
   numPages: number
   annotations: Annotation[]
   selectedId: string | null

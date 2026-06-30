@@ -1,11 +1,11 @@
 // src/components/panel/PagePanel.tsx
 import { useState, useRef, useEffect } from 'react'
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../types/viewerDoc'
 import { useThumbnails } from '../../hooks/useThumbnails'
 import { t } from '../../i18n'
 
 export interface PagePanelProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
   numPages: number
   currentPage: number
   isOperating: boolean

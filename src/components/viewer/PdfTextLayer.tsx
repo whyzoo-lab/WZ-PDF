@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { TextLayer } from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { ViewerDoc } from '../../types/viewerDoc'
 
 export interface TextEditCommit {
   /** New text content typed by the user. */
@@ -22,7 +23,7 @@ export interface TextLayerHighlight {
 }
 
 interface PdfTextLayerProps {
-  pdfDoc: PDFDocumentProxy
+  pdfDoc: ViewerDoc
   pageNumber: number
   /** Effective display scale (PDF_RENDER_SCALE * zoom). */
   scale: number
@@ -81,7 +82,10 @@ export function PdfTextLayer({
 
     ;(async () => {
       try {
-        const page = await pdfDoc.getPage(pageNumber)
+        // Cast to PDFDocumentProxy for TextLayer — this path is PDF-only;
+        // HWP pages return empty text content and the TextLayer is not rendered.
+        const pdfjsDoc = pdfDoc as unknown as PDFDocumentProxy
+        const page = await pdfjsDoc.getPage(pageNumber)
         if (cancelled) return
         const textContent = await page.getTextContent()
         if (cancelled) return

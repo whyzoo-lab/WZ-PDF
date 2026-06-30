@@ -9,7 +9,7 @@ vi.mock('./usePdfPage', () => ({ getOrRenderPage: (...a: unknown[]) => getOrRend
 
 import { useOcr } from './useOcr'
 
-const fakeDoc = {} as import('pdfjs-dist').PDFDocumentProxy
+const fakeDoc = {} as import('../types/viewerDoc').ViewerDoc
 // Shape mirrors PageData: logical width/height + the raster `renderScale` used
 // to map OCR box pixels back to PDF points (renderScale * downscale).
 const fakeCanvas = () => ({ canvas: document.createElement('canvas'), width: 15, height: 15, renderScale: 1.5 })
@@ -66,8 +66,8 @@ describe('useOcr', () => {
 
   it('clears results when the pdfDoc changes', async () => {
     predictMock.mockResolvedValue([{ box: [[0,0],[3,0],[3,3],[0,3]], text: 'a', score: 1 }])
-    const doc1 = {} as import('pdfjs-dist').PDFDocumentProxy
-    const doc2 = {} as import('pdfjs-dist').PDFDocumentProxy
+    const doc1 = {} as import('../types/viewerDoc').ViewerDoc
+    const doc2 = {} as import('../types/viewerDoc').ViewerDoc
     const { result, rerender } = renderHook(({ doc }) => useOcr(doc, 1), { initialProps: { doc: doc1 } })
     await act(async () => { await result.current.runPage(1) })
     expect(result.current.ocrResults.size).toBe(1)
