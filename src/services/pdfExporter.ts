@@ -240,6 +240,9 @@ export async function exportHwpToPdf(
     // drawn at the same point dimensions so it fills the page exactly.
     const pageWidth = compositedCanvas.width / renderScale
     const pageHeight = compositedCanvas.height / renderScale
+    // Known limitation: dimensions are scale-1 pixel sizes used directly as PDF
+    // points with no 96→72 DPI conversion, so the exported page's physical/print
+    // size may differ from the source's true physical dimensions; visual proportions are correct.
     const page = pdfDoc.addPage([pageWidth, pageHeight])
     page.drawImage(jpegImage, { x: 0, y: 0, width: pageWidth, height: pageHeight })
   }
