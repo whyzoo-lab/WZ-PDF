@@ -11,9 +11,9 @@ Demo : https://whyzoo-lab.github.io/WZ-PDF/
 ## inner html type PDF Viewer
 ```
 <iframe
-  src="https://whyzoo-lab.github.io/WZ-PDF/?embed=1&url=PDF주소"
+  src="https://whyzoo-lab.github.io/WZ-PDF/?embed=1&url=PDF url"
   style="width:100%; height:80vh; border:0;"
-  title="PDF 미리보기"
+  title="PDF preview"
   allowfullscreen></iframe>
 ```
 > Presentation-focused PDF viewer, editor & distribution platform.
