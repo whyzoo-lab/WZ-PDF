@@ -168,7 +168,7 @@ export async function exportHwpToPdf(
   const pdfDoc = await PDFDocument.create()
 
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
-    const { canvas } = await getOrRenderPage(doc, pageNum)
+    const { canvas, renderScale } = await getOrRenderPage(doc, pageNum)
 
     // Composite non-volatile annotations onto a scratch canvas so the exported
     // page contains stamps/signatures/watermarks/textEdits just like print does.
@@ -185,7 +185,6 @@ export async function exportHwpToPdf(
 
       const pageAnnotations = annotationsForPage(annotations, pageNum)
       // Annotation coords are in PDF points; the canvas is at renderScale px/pt.
-      const { renderScale } = await getOrRenderPage(doc, pageNum)
       const scale = renderScale
 
       for (const ann of pageAnnotations) {
@@ -236,10 +235,13 @@ export async function exportHwpToPdf(
     const jpegBytes = base64ToUint8Array(jpegDataUrl)
     const jpegImage = await pdfDoc.embedJpg(jpegBytes)
 
-    // Size the PDF page to exactly match the canvas pixel dimensions so the
-    // image fills the page without any letterboxing.
-    const page = pdfDoc.addPage([compositedCanvas.width, compositedCanvas.height])
-    page.drawImage(jpegImage, { x: 0, y: 0, width: compositedCanvas.width, height: compositedCanvas.height })
+    // Size the PDF page in PDF points (canvas pixels ÷ renderScale) so pdf-lib's
+    // point-unit page matches the document's logical dimensions. The image is
+    // drawn at the same point dimensions so it fills the page exactly.
+    const pageWidth = compositedCanvas.width / renderScale
+    const pageHeight = compositedCanvas.height / renderScale
+    const page = pdfDoc.addPage([pageWidth, pageHeight])
+    page.drawImage(jpegImage, { x: 0, y: 0, width: pageWidth, height: pageHeight })
   }
 
   return pdfDoc.save()
