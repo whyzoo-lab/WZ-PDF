@@ -536,6 +536,15 @@ export default function App() {
     if (!pdfDoc) fileInputRef.current?.click()
   }, [pdfDoc])
 
+  // Ctrl+drag region OCR (in PdfPage) hands back the recognized text → clipboard.
+  const handleRegionCopy = useCallback((text: string) => {
+    if (!text) { showToast(t('region.noText')); return }
+    navigator.clipboard?.writeText(text).then(
+      () => showToast(t('region.copied')),
+      () => showToast(t('region.copyFailed')),
+    )
+  }, [showToast])
+
   const actionBarProps = {
     hasPdf: !!pdfDoc,
     embed,
@@ -712,6 +721,7 @@ export default function App() {
                 ocrResults={ocr.ocrResults}
                 ocrActivePage={ocr.ocrActivePage}
                 onOcrRequest={ocr.runPage}
+                onRegionCopy={handleRegionCopy}
               />
             </ErrorBoundary>
           )}

@@ -8,7 +8,7 @@ import { AnnotationLayer } from '../annotations/AnnotationLayer'
 import { PdfTextLayer } from './PdfTextLayer'
 import type { TextLayerHighlight, TextEditCommit } from './PdfTextLayer'
 import { OcrTextLayer } from './OcrTextLayer'
-import type { OcrPageResult } from '../../types/ocr'
+import type { OcrPageResult, OcrWord } from '../../types/ocr'
 import { t } from '../../i18n'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { annotationsForPage } from '../../types/annotation'
@@ -47,6 +47,8 @@ interface PdfPageProps {
   ocrActive?: boolean
   /** Request OCR for this page (e.g. on double-click of an un-recognized page). */
   onOcrRequest?: (page: number) => void
+  /** Ctrl+drag a region in view mode → OCR that crop → deliver the text (clipboard). */
+  onRegionCopy?: (text: string) => void
 }
 
 function PdfPageInner({
@@ -68,6 +70,7 @@ function PdfPageInner({
   ocrResult,
   ocrActive,
   onOcrRequest,
+  onRegionCopy,
 }: PdfPageProps) {
   // Rasterize the page to match how big it's actually shown: logical scale ×
   // current zoom × the display's pixel density. Quantized (round up to 0.5) so
@@ -87,12 +90,77 @@ function PdfPageInner({
   const [draft, setDraft] = useState<PenDraw | RectDraw | null>(null)
   const draftRef = useRef<PenDraw | RectDraw | null>(null)
 
+  // ── Ctrl+drag region → OCR → clipboard (view mode) ───────────────────────────
+  // A transient highlighter rectangle: stored in PDF points like the markup draft.
+  type Region = { x: number; y: number; w: number; h: number }
+  const [region, setRegion] = useState<Region | null>(null)
+  const regionRef = useRef<Region | null>(null)
+  const [regionBusy, setRegionBusy] = useState(false)
+
   // Origin point (CSS px, relative to the page box) for the OCR scanning
   // animation when it was kicked off by a double-click. null → the default
   // top→bottom sweep (e.g. when triggered from the toolbar button).
   const [ocrOrigin, setOcrOrigin] = useState<{ x: number; y: number } | null>(null)
   // Drop the origin once recognition ends so the next run starts clean.
   useEffect(() => { if (!ocrActive) setOcrOrigin(null) }, [ocrActive])
+
+  // ── HWP native text layer ────────────────────────────────────────────────
+  // HWP pages have no pdfjs text layer, but rhwp exposes positioned text runs.
+  // Fetch them and render the same selectable overlay OCR uses — so HWP text is
+  // selectable / copyable with no OCR pass. PDF and image-only HWP are unaffected.
+  const [hwpWords, setHwpWords] = useState<OcrWord[] | null>(null)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync reset on dep change
+    if (kind !== 'hwp' || !pdfDoc.getPageText) { setHwpWords(null); return }
+    let cancelled = false
+    pdfDoc.getPageText(pageNumber)
+      .then(runs => {
+        if (cancelled) return
+        setHwpWords(runs.map(r => ({
+          text: r.text, score: 1, x: r.x, y: r.y, width: r.width, height: r.height, rotation: 0,
+        })))
+      })
+      .catch(() => { if (!cancelled) setHwpWords([]) })
+    return () => { cancelled = true }
+  }, [pdfDoc, pageNumber, kind])
+  const hasHwpText = !!(hwpWords && hwpWords.length > 0)
+
+  // Ctrl+drag region → OCR the crop → hand the text back (clipboard). useCallback
+  // so the Stage's onMouseUp and the window-mouseup net (for drags that end off
+  // the Stage, e.g. on the gray margin) share one implementation.
+  const finishRegion = useCallback(() => {
+    const r = regionRef.current
+    regionRef.current = null
+    setRegion(null)
+    if (!r || !pageData || !onRegionCopy) return
+    const x = Math.min(r.x, r.x + r.w), y = Math.min(r.y, r.y + r.h)
+    const w = Math.abs(r.w), h = Math.abs(r.h)
+    if (w < 6 || h < 6) return   // ignore tiny drags / stray Ctrl-clicks
+    const s = pageData.renderScale
+    const sw = Math.max(1, Math.round(w * s)), sh = Math.max(1, Math.round(h * s))
+    const crop = document.createElement('canvas')
+    crop.width = sw; crop.height = sh
+    crop.getContext('2d')?.drawImage(pageData.canvas, Math.round(x * s), Math.round(y * s), sw, sh, 0, 0, sw, sh)
+    setRegionBusy(true)
+    void (async () => {
+      try {
+        const { predict } = await import('../../services/ocrEngine')
+        const lines = await predict(crop)
+        onRegionCopy(lines.map(l => l.text).join(' ').replace(/\s+/g, ' ').trim())
+      } catch {
+        onRegionCopy('')
+      } finally {
+        setRegionBusy(false)
+        crop.width = 0; crop.height = 0
+      }
+    })()
+  }, [pageData, onRegionCopy])
+
+  useEffect(() => {
+    if (!region) return
+    window.addEventListener('mouseup', finishRegion)
+    return () => window.removeEventListener('mouseup', finishRegion)
+  }, [region, finishRegion])
 
   // Commit the in-progress draft as a real annotation. Reused by Stage's
   // own onMouseUp and the window-level safety net below.
@@ -281,6 +349,35 @@ function PdfPageInner({
 
   const isDrawing = activeMode === 'pen' || activeMode === 'rectangle'
 
+  // ── Ctrl+drag region → OCR → clipboard ─────────────────────────────────────
+  // Active only in view/select mode (not while a markup tool is selected) and
+  // only for mouse + Ctrl, so it never interferes with normal clicks or touch.
+  const regionTrigger = (e: PointerEvt) =>
+    !isDrawing && !!onRegionCopy && (activeMode === null || activeMode === 'select') &&
+    e.evt instanceof MouseEvent && e.evt.ctrlKey
+
+  const startRegion = (e: PointerEvt) => {
+    const p = getPointerStored(e)
+    if (!p) return
+    const r: Region = { x: p.x, y: p.y, w: 0, h: 0 }
+    regionRef.current = r; setRegion(r)
+  }
+  const updateRegion = (e: PointerEvt) => {
+    const r = regionRef.current
+    if (!r) return
+    const p = getPointerStored(e)
+    if (!p) return
+    const next: Region = { x: r.x, y: r.y, w: p.x - r.x, h: p.y - r.y }
+    regionRef.current = next; setRegion(next)
+  }
+  // finishRegion is the useCallback defined in the hooks section above.
+
+  // Combined Stage pointer handlers: markup drawing when a tool is active,
+  // otherwise Ctrl+drag region selection.
+  const onStageDown = (e: PointerEvt) => { if (isDrawing) handleMouseDown(e); else if (regionTrigger(e)) startRegion(e) }
+  const onStageMove = (e: PointerEvt) => { if (draftRef.current) handleMouseMove(e); else if (regionRef.current) updateRegion(e) }
+  const onStageUp   = ()             => { if (draftRef.current) commitDraft(); else if (regionRef.current) finishRegion() }
+
   // Shared by the pdfjs text layer and the OCR text layer: turn an inline text
   // edit into a `textEdit` annotation. The patch is filled with the region's
   // sampled background colour (not plain white) so it blends into coloured /
@@ -338,10 +435,12 @@ function PdfPageInner({
           height={renderedH}
           onClick={handleStageClick}
           onTap={handleStageClick}
-          onMouseDown={isDrawing ? handleMouseDown : undefined}
-          onMouseMove={isDrawing ? handleMouseMove : undefined}
-          onMouseUp={isDrawing ? handleMouseUp : undefined}
-          // Touch equivalents — same handlers; Konva normalizes pointer position.
+          // Mouse handlers are always attached: they route to markup drawing or
+          // Ctrl+drag region selection internally (and ignore plain clicks).
+          onMouseDown={onStageDown}
+          onMouseMove={onStageMove}
+          onMouseUp={onStageUp}
+          // Touch equivalents — markup only (region selection is mouse+Ctrl).
           onTouchStart={isDrawing ? handleMouseDown : undefined}
           onTouchMove={isDrawing ? handleMouseMove : undefined}
           onTouchEnd={isDrawing ? handleMouseUp : undefined}
@@ -391,8 +490,31 @@ function PdfPageInner({
               )}
             </Layer>
           )}
+          {/* Ctrl+drag region selection (yellow highlighter) */}
+          {region && (
+            <Layer listening={false}>
+              <Rect
+                x={(region.w < 0 ? region.x + region.w : region.x) * effectiveZoom}
+                y={(region.h < 0 ? region.y + region.h : region.y) * effectiveZoom}
+                width={Math.abs(region.w) * effectiveZoom}
+                height={Math.abs(region.h) * effectiveZoom}
+                fill={PEN_COLOR}
+                opacity={0.3}
+                stroke={PEN_COLOR}
+                strokeWidth={1}
+              />
+            </Layer>
+          )}
         </Stage>
       </div>
+
+      {/* Region OCR busy badge */}
+      {regionBusy && (
+        <div className="wz-ocr-badge no-print" style={{ position: 'absolute', top: 8, left: 8 }}>
+          <span className="wz-ocr-badge-dot" />
+          {t('region.recognizing')}
+        </div>
+      )}
 
       {/* Selectable text overlay — shown when no tool is active (so it doesn't
           steal drag events from drawing/placement tools), OR whenever there are
@@ -411,7 +533,19 @@ function PdfPageInner({
           onEditCommit={appMode === 'editor' ? commitTextEdit : undefined}
         />
       )}
-      {ocrResult && ocrResult.words.length > 0 && (
+      {/* HWP native selectable text — replaces OCR for HWP pages that carry text. */}
+      {hasHwpText && (
+        <OcrTextLayer
+          words={hwpWords!}
+          scale={effectiveZoom}
+          width={stageWidth}
+          height={stageHeight}
+          highlights={searchHighlights}
+          reveal={false}
+        />
+      )}
+      {/* OCR text — skipped when HWP native text is already shown (avoids overlap). */}
+      {!hasHwpText && ocrResult && ocrResult.words.length > 0 && (
         <OcrTextLayer
           words={ocrResult.words}
           scale={effectiveZoom}

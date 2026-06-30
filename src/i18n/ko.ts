@@ -90,6 +90,12 @@ export const ko = {
   'hwp.engineError': 'HWP 엔진 로드 실패',
   'hwp.badge': 'HWP',
 
+  // ── Region OCR (Ctrl+drag → copy) ─────────────────────────────────────────
+  'region.recognizing': '인식 중…',
+  'region.copied': '텍스트를 클립보드에 복사했어요',
+  'region.noText': '인식된 텍스트가 없어요',
+  'region.copyFailed': '클립보드 복사 실패',
+
   // ── OCR ───────────────────────────────────────────────────────────────────
   'ocr.runCurrent': 'OCR (현재 페이지)',
   'ocr.runAll': 'OCR (전체 문서)',

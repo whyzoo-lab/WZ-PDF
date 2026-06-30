@@ -16,6 +16,7 @@ interface SpreadViewProps {
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void
   onAnnotationAdd: (annotation: OmitId<Annotation>) => void
+  onRegionCopy?: (text: string) => void
 }
 
 export function SpreadView({
@@ -32,6 +33,7 @@ export function SpreadView({
   onAnnotationSelect,
   onAnnotationUpdate,
   onAnnotationAdd,
+  onRegionCopy,
 }: SpreadViewProps) {
   // Build pairs: [[1,2], [3,4], [5]] for numPages=5
   const pairs: number[][] = []
@@ -52,6 +54,7 @@ export function SpreadView({
     onAnnotationSelect,
     onAnnotationUpdate,
     onAnnotationAdd,
+    onRegionCopy,
   }
 
   return (

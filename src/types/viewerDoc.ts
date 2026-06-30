@@ -3,6 +3,9 @@ export type DocKind = 'pdf' | 'hwp'
 
 export interface ViewerViewport { width: number; height: number; scale: number }
 
+/** A positioned native text run (HWP), in page-point coordinates (scale-1 px). */
+export interface HwpTextRun { text: string; x: number; y: number; width: number; height: number }
+
 export interface ViewerPage {
   getViewport(params: { scale: number }): ViewerViewport
   render(params: { canvas: HTMLCanvasElement; viewport: ViewerViewport }): { promise: Promise<void> }
@@ -18,5 +21,8 @@ export interface ViewerPage {
 export interface ViewerDoc {
   numPages: number
   getPage(pageNumber: number): Promise<ViewerPage>
+  /** Native positioned text for a page (HWP only — enables real text selection
+   *  without OCR). Absent on the pdfjs path (PDF uses its own text layer). */
+  getPageText?(pageNumber: number): Promise<HwpTextRun[]>
   destroy(): void
 }

@@ -41,6 +41,8 @@ interface PdfViewerProps {
   ocrActivePage?: number | null
   /** Request OCR for a page (double-click on an un-recognized page). */
   onOcrRequest?: (page: number) => void
+  /** Ctrl+drag region → OCR → clipboard (view mode). Receives recognized text. */
+  onRegionCopy?: (text: string) => void
 }
 
 export function PdfViewer({
@@ -62,6 +64,7 @@ export function PdfViewer({
   onAnnotationAdd,
   ocrActivePage,
   onOcrRequest,
+  onRegionCopy,
   onGridPageClick,
   onFullscreenExit,
   onCurrentPageChange,
@@ -94,6 +97,7 @@ export function PdfViewer({
     onAnnotationSelect,
     onAnnotationUpdate,
     onAnnotationAdd,
+    onRegionCopy,
   }
 
   // ── Single-mode scroll container ref for IntersectionObserver page tracking ──
