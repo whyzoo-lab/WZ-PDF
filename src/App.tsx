@@ -316,9 +316,12 @@ export default function App() {
     search.clear()
   }, [setActiveMode, search])
 
-  /** Main upload handler — accepts PDF files only. */
+  /** Main upload handler — accepts PDF and HWP/HWPX files. */
   const handleUpload = useCallback((f: File) => {
-    if (!f.type.includes('pdf') && !f.name.toLowerCase().endsWith('.pdf')) {
+    const name = f.name.toLowerCase()
+    const isPdf = f.type.includes('pdf') || name.endsWith('.pdf')
+    const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
+    if (!isPdf && !isHwp) {
       alert(t('error.pdfOnly'))
       return
     }
@@ -587,7 +590,7 @@ export default function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,.pdf"
+        accept="application/pdf,.pdf,.hwp,.hwpx"
         className="hidden"
         onChange={e => {
           const f = e.target.files?.[0]

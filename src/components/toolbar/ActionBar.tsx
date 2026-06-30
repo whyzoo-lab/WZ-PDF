@@ -310,7 +310,11 @@ export function ActionBar({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const file = e.dataTransfer.files[0]
-    if (file?.type === 'application/pdf') onUpload(file)
+    if (!file) return
+    const name = file.name.toLowerCase()
+    const isPdf = file.type === 'application/pdf' || name.endsWith('.pdf')
+    const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
+    if (isPdf || isHwp) onUpload(file)
   }
 
   const handlePresetClick = async (presetId: string, svg: string) => {
@@ -611,7 +615,7 @@ export function ActionBar({
             )}
           </div>
           )}
-          <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={handleFileChange} />
+          <input ref={fileInputRef} type="file" accept="application/pdf,.pdf,.hwp,.hwpx" className="hidden" onChange={handleFileChange} />
 
           {/* Print */}
           {hasPdf && (

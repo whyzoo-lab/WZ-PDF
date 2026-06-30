@@ -2,8 +2,8 @@
 export const en = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'Fast and simple PDF',
-  'empty.desktop': 'Drag a PDF here, or click Open / press F2',
-  'empty.mobile': 'Tap or use the Open button to open a PDF',
+  'empty.desktop': 'Drag a PDF · HWP here, or click Open / press F2',
+  'empty.mobile': 'Tap or use the Open button to open a PDF · HWP',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': 'Single page',
@@ -85,6 +85,10 @@ export const en = {
   'url.corsBlocked': "Could not load the PDF — the host blocks cross-origin requests (CORS). Try downloading the file and opening it directly, or use the desktop app.",
   'tool.openFile': 'Open file…',
   'tool.openUrl': 'Open from URL…',
+
+  // ── HWP ───────────────────────────────────────────────────────────────────
+  'hwp.engineError': 'HWP engine failed to load',
+  'hwp.badge': 'HWP',
 
   // ── OCR ───────────────────────────────────────────────────────────────────
   'ocr.runCurrent': 'OCR (current page)',

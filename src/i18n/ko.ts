@@ -2,8 +2,8 @@
 export const ko = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'PDF를 쉽고 빠르게',
-  'empty.desktop': 'PDF를 여기에 드래그하거나 Open 버튼 또는 F2를 누르세요',
-  'empty.mobile': '탭하거나 Open 버튼으로 PDF를 여세요',
+  'empty.desktop': 'PDF · HWP를 여기에 드래그하거나 Open 버튼 또는 F2를 누르세요',
+  'empty.mobile': '탭하거나 Open 버튼으로 PDF · HWP를 여세요',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': '한 장 보기',
@@ -85,6 +85,10 @@ export const ko = {
   'url.corsBlocked': 'PDF를 불러올 수 없습니다 — 해당 사이트가 외부 접근(CORS)을 차단합니다. 파일을 내려받아 직접 열거나 데스크탑 앱을 사용하세요.',
   'tool.openFile': '파일 열기…',
   'tool.openUrl': 'URL로 열기…',
+
+  // ── HWP ───────────────────────────────────────────────────────────────────
+  'hwp.engineError': 'HWP 엔진 로드 실패',
+  'hwp.badge': 'HWP',
 
   // ── OCR ───────────────────────────────────────────────────────────────────
   'ocr.runCurrent': 'OCR (현재 페이지)',
