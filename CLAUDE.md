@@ -41,13 +41,37 @@ The renderer never uses Node APIs directly. All IPC calls go through `window.ele
 ### Rendering pipeline
 
 ```
-PDF bytes → pdfjs-dist (Worker) → HTMLCanvasElement → Konva Stage (KonvaImage)
+PDF bytes  → pdfjs-dist (Worker)   → HTMLCanvasElement → Konva Stage (KonvaImage)
+HWP bytes  → @rhwp/core (WASM)     → HTMLCanvasElement → Konva Stage (KonvaImage)
+HWPX bytes → @rhwp/core (WASM)     → HTMLCanvasElement → Konva Stage (KonvaImage)
 ```
 
 Key points:
 - **pdfjs worker** is loaded via a blob URL wrapper in `src/main.tsx` that polyfills `Uint8Array.prototype.toHex` and `Map.prototype.getOrInsertComputed` before importing the real worker — both methods are absent in the Electron Chromium version but required by pdfjs 5.x.
 - `usePdfPage` renders each page once and stores the result in a **module-level WeakMap cache** (`pageCache`). View-mode switches (single ↔ spread ↔ grid ↔ fullscreen) do not re-render pages.
 - `PdfPage` passes `pageData.canvas` directly to `<KonvaImage>` — no `toDataURL` / `new Image()` round-trip.
+
+### HWP / HWPX viewing
+
+WZ PDF can open Korean `.hwp` (OLE2 binary) and `.hwpx` (zip-based XML) documents alongside PDF files. The full viewer pipeline (page panel, zoom, spread/grid/fullscreen, annotations, OCR, print) works unchanged.
+
+**Detection** — `src/utils/detectDocType.ts` reads magic bytes first (OLE2 `D0 CF 11 E0` → hwp; `%PDF` → pdf); file extension is a fallback only. This ensures a `.pdf`-named HWP file is still routed correctly.
+
+**Engine** — `src/services/hwpEngine.ts` is a lazy-loaded WASM boundary around `@rhwp/core`. `loadHwp(bytes: Uint8Array) → HwpDocument` is the sole public function. The WASM binary (`rhwp_bg.wasm`) is:
+- **Production/build:** copied to `public/hwp/` by `npm run setup:hwp` (script is prepended to `build` and `build:exe`; `public/hwp/` is gitignored — run `npm run setup:hwp` before building).
+- **Dev:** loaded directly from `node_modules/@rhwp/core/`.
+
+**Adapter** — `src/services/hwpDocAdapter.ts` wraps `HwpDocument` as a pdfjs-shaped `ViewerDoc` interface (`src/types/viewerDoc.ts`). `renderPageToCanvas` auto-sizes the canvas to match HWP page dimensions. Note: HWP pages are 0-based internally; the adapter converts to the app's 1-based page numbers.
+
+**Integration** — `usePdfDocument` detects the file type and returns `{ pdfDoc: ViewerDoc, kind: 'pdf'|'hwp', ... }`. All downstream code (viewer, annotations, OCR, print, export) consumes `ViewerDoc` unchanged and is unaware of the source format.
+
+**Text / search** — HWP has no selectable text layer; `PdfTextLayer` is gated to `kind === 'pdf'`. HWP text selection and search rely on OCR operating on the rendered canvas (same path as scanned PDFs).
+
+**Export → PDF** — `exportHwpToPdf` in `src/services/pdfExporter.ts` composites the rendered page canvases (plus any annotation overlays) into a fresh PDF via pdf-lib. This doubles as an HWP→PDF converter. Other export formats (HTML viewer, Images ZIP, Viewer EXE) are not available for HWP.
+
+**Editing scope** — Existing annotation overlays (stamps, signatures, watermarks, pen, rectangle) work on HWP pages. There is no native HWP content editing. Office formats (DOC, PPT, XLS) are out of scope.
+
+**Bundle impact** — `@rhwp/core` is kept in a lazy chunk (`hwpEngine-*.js`) and never included in the entry bundle; it is only fetched when a HWP/HWPX file is opened.
 
 ### Coordinate system
 
@@ -117,6 +141,7 @@ The renderer bundle is split so the initial chunk only contains code needed for 
 | `services/htmlExporter` | Export → HTML | base64 encoding helper |
 | `services/imageExporter` | Export → Images | JSZip (~100 KB) only needed at export time |
 | `services/pdfPageService` | Page CRUD ops | Shares pdf-lib with the PDF exporter |
+| `services/hwpEngine` | Opening a HWP/HWPX file | @rhwp/core WASM; not loaded for PDF-only use |
 | `components/modals/SignaturePad` | Editor → Signature | Canvas drawing UI |
 | `components/modals/WatermarkConfig` | Editor → Watermark | Form UI |
 
@@ -332,7 +357,7 @@ The `export-exe` IPC handler can't work in dev mode because no SFX template exis
 The script in `package.json` runs `electron-builder --win portable` *and then* `electron-builder --win nsis` deliberately, not as one combined invocation. The NSIS `afterPack` hook (`scripts/afterPack.cjs`) embeds the portable artifact as `viewer-template.exe`, which requires the portable to already exist on disk. A combined invocation would share `win-unpacked/` and the template wouldn't be ready when NSIS packs.
 
 ### OCR assets + dev-vs-prod wasm path
-OCR models + onnxruntime-web wasm (~56 MB) live under `public/ocr/` and are **gitignored** — regenerate with `npm run setup:ocr` (`scripts/build-ocr-assets.py`, needs Python + pyyaml) before building. It downloads the PP-OCRv5 detection tar, repackages the community Korean ONNX rec model (`monkt/paddleocr-onnx`) into the SDK's `inference.onnx`+`inference.yml` tar layout (image_shape **[3,48,320]** — the ONNX input height is 48, not the 32 its config.json claims), and copies the ort wasm.
+OCR models + onnxruntime-web wasm (~56 MB) live under `public/ocr/` and are **gitignored** — regenerate with `npm run setup:ocr` (`scripts/build-ocr-assets.py`, needs Python + pyyaml) before building. Similarly, the HWP WASM (`public/hwp/`) is **gitignored** — regenerate with `npm run setup:hwp` before building (this runs automatically as part of `build` and `build:exe`). It downloads the PP-OCRv5 detection tar, repackages the community Korean ONNX rec model (`monkt/paddleocr-onnx`) into the SDK's `inference.onnx`+`inference.yml` tar layout (image_shape **[3,48,320]** — the ONNX input height is 48, not the 32 its config.json claims), and copies the ort wasm.
 
 The ort runtime is loaded differently per environment (see `wasmPaths` in `ocrEngine.ts`): **production** uses the bundled `/ocr/wasm/` (fully offline), but **`vite dev` can't serve a `/public` file as a dynamically-imported module** (ort `import()`s its `.mjs` glue → Vite 500s on the `?import` request), so dev loads the runtime from the version-matched jsDelivr CDN instead. Net effect: OCR needs internet in `npm run dev` but the shipped app is offline. Keep `ORT_VERSION` in `ocrEngine.ts` in sync with the `onnxruntime-web` dependency.
 

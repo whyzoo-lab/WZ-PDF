@@ -47,6 +47,7 @@ Built with React, Konva, pdfjs, pdf-lib, and Electron. Ships with an optional
 - **Print** — every page composited with annotations, aspect-ratio preserved.
 - **i18n** — UI and help auto-switch to Korean on Korean OS/browser locale,
   English everywhere else.
+- **HWP / HWPX** — view Korean `.hwp` and `.hwpx` files exactly like PDF: full viewer pipeline, annotation overlays, and Export → PDF (doubles as an HWP-to-PDF converter).
 - **Responsive** — works on desktop, tablet, and phone.
 
 ## Demo (web)
