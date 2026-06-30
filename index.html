@@ -1,85 +1,202 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- ── Primary SEO ─────────────────────────────────────────────────── -->
-    <title>WZ PDF — PDF Viewer, Editor &amp; Annotator (free, no upload)</title>
-    <meta name="description" content="WZ PDF is a free, fully in-browser PDF viewer and editor. Add stamps, signatures and watermarks, manage pages, present fullscreen, and export to PDF, HTML, images or a standalone EXE — your file never leaves your device." />
-    <meta name="keywords" content="PDF viewer, PDF editor, PDF annotator, add signature to PDF, PDF watermark, PDF stamp, merge PDF, split PDF, edit PDF text, free PDF tool, browser PDF, no upload PDF" />
-    <meta name="author" content="WhyZOO" />
+    <!-- ── SEO ─────────────────────────────────────────────────────────── -->
+    <title>WZ PDF — 브라우저용 PDF 뷰어 · 편집기 (무료, 업로드 없음)</title>
+    <meta name="description" content="WZ PDF는 설치·업로드 없이 브라우저에서 동작하는 무료 PDF 뷰어/편집기입니다. 도장·서명·워터마크, 페이지 관리, 발표 모드, OCR, 그리고 웹사이트에 PDF를 다운로드 없이 임베드하는 뷰어를 제공합니다." />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="theme-color" content="#0f172a" />
-    <link rel="canonical" href="https://whyzoo.i234.me/" />
-
-    <!-- ── Icons / PWA ─────────────────────────────────────────────────── -->
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="WZ PDF" />
-
-    <!-- ── Open Graph (Facebook / KakaoTalk / LinkedIn) ────────────────── -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="WZ PDF" />
-    <meta property="og:title" content="WZ PDF — PDF Viewer, Editor &amp; Annotator" />
-    <meta property="og:description" content="Free, fully in-browser PDF tool: stamps, signatures, watermarks, page management, fullscreen presenting, and multi-format export. Your file never leaves your device." />
-    <meta property="og:url" content="https://whyzoo.i234.me/" />
-    <meta property="og:image" content="https://whyzoo.i234.me/og-image.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:locale" content="en_US" />
-    <meta property="og:locale:alternate" content="ko_KR" />
-
-    <!-- ── Twitter Card ────────────────────────────────────────────────── -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="WZ PDF — PDF Viewer, Editor &amp; Annotator" />
-    <meta name="twitter:description" content="Free, fully in-browser PDF tool. No upload — your file never leaves your device." />
-    <meta name="twitter:image" content="https://whyzoo.i234.me/og-image.png" />
-
-    <!-- ── Structured data (GEO: helps AI engines describe the app) ────── -->
+    <meta property="og:title" content="WZ PDF — 브라우저용 PDF 뷰어 · 편집기" />
+    <meta property="og:description" content="설치·업로드 없이 브라우저에서 PDF를 보고 편집하세요. 웹사이트에 임베드 가능한 뷰어 데모." />
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "WZ PDF",
-      "description": "A free, fully client-side PDF viewer and editor. View, annotate (stamps, signatures, watermarks), edit text, manage pages, present fullscreen, and export to PDF, HTML, images, or a standalone EXE. No backend and no upload — the document is processed entirely in the browser.",
-      "url": "https://whyzoo.i234.me/",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web, Windows",
-      "browserRequirements": "Requires a modern browser (Chrome, Edge, Firefox, Safari).",
-      "inLanguage": ["en", "ko"],
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      },
-      "featureList": [
-        "View PDF (single, spread, grid, fullscreen presentation)",
-        "Stamps, hand-drawn signatures, full-page watermarks",
-        "Selectable text and inline text editing",
-        "Page management: reorder, insert, delete, merge",
-        "Export to PDF, HTML, images (ZIP), and standalone EXE",
-        "Korean and English UI",
-        "Privacy-first: no upload, processed in-browser"
-      ],
-      "creator": {
-        "@type": "Organization",
-        "name": "WhyZOO",
-        "url": "https://github.com/whyzoo-lab/WZ-PDF"
-      }
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "creator": { "@type": "Organization", "name": "WhyZOO", "url": "https://github.com/whyzoo-lab/WZ-PDF" }
     }
     </script>
+
+    <style>
+      :root{
+        --bg:#0f172a; --bg2:#1e293b; --card:#1f2937; --bd:#334155;
+        --tx:#e2e8f0; --dim:#94a3b8; --sky:#38bdf8; --violet:#a78bfa; --green:#34d399;
+      }
+      *{box-sizing:border-box}
+      html,body{margin:0;padding:0;background:var(--bg);color:var(--tx);
+        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",Roboto,sans-serif;
+        line-height:1.7;-webkit-font-smoothing:antialiased}
+      a{color:var(--sky);text-decoration:none}
+      .wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+
+      /* Header */
+      header{position:sticky;top:0;z-index:20;background:rgba(15,23,42,.82);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
+      .nav{display:flex;align-items:center;gap:14px;height:60px}
+      .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px}
+      .brand img{width:28px;height:28px;border-radius:7px}
+      .brand .name{background:linear-gradient(135deg,var(--sky),var(--violet));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+      .nav .spacer{flex:1}
+      .nav a.lnk{color:var(--dim);font-size:14px}
+      .nav a.lnk:hover{color:var(--tx)}
+      .btn{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:9px 16px;font-size:14px;font-weight:600;border:1px solid transparent;cursor:pointer}
+      .btn-primary{background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff}
+      .btn-primary:hover{filter:brightness(1.08)}
+      .btn-ghost{background:var(--card);border-color:var(--bd);color:var(--tx)}
+      .btn-ghost:hover{border-color:var(--sky);color:var(--sky)}
+
+      /* Hero */
+      .hero{text-align:center;padding:64px 0 30px}
+      .hero h1{font-size:42px;line-height:1.15;margin:0 0 14px;letter-spacing:-.02em}
+      .hero h1 .grad{background:linear-gradient(135deg,var(--sky),var(--violet));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+      .hero p{color:var(--dim);font-size:17px;max-width:620px;margin:0 auto 26px}
+      .hero .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+      .pill{display:inline-block;margin-bottom:18px;font-size:12.5px;color:var(--dim);border:1px solid var(--bd);border-radius:999px;padding:4px 14px}
+
+      /* Features */
+      .feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:40px 0 8px}
+      .feat{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px}
+      .feat .ic{font-size:22px}
+      .feat h3{margin:8px 0 4px;font-size:15.5px}
+      .feat p{margin:0;color:var(--dim);font-size:13.5px;line-height:1.55}
+
+      /* Section */
+      section.block{padding:46px 0}
+      .block h2{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
+      .block .sub{color:var(--dim);margin:0 0 22px;font-size:15px}
+
+      /* Demo frame — mimics being embedded inside another website */
+      .demo-shell{background:var(--bg2);border:1px solid var(--bd);border-radius:16px;overflow:hidden;box-shadow:0 24px 60px -20px rgba(0,0,0,.6)}
+      .demo-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--bd);background:#172033}
+      .dot{width:11px;height:11px;border-radius:50%}
+      .demo-url{margin-left:10px;font-size:12px;color:var(--dim);font-family:ui-monospace,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .demo-frame{width:100%;height:72vh;min-height:460px;border:0;display:block;background:#0b1220}
+      .demo-cap{color:var(--dim);font-size:13px;margin-top:12px;text-align:center}
+
+      /* Code */
+      pre{background:#0b1220;border:1px solid var(--bd);border-radius:12px;padding:16px 18px;overflow-x:auto;font-size:13px;line-height:1.6}
+      code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#cbd5e1}
+      .tag{color:#7dd3fc}.attr{color:#a5b4fc}.str{color:#86efac}
+      .note{background:var(--bg2);border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:12px 16px;margin:14px 0;font-size:13.5px;color:var(--dim)}
+      .note strong{color:var(--tx)}
+      .params{display:grid;grid-template-columns:120px 1fr;gap:6px 16px;margin:14px 0;font-size:14px}
+      .params code{color:var(--sky)} .params .d{color:var(--dim)}
+
+      footer{border-top:1px solid var(--bd);color:var(--dim);font-size:13px;text-align:center;padding:28px 0;margin-top:30px}
+
+      @media (max-width:600px){ .hero h1{font-size:32px} .nav a.lnk{display:none} }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <!-- Crawlable fallback: visible to bots before the SPA mounts, replaced on load. -->
-    <noscript>
-      WZ PDF is a free, in-browser PDF viewer and editor — add stamps, signatures,
-      and watermarks, manage pages, and export to PDF, HTML, images, or EXE.
-      JavaScript is required to run the app.
-    </noscript>
-    <script type="module" src="/src/main.tsx"></script>
+    <header>
+      <div class="wrap nav">
+        <a class="brand" href="./">
+          <img src="/icon.svg" alt="" /><span class="name">WZ PDF</span>
+        </a>
+        <span class="spacer"></span>
+        <a class="lnk" href="#demo">데모</a>
+        <a class="lnk" href="#embed">임베드</a>
+        <a class="lnk" href="https://github.com/whyzoo-lab/WZ-PDF" target="_blank" rel="noopener">GitHub</a>
+        <a class="btn btn-primary" href="./app.html">앱 열기 ↗</a>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <!-- Hero -->
+      <div class="hero">
+        <span class="pill">⚡ 설치 없음 · 업로드 없음 · 100% 브라우저에서 처리</span>
+        <h1>브라우저에서 바로 보는<br><span class="grad">PDF 뷰어 &amp; 편집기</span></h1>
+        <p>도장·서명·워터마크, 페이지 관리, 발표 모드, 한국어 OCR까지. 그리고
+          웹사이트에 <strong>PDF를 다운로드 없이 그대로 임베드</strong>할 수 있습니다.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="./app.html">앱 열기</a>
+          <a class="btn btn-ghost" href="#demo">임베드 데모 보기</a>
+          <a class="btn btn-ghost" href="https://github.com/whyzoo-lab/WZ-PDF/releases" target="_blank" rel="noopener">데스크톱 설치파일</a>
+        </div>
+      </div>
+
+      <!-- Features -->
+      <div class="feats">
+        <div class="feat"><div class="ic">🔒</div><h3>업로드 없음</h3><p>파일이 기기를 떠나지 않습니다. 모든 처리는 브라우저 안에서 이뤄져요.</p></div>
+        <div class="feat"><div class="ic">🖊️</div><h3>주석 &amp; 편집</h3><p>도장·손글씨 서명·워터마크, 텍스트 편집, 페이지 추가/삭제/정렬.</p></div>
+        <div class="feat"><div class="ic">🎯</div><h3>발표 &amp; OCR</h3><p>전체화면 발표 도구(펜·레이저·스팟 줌)와 오프라인 한국어 OCR.</p></div>
+        <div class="feat"><div class="ic">🧩</div><h3>웹 임베드</h3><p><code>?url=</code> 하나로 어떤 사이트든 PDF 뷰어를 끼워 넣을 수 있어요.</p></div>
+      </div>
+
+      <!-- Demo -->
+      <section class="block" id="demo">
+        <h2>웹사이트에 임베드된 모습</h2>
+        <p class="sub">아래는 이 뷰어를 <code>&lt;iframe&gt;</code>으로 끼워 넣은 실제 데모입니다 — 다운로드 없이 페이지 안에서 바로 보입니다.</p>
+        <div class="demo-shell">
+          <div class="demo-bar">
+            <span class="dot" style="background:#f87171"></span>
+            <span class="dot" style="background:#fbbf24"></span>
+            <span class="dot" style="background:#34d399"></span>
+            <span class="demo-url" id="demoUrl">your-website.kr</span>
+          </div>
+          <iframe class="demo-frame" id="demoFrame" title="WZ PDF 임베드 데모" allowfullscreen></iframe>
+        </div>
+        <p class="demo-cap">샘플 문서가 임베드 뷰어(읽기 전용 모드)로 표시됩니다. ·
+          <a href="./app.html?url=" id="openFull">전체 앱으로 열기</a></p>
+      </section>
+
+      <!-- Embed -->
+      <section class="block" id="embed">
+        <h2>내 사이트에 넣는 방법</h2>
+        <p class="sub">아래 <code>&lt;iframe&gt;</code> 한 줄이면 끝입니다. <code>url</code>에 PDF 주소를 인코딩해 넣으세요.</p>
+        <pre><code id="embedCode"></code></pre>
+        <div class="params">
+          <code>url</code><span class="d">표시할 PDF 주소 (<code>encodeURIComponent</code>로 인코딩)</span>
+          <code>file</code><span class="d"><code>url</code> 별칭</span>
+          <code>embed=1</code><span class="d">편집 크롬 숨김(읽기 전용). 빼면 전체 뷰어로 열림</span>
+        </div>
+        <div class="note">
+          ⚠️ <strong>CORS 주의:</strong> 웹 빌드는 브라우저 <code>fetch</code>로 PDF를 가져오므로 PDF 호스트가
+          외부 접근(CORS)을 허용해야 합니다. <strong>가장 안전한 방법은 뷰어와 PDF를 같은 도메인에서 서빙</strong>하는
+          것입니다 — <code>npm run build</code> 결과(<code>dist/</code>)를 사이트에 올리고 PDF도 같은 출처에 두세요.
+          데스크톱(Electron) 앱은 CORS 영향을 받지 않습니다.
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      WZ PDF · <a href="https://github.com/whyzoo-lab/WZ-PDF" target="_blank" rel="noopener">github.com/whyzoo-lab/WZ-PDF</a>
+      · 모든 처리는 브라우저에서 · 업로드 없음
+    </footer>
+
+    <script>
+      // Resolve the same-origin sample + app URL at runtime so the demo and the
+      // copy-paste snippet are correct on ANY host (github.io, internal, self-host).
+      (function () {
+        var base = new URL('.', location.href).href;            // e.g. https://host/WZ-PDF/
+        var app = base + 'app.html';
+        var sample = base + 'sample.pdf';
+        var demoSrc = app + '?embed=1&url=' + encodeURIComponent(sample);
+        document.getElementById('demoFrame').src = demoSrc;
+        document.getElementById('openFull').href = app + '?url=' + encodeURIComponent(sample);
+        try { document.getElementById('demoUrl').textContent = location.host + new URL('.', location.href).pathname; } catch (e) {}
+
+        // Copy-ready embed snippet pointing at THIS deployment's app.html.
+        var snippet =
+          '<iframe\n' +
+          '  src="' + app + '?embed=1&url=PDF주소"\n' +
+          '  style="width:100%; height:80vh; border:0;"\n' +
+          '  title="PDF 미리보기" allowfullscreen></iframe>';
+        var el = document.getElementById('embedCode');
+        // light syntax coloring
+        el.innerHTML = snippet
+          .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          .replace(/(iframe|src|style|title|allowfullscreen)/g,'<span class="attr">$1</span>')
+          .replace(/(&quot;[^&]*&quot;)/g,'<span class="str">$1</span>');
+      })();
+    </script>
   </body>
 </html>

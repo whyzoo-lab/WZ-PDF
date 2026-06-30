@@ -150,10 +150,12 @@ function createWindow() {
   if (app.isPackaged) {
     // Production: serve the Vite build over app:// (NOT file://) so the OCR
     // runtime, which refuses to run on a file: origin, works. See serveAppProtocol.
-    win.loadURL('app://bundle/index.html')
+    // Load app.html (the React app) — index.html is the web landing/demo page.
+    win.loadURL('app://bundle/app.html')
   } else {
-    // Development: load from the Vite dev server
-    win.loadURL('http://localhost:5173')
+    // Development: load the React app from the Vite dev server (index.html is
+    // the landing/demo page; the desktop app wants app.html directly).
+    win.loadURL('http://localhost:5173/app.html')
   }
 
   win.on('closed', () => { win = null })

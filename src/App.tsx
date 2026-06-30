@@ -38,6 +38,11 @@ export default function App() {
   const [zoom, setZoom] = useState(1)
   const [rotation, setRotation] = useState(0)       // 0 | 90 | 180 | 270
   const [appMode, setAppMode] = useState<AppMode>('viewer')
+  // Embed mode (?embed in the URL): chrome-less read-only viewer for <iframe>
+  // website embedding. Read once at startup.
+  const [embed] = useState(() => {
+    try { return new URLSearchParams(window.location.search).has('embed') } catch { return false }
+  })
   const [viewMode, setViewMode] = useState<ViewMode>('single')
   const [fullscreenLayout, setFullscreenLayout] = useState<'single' | 'spread'>('single')
   const [scrollToPage, setScrollToPage] = useState<number | null>(null)
@@ -323,13 +328,20 @@ export default function App() {
   // ── Open from URL ─────────────────────────────────────────────────────────
   const [showUrlModal, setShowUrlModal] = useState(false)
   const [urlLoading, setUrlLoading] = useState(false)
+  // Last URL-load error, shown inline (esp. for embed mode where there's no
+  // modal and a blocking alert() would freeze the iframe).
+  const [urlError, setUrlError] = useState<string | null>(null)
 
   /** Fetch an online PDF and load it. Electron uses the main process (no CORS);
-   *  the web build uses fetch() and surfaces a clear error on CORS failure. */
+   *  the web build uses fetch() and surfaces a clear error on CORS failure.
+   *  Errors are reported non-blocking (toast + inline) — never alert(), which
+   *  would hang an embedded iframe. */
   const handleOpenUrl = useCallback(async (rawUrl: string) => {
     const url = rawUrl.trim()
+    setUrlError(null)
     if (!/^https?:\/\//i.test(url)) {
-      alert(t('url.invalid'))
+      const m = t('url.invalid')
+      setUrlError(m); showToast(m)
       return
     }
     setUrlLoading(true)
@@ -352,11 +364,32 @@ export default function App() {
       const msg = err instanceof Error ? err.message : String(err)
       // On the web, a thrown TypeError usually means a CORS block.
       const isCors = !window.electronAPI && err instanceof TypeError
-      alert(isCors ? t('url.corsBlocked') : t('url.loadFailed', { error: msg }))
+      const friendly = isCors ? t('url.corsBlocked') : t('url.loadFailed', { error: msg })
+      setUrlError(friendly)
+      showToast(friendly)
+      setShowUrlModal(false)
     } finally {
       setUrlLoading(false)
     }
-  }, [loadPdfFile])
+  }, [loadPdfFile, showToast])
+
+  // ── Embed: auto-open the PDF passed via ?url= (or ?file=) ─────────────────
+  // Lets the app be dropped into a website with
+  //   <iframe src="https://…/WZ-PDF/?url=ENCODED_PDF_URL&embed=1">
+  // so a PDF is shown inline without the user downloading it. Runs once.
+  // (The PDF must be same-origin or CORS-enabled for the web build — see the
+  //  url.corsBlocked path in handleOpenUrl.)
+  const autoLoadedRef = useRef(false)
+  useEffect(() => {
+    if (autoLoadedRef.current) return
+    autoLoadedRef.current = true
+    let url: string | null = null
+    try {
+      const params = new URLSearchParams(window.location.search)
+      url = params.get('url') || params.get('file')
+    } catch { /* no query string */ }
+    if (url) handleOpenUrl(url)
+  }, [handleOpenUrl])
 
   // ── Electron: open-file (file association / CLI arg) ──────────────────────
   useEffect(() => {
@@ -502,6 +535,7 @@ export default function App() {
 
   const actionBarProps = {
     hasPdf: !!pdfDoc,
+    embed,
     appMode,
     viewMode,
     zoom,
@@ -619,7 +653,9 @@ export default function App() {
               Loading PDF…
             </div>
           )}
-          {!pdfDoc && !isLoading && !error && (
+          {/* Drag/Open prompt — hidden in embed mode (can't drop into an iframe;
+              the PDF auto-loads from ?url). */}
+          {!pdfDoc && !isLoading && !error && !embed && (
             <div
               className="flex flex-col items-center justify-center h-full gap-3 text-gray-400 select-none cursor-pointer px-6 text-center"
               onClick={handleMainDoubleClick}
@@ -632,6 +668,20 @@ export default function App() {
                 <span className="sm:hidden">{t('empty.mobile')}</span>
               </p>
             </div>
+          )}
+          {/* Embed mode placeholder: error (if the ?url fetch failed) or a
+              spinner while it loads. */}
+          {embed && !pdfDoc && !isLoading && !error && (
+            urlError ? (
+              <div className="flex h-full items-center justify-center px-6 text-center text-sm text-red-300 select-none">
+                {urlError}
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center gap-2 text-gray-400 text-sm select-none">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent" />
+                {t('url.loading')}
+              </div>
+            )
           )}
           {pdfDoc && (
             <ErrorBoundary>

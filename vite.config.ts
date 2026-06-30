@@ -1,8 +1,11 @@
 /// <reference types="vitest" />
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import pkg from './package.json' with { type: 'json' }
+
+const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -24,6 +27,12 @@ export default defineConfig({
     // The app chunk itself is the real target of optimization, see manualChunks.
     chunkSizeWarningLimit: 1500,
     rolldownOptions: {
+      // Multi-page: the static landing/demo (index.html) is the root; the React
+      // app lives at app.html so it can be embedded via <iframe src="app.html?embed=1&url=…">.
+      input: {
+        main: r('./index.html'),
+        app: r('./app.html'),
+      },
       output: {
         // Split heavy third-party libs into stable vendor chunks so they cache
         // independently from app code. pdfjs is loaded as a separate Worker

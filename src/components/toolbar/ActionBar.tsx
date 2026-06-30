@@ -162,6 +162,9 @@ const Sep = () => <div className="w-px h-5 bg-gray-600 mx-0.5 shrink-0" />
 
 export interface ActionBarProps {
   hasPdf: boolean
+  /** Embed mode (?embed): hide file-open, export and the viewer/editor toggle
+   *  so the toolbar is a clean read-only viewer for website embedding. */
+  embed?: boolean
   appMode: AppMode
   viewMode: ViewMode
   zoom: number
@@ -208,6 +211,7 @@ export interface ActionBarProps {
 
 export function ActionBar({
   hasPdf,
+  embed = false,
   appMode,
   viewMode,
   zoom,
@@ -556,25 +560,31 @@ export function ActionBar({
 
         {/* ── Right: fixed controls (not inside overflow — dropdown safe) ── */}
         <div className="flex items-center gap-1 px-2 sm:px-3 py-1.5 shrink-0 border-l border-gray-700/40">
-          {/* Viewer / Editor mode toggle (icon-only segmented control) */}
-          <div className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
-            <button
-              className={modeToggleBtn('viewer')}
-              onClick={() => onAppModeChange('viewer')}
-              title={t('tool.viewer')}
-              aria-label={t('tool.viewer')}
-            ><IconViewer /></button>
-            <button
-              className={modeToggleBtn('editor')}
-              onClick={() => onAppModeChange('editor')}
-              title={t('tool.editor')}
-              aria-label={t('tool.editor')}
-            ><IconEditor /></button>
-          </div>
+          {/* Viewer / Editor mode toggle (icon-only segmented control).
+              Hidden in embed mode — an embedded viewer is read-only. */}
+          {!embed && (
+            <>
+              <div className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
+                <button
+                  className={modeToggleBtn('viewer')}
+                  onClick={() => onAppModeChange('viewer')}
+                  title={t('tool.viewer')}
+                  aria-label={t('tool.viewer')}
+                ><IconViewer /></button>
+                <button
+                  className={modeToggleBtn('editor')}
+                  onClick={() => onAppModeChange('editor')}
+                  title={t('tool.editor')}
+                  aria-label={t('tool.editor')}
+                ><IconEditor /></button>
+              </div>
 
-          <Sep />
+              <Sep />
+            </>
+          )}
 
-          {/* Open dropdown — file or URL */}
+          {/* Open dropdown — file or URL. Hidden in embed mode. */}
+          {!embed && (
           <div ref={openRef} className="relative">
             <button
               onClick={() => setOpenMenuOpen(v => !v)}
@@ -600,6 +610,7 @@ export function ActionBar({
               </div>
             )}
           </div>
+          )}
           <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={handleFileChange} />
 
           {/* Print */}
@@ -648,8 +659,9 @@ export function ActionBar({
             </div>
           )}
 
-          {/* Export dropdown — absolute child renders below this section, no overflow parent */}
-          {hasPdf && (
+          {/* Export dropdown — absolute child renders below this section, no overflow parent.
+              Hidden in embed mode (read-only viewer). */}
+          {hasPdf && !embed && (
             <div ref={exportRef} className="relative">
               <button
                 onClick={() => setExportMenuOpen(v => !v)}

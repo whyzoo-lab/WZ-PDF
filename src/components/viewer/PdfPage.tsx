@@ -309,9 +309,12 @@ function PdfPageInner({
     })
   }
 
-  // Double-click an un-recognized page (not while a drawing/placement tool is
+  // Triple-click an un-recognized page (not while a drawing/placement tool is
   // active) to OCR it, with the scanning animation radiating from the click.
-  const handleDoubleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+  // `event.detail` is the consecutive-click count, so the 3rd rapid click fires
+  // a click event with detail === 3 — no manual timer needed.
+  const handleTripleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (e.detail !== 3) return
     if (!onOcrRequest || ocrResult || ocrActive) return
     if (!(activeMode === null || activeMode === 'select')) return
     const rect = e.currentTarget.getBoundingClientRect()
@@ -323,7 +326,7 @@ function PdfPageInner({
   // The inner Stage is rendered at the original orientation and rotated via CSS.
   return (
     <div
-      onDoubleClick={handleDoubleClick}
+      onClick={handleTripleClick}
       style={{ width: stageWidth, height: stageHeight, overflow: 'hidden', position: 'relative' }}
     >
       <div style={{ position: 'absolute', top: 0, left: 0, ...rotationStyle }}>
