@@ -1,19 +1,19 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- ── SEO ─────────────────────────────────────────────────────────── -->
-    <title>WZ PDF — 브라우저용 PDF 뷰어 · 편집기 (무료, 업로드 없음)</title>
-    <meta name="description" content="WZ PDF는 설치·업로드 없이 브라우저에서 동작하는 무료 PDF 뷰어/편집기입니다. 도장·서명·워터마크, 페이지 관리, 발표 모드, OCR, 그리고 웹사이트에 PDF를 다운로드 없이 임베드하는 뷰어를 제공합니다." />
+    <title>WZ PDF — In-browser PDF Viewer &amp; Editor (free, no upload)</title>
+    <meta name="description" content="WZ PDF is a free PDF viewer and editor that runs entirely in your browser — no install, no upload. Stamps, signatures, watermarks, page management, presentation tools, OCR, and a viewer you can embed in any website." />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="theme-color" content="#0f172a" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="WZ PDF" />
-    <meta property="og:title" content="WZ PDF — 브라우저용 PDF 뷰어 · 편집기" />
-    <meta property="og:description" content="설치·업로드 없이 브라우저에서 PDF를 보고 편집하세요. 웹사이트에 임베드 가능한 뷰어 데모." />
+    <meta property="og:title" content="WZ PDF — In-browser PDF Viewer &amp; Editor" />
+    <meta property="og:description" content="View and edit PDFs right in your browser — no install, no upload. Embeddable viewer demo." />
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -57,7 +57,7 @@
       .hero{text-align:center;padding:64px 0 30px}
       .hero h1{font-size:42px;line-height:1.15;margin:0 0 14px;letter-spacing:-.02em}
       .hero h1 .grad{background:linear-gradient(135deg,var(--sky),var(--violet));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-      .hero p{color:var(--dim);font-size:17px;max-width:620px;margin:0 auto 26px}
+      .hero p{color:var(--dim);font-size:17px;max-width:640px;margin:0 auto 26px}
       .hero .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
       .pill{display:inline-block;margin-bottom:18px;font-size:12.5px;color:var(--dim);border:1px solid var(--bd);border-radius:999px;padding:4px 14px}
 
@@ -84,7 +84,6 @@
       /* Code */
       pre{background:#0b1220;border:1px solid var(--bd);border-radius:12px;padding:16px 18px;overflow-x:auto;font-size:13px;line-height:1.6}
       code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#cbd5e1}
-      .tag{color:#7dd3fc}.attr{color:#a5b4fc}.str{color:#86efac}
       .note{background:var(--bg2);border-left:3px solid var(--green);border-radius:0 8px 8px 0;padding:12px 16px;margin:14px 0;font-size:13.5px;color:var(--dim)}
       .note strong{color:var(--tx)}
       .params{display:grid;grid-template-columns:120px 1fr;gap:6px 16px;margin:14px 0;font-size:14px}
@@ -102,74 +101,74 @@
           <img src="/icon.svg" alt="" /><span class="name">WZ PDF</span>
         </a>
         <span class="spacer"></span>
-        <a class="lnk" href="#demo">데모</a>
-        <a class="lnk" href="#embed">임베드</a>
+        <a class="lnk" href="#demo">Demo</a>
+        <a class="lnk" href="#embed">Embed</a>
         <a class="lnk" href="https://github.com/whyzoo-lab/WZ-PDF" target="_blank" rel="noopener">GitHub</a>
-        <a class="btn btn-primary" href="./app.html">앱 열기 ↗</a>
+        <a class="btn btn-primary" href="./app.html">Open app ↗</a>
       </div>
     </header>
 
     <main class="wrap">
       <!-- Hero -->
       <div class="hero">
-        <span class="pill">⚡ 설치 없음 · 업로드 없음 · 100% 브라우저에서 처리</span>
-        <h1>브라우저에서 바로 보는<br><span class="grad">PDF 뷰어 &amp; 편집기</span></h1>
-        <p>도장·서명·워터마크, 페이지 관리, 발표 모드, 한국어 OCR까지. 그리고
-          웹사이트에 <strong>PDF를 다운로드 없이 그대로 임베드</strong>할 수 있습니다.</p>
+        <span class="pill">⚡ No install · No upload · 100% processed in your browser</span>
+        <h1>View PDFs right in your browser<br><span class="grad">Viewer &amp; Editor</span></h1>
+        <p>Stamps, signatures and watermarks, page management, fullscreen presentation, and on-device OCR.
+          Plus a viewer you can <strong>embed in any website to show a PDF inline — no download required</strong>.</p>
         <div class="cta">
-          <a class="btn btn-primary" href="./app.html">앱 열기</a>
-          <a class="btn btn-ghost" href="#demo">임베드 데모 보기</a>
-          <a class="btn btn-ghost" href="https://github.com/whyzoo-lab/WZ-PDF/releases" target="_blank" rel="noopener">데스크톱 설치파일</a>
+          <a class="btn btn-primary" href="./app.html">Open app</a>
+          <a class="btn btn-ghost" href="#demo">See embed demo</a>
+          <a class="btn btn-ghost" href="https://github.com/whyzoo-lab/WZ-PDF/releases" target="_blank" rel="noopener">Desktop installer</a>
         </div>
       </div>
 
       <!-- Features -->
       <div class="feats">
-        <div class="feat"><div class="ic">🔒</div><h3>업로드 없음</h3><p>파일이 기기를 떠나지 않습니다. 모든 처리는 브라우저 안에서 이뤄져요.</p></div>
-        <div class="feat"><div class="ic">🖊️</div><h3>주석 &amp; 편집</h3><p>도장·손글씨 서명·워터마크, 텍스트 편집, 페이지 추가/삭제/정렬.</p></div>
-        <div class="feat"><div class="ic">🎯</div><h3>발표 &amp; OCR</h3><p>전체화면 발표 도구(펜·레이저·스팟 줌)와 오프라인 한국어 OCR.</p></div>
-        <div class="feat"><div class="ic">🧩</div><h3>웹 임베드</h3><p><code>?url=</code> 하나로 어떤 사이트든 PDF 뷰어를 끼워 넣을 수 있어요.</p></div>
+        <div class="feat"><div class="ic">🔒</div><h3>No upload</h3><p>Your file never leaves your device. Everything is processed inside the browser.</p></div>
+        <div class="feat"><div class="ic">🖊️</div><h3>Annotate &amp; edit</h3><p>Stamps, hand-drawn signatures, watermarks, inline text edits, and page reorder/insert/delete.</p></div>
+        <div class="feat"><div class="ic">🎯</div><h3>Present &amp; OCR</h3><p>Fullscreen presenter tools (pen, laser, spotlight zoom) and offline text recognition.</p></div>
+        <div class="feat"><div class="ic">🧩</div><h3>Web embed</h3><p>A single <code>?url=</code> drops the viewer into any site — show a PDF without a download.</p></div>
       </div>
 
       <!-- Demo -->
       <section class="block" id="demo">
-        <h2>웹사이트에 임베드된 모습</h2>
-        <p class="sub">아래는 이 뷰어를 <code>&lt;iframe&gt;</code>으로 끼워 넣은 실제 데모입니다 — 다운로드 없이 페이지 안에서 바로 보입니다.</p>
+        <h2>How it looks embedded in a website</h2>
+        <p class="sub">Below is the viewer embedded with a real <code>&lt;iframe&gt;</code> — the PDF shows inline, right on the page, with no download.</p>
         <div class="demo-shell">
           <div class="demo-bar">
             <span class="dot" style="background:#f87171"></span>
             <span class="dot" style="background:#fbbf24"></span>
             <span class="dot" style="background:#34d399"></span>
-            <span class="demo-url" id="demoUrl">your-website.kr</span>
+            <span class="demo-url" id="demoUrl">your-website.com</span>
           </div>
-          <iframe class="demo-frame" id="demoFrame" title="WZ PDF 임베드 데모" allowfullscreen></iframe>
+          <iframe class="demo-frame" id="demoFrame" title="WZ PDF embed demo" allowfullscreen></iframe>
         </div>
-        <p class="demo-cap">샘플 문서가 임베드 뷰어(읽기 전용 모드)로 표시됩니다. ·
-          <a href="./app.html?url=" id="openFull">전체 앱으로 열기</a></p>
+        <p class="demo-cap">The sample document (WZ PDF's own user guide) shown in embed mode (read-only). ·
+          <a href="./app.html?url=" id="openFull">Open in the full app</a></p>
       </section>
 
       <!-- Embed -->
       <section class="block" id="embed">
-        <h2>내 사이트에 넣는 방법</h2>
-        <p class="sub">아래 <code>&lt;iframe&gt;</code> 한 줄이면 끝입니다. <code>url</code>에 PDF 주소를 인코딩해 넣으세요.</p>
+        <h2>Add it to your site</h2>
+        <p class="sub">One <code>&lt;iframe&gt;</code> is all it takes. Put your PDF URL (encoded) in <code>url</code>.</p>
         <pre><code id="embedCode"></code></pre>
         <div class="params">
-          <code>url</code><span class="d">표시할 PDF 주소 (<code>encodeURIComponent</code>로 인코딩)</span>
-          <code>file</code><span class="d"><code>url</code> 별칭</span>
-          <code>embed=1</code><span class="d">편집 크롬 숨김(읽기 전용). 빼면 전체 뷰어로 열림</span>
+          <code>url</code><span class="d">the PDF to display (encode with <code>encodeURIComponent</code>)</span>
+          <code>file</code><span class="d">alias for <code>url</code></span>
+          <code>embed=1</code><span class="d">hide the editing chrome (read-only). Omit it to open the full viewer.</span>
         </div>
         <div class="note">
-          ⚠️ <strong>CORS 주의:</strong> 웹 빌드는 브라우저 <code>fetch</code>로 PDF를 가져오므로 PDF 호스트가
-          외부 접근(CORS)을 허용해야 합니다. <strong>가장 안전한 방법은 뷰어와 PDF를 같은 도메인에서 서빙</strong>하는
-          것입니다 — <code>npm run build</code> 결과(<code>dist/</code>)를 사이트에 올리고 PDF도 같은 출처에 두세요.
-          데스크톱(Electron) 앱은 CORS 영향을 받지 않습니다.
+          ⚠️ <strong>CORS note:</strong> the web build fetches the PDF in the browser, so the PDF host must allow
+          cross-origin access. <strong>The safest setup is to serve the viewer and the PDF from the same domain</strong> —
+          upload the <code>npm run build</code> output (<code>dist/</code>) to your site and keep the PDF on the same origin.
+          The desktop (Electron) app is not affected by CORS.
         </div>
       </section>
     </main>
 
     <footer class="wrap">
       WZ PDF · <a href="https://github.com/whyzoo-lab/WZ-PDF" target="_blank" rel="noopener">github.com/whyzoo-lab/WZ-PDF</a>
-      · 모든 처리는 브라우저에서 · 업로드 없음
+      · Everything runs in your browser · No upload
     </footer>
 
     <script>
@@ -187,15 +186,14 @@
         // Copy-ready embed snippet pointing at THIS deployment's app.html.
         var snippet =
           '<iframe\n' +
-          '  src="' + app + '?embed=1&url=PDF주소"\n' +
+          '  src="' + app + '?embed=1&url=PDF_URL"\n' +
           '  style="width:100%; height:80vh; border:0;"\n' +
-          '  title="PDF 미리보기" allowfullscreen></iframe>';
+          '  title="PDF preview" allowfullscreen></iframe>';
         var el = document.getElementById('embedCode');
-        // light syntax coloring
         el.innerHTML = snippet
           .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-          .replace(/(iframe|src|style|title|allowfullscreen)/g,'<span class="attr">$1</span>')
-          .replace(/(&quot;[^&]*&quot;)/g,'<span class="str">$1</span>');
+          .replace(/(iframe|src|style|title|allowfullscreen)/g,'<span style="color:#a5b4fc">$1</span>')
+          .replace(/(&quot;[^&]*&quot;)/g,'<span style="color:#86efac">$1</span>');
       })();
     </script>
   </body>
