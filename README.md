@@ -8,6 +8,14 @@ Demo : https://whyzoo-lab.github.io/WZ-PDF/
 <img width="1455" height="1000" alt="image" src="https://github.com/user-attachments/assets/2fa5af89-d1c0-434c-b5ab-96172fa2f551" />
 
 
+## inner html type PDF Viewer
+```
+<iframe
+  src="https://whyzoo-lab.github.io/WZ-PDF/?embed=1&url=PDF주소"
+  style="width:100%; height:80vh; border:0;"
+  title="PDF 미리보기"
+  allowfullscreen></iframe>
+```
 > Presentation-focused PDF viewer, editor & distribution platform.
 
 WZ PDF is a fast, fully client-side PDF tool. Open a PDF, mark it up, manage
