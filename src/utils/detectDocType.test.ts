@@ -22,4 +22,7 @@ describe('detectDocType', () => {
   it('returns unknown for unrelated content', () => {
     expect(detectDocType('a.txt', buf(0x68,0x69))).toBe('unknown')
   })
+  it('magic bytes beat a wrong extension (OLE2 named .pdf → hwp)', () => {
+    expect(detectDocType('weird.pdf', buf(0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1))).toBe('hwp')
+  })
 })

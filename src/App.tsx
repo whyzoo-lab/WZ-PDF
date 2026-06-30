@@ -360,8 +360,8 @@ export default function App() {
       const name = (() => {
         try { return decodeURIComponent(new URL(url).pathname.split('/').pop() || '') } catch { return '' }
       })() || 'document.pdf'
-      const filename = name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`
-      loadPdfFile(new File([bytes], filename, { type: 'application/pdf' }))
+      const filename = name || 'document.pdf'
+      loadPdfFile(new File([bytes], filename))
       setShowUrlModal(false)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

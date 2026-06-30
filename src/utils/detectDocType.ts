@@ -13,10 +13,14 @@ export function detectDocType(name: string, bytes: ArrayBuffer): 'pdf' | 'hwp' |
   const head = new Uint8Array(bytes.slice(0, 8))
   const ext = name.toLowerCase().split('.').pop() ?? ''
 
-  if (startsWith(head, PDF) || ext === 'pdf') return 'pdf'
-  if (startsWith(head, OLE2)) return 'hwp'                 // .hwp binary (OLE2)
-  if (startsWith(head, ZIP) && ext === 'hwpx') return 'hwp' // .hwpx (zip)
-  // Bytes too short / unreadable: trust the extension.
-  if (head.length < 4 && (ext === 'hwp' || ext === 'hwpx')) return 'hwp'
+  // Magic bytes are authoritative (a wrong/forced extension must not override them).
+  if (startsWith(head, PDF)) return 'pdf'                    // %PDF
+  if (startsWith(head, OLE2)) return 'hwp'                   // .hwp binary (OLE2)
+  if (startsWith(head, ZIP) && ext === 'hwpx') return 'hwp'  // .hwpx (zip)
+
+  // Extension fallback when the bytes are inconclusive (short/unreadable, or a
+  // generic container like zip).
+  if (ext === 'pdf') return 'pdf'
+  if (ext === 'hwp' || ext === 'hwpx') return 'hwp'
   return 'unknown'
 }
