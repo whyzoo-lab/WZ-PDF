@@ -44,3 +44,6 @@ deploy.bat
 
 # Bundled OCR model + wasm binaries (~56MB) — regenerate via: npm run setup:ocr
 public/ocr/
+
+# Bundled HWP WASM binary — regenerate via: npm run setup:hwp
+public/hwp/
