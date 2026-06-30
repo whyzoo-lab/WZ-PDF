@@ -1,16 +1,16 @@
 // src/services/hwpDocAdapter.ts
 import type { HwpDocument } from '@rhwp/core'
-import type { ViewerDoc, ViewerPage, ViewerViewport } from '../types/viewerDoc'
+import type { ViewerDoc, ViewerPage } from '../types/viewerDoc'
 
 /**
  * Adapt rhwp's HwpDocument to the pdfjs-shaped ViewerDoc the app consumes.
  * rhwp pages are 0-based; pdfjs/the app are 1-based — translate at the boundary.
  */
 export function createHwpViewerDoc(doc: HwpDocument): ViewerDoc {
-  const naturalCache = new Map<number, ViewerViewport>()
+  const naturalCache = new Map<number, { width: number; height: number }>()
 
   /** Scale-1 page size, measured once via a throwaway probe render and cached. */
-  function natural(idx0: number): ViewerViewport {
+  function natural(idx0: number): { width: number; height: number } {
     const hit = naturalCache.get(idx0)
     if (hit) return hit
     const probe = document.createElement('canvas')
@@ -29,7 +29,7 @@ export function createHwpViewerDoc(doc: HwpDocument): ViewerDoc {
       return {
         getViewport: ({ scale }) => {
           const n = natural(idx0)
-          return { width: n.width * scale, height: n.height * scale }
+          return { width: n.width * scale, height: n.height * scale, scale }
         },
         render: ({ canvas, viewport }) => {
           // renderPageToCanvas sizes the canvas to page×scale and paints (sync).

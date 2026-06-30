@@ -29,7 +29,7 @@ function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 /**
  * Export all pages of a PDF as PNG images bundled in a ZIP file.
  *
- * @param pdfDoc      pdfjs PDFDocumentProxy
+ * @param pdfDoc      ViewerDoc
  * @param numPages    Total page count
  * @param filename    Source filename — used to derive file/folder names
  * @param onProgress  Called after each page is rendered: (current, total)
@@ -48,7 +48,7 @@ export async function exportAsImages(
     onProgress?.(pageNum, numPages)
 
     const page     = await pdfDoc.getPage(pageNum)
-    const viewport = { ...page.getViewport({ scale: EXPORT_SCALE }), scale: EXPORT_SCALE }
+    const viewport = page.getViewport({ scale: EXPORT_SCALE })
 
     const canvas    = document.createElement('canvas')
     canvas.width    = Math.round(viewport.width)

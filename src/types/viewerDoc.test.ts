@@ -6,7 +6,7 @@ describe('ViewerDoc', () => {
     const fake: ViewerDoc = {
       numPages: 2,
       getPage: async () => ({
-        getViewport: ({ scale }) => ({ width: 100 * scale, height: 200 * scale }),
+        getViewport: ({ scale }) => ({ width: 100 * scale, height: 200 * scale, scale }),
         render: () => ({ promise: Promise.resolve() }),
         getTextContent: async () => ({ items: [] }),
       }),

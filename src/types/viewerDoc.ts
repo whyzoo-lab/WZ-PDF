@@ -1,11 +1,11 @@
 /** Which engine produced the document. */
 export type DocKind = 'pdf' | 'hwp'
 
-export interface ViewerViewport { width: number; height: number }
+export interface ViewerViewport { width: number; height: number; scale: number }
 
 export interface ViewerPage {
   getViewport(params: { scale: number }): ViewerViewport
-  render(params: { canvas: HTMLCanvasElement; viewport: ViewerViewport & { scale: number } }): { promise: Promise<void> }
+  render(params: { canvas: HTMLCanvasElement; viewport: ViewerViewport }): { promise: Promise<void> }
   /** Selectable text geometry. PDF returns real items; HWP returns `{ items: [] }`. */
   getTextContent(): Promise<{ items: unknown[] }>
 }

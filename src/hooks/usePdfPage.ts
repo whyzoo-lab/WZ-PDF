@@ -51,7 +51,7 @@ async function renderPage(pdfDoc: ViewerDoc, pageNumber: number, renderScale: nu
   // Logical viewport drives display size + the coordinate system; the raster
   // viewport drives the actual pixel resolution of the bitmap.
   const logical = page.getViewport({ scale: PDF_RENDER_SCALE })
-  const raster = { ...page.getViewport({ scale: renderScale }), scale: renderScale }
+  const raster = page.getViewport({ scale: renderScale })
   const canvas = document.createElement('canvas')
   canvas.width = raster.width
   canvas.height = raster.height

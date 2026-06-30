@@ -57,7 +57,7 @@ async function renderPageWithAnnotations(
   // but the bytes we paint are the high-res ones.
   await getOrRenderPage(pdfDoc, pageNumber)
   const page = await pdfDoc.getPage(pageNumber)
-  const viewport = { ...page.getViewport({ scale: PRINT_RENDER_SCALE }), scale: PRINT_RENDER_SCALE }
+  const viewport = page.getViewport({ scale: PRINT_RENDER_SCALE })
   const out = document.createElement('canvas')
   out.width = viewport.width
   out.height = viewport.height

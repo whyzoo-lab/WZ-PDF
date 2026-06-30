@@ -22,8 +22,8 @@ describe('hwpDocAdapter', () => {
 
   it('getViewport returns natural size × scale', async () => {
     const d = fakeDoc(); const page = await createHwpViewerDoc(d as never).getPage(1)
-    expect(page.getViewport({ scale: 1 })).toEqual({ width: 60, height: 80 })
-    expect(page.getViewport({ scale: 2 })).toEqual({ width: 120, height: 160 })
+    expect(page.getViewport({ scale: 1 })).toEqual({ width: 60, height: 80, scale: 1 })
+    expect(page.getViewport({ scale: 2 })).toEqual({ width: 120, height: 160, scale: 2 })
   })
 
   it('render paints onto the given canvas at the viewport scale and resolves', async () => {

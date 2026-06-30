@@ -36,7 +36,7 @@ export function useThumbnails(
         try {
           const page = await pdfDoc.getPage(pageNum)
           const thumbScale = PDF_RENDER_SCALE * THUMBNAIL_SCALE
-          const viewport = { ...page.getViewport({ scale: thumbScale }), scale: thumbScale }
+          const viewport = page.getViewport({ scale: thumbScale })
           const canvas = document.createElement('canvas')
           canvas.width  = Math.round(viewport.width)
           canvas.height = Math.round(viewport.height)
