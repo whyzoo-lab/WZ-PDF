@@ -12,6 +12,7 @@ vi.mock('../LazyPdfPage', () => ({
 const mockDoc = {} as ViewerDoc
 const baseProps = {
   pdfDoc: mockDoc,
+  kind: 'pdf' as const,
   zoom: 1,
   annotations: [],
   selectedId: null,

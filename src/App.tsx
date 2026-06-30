@@ -68,7 +68,7 @@ export default function App() {
   const prevViewModeRef = useRef<ViewMode>('single')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { pdfDoc, numPages, isLoading, error } = usePdfDocument(file)
+  const { pdfDoc, numPages, isLoading, error, kind } = usePdfDocument(file)
   const {
     annotations,
     selectedId,
@@ -691,6 +691,7 @@ export default function App() {
                 zoom={zoom}
                 rotation={rotation}
                 appMode={appMode}
+                kind={kind}
                 annotations={annotations}
                 selectedId={selectedId}
                 activeMode={activeMode}

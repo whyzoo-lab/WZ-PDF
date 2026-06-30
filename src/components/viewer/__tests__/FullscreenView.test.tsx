@@ -20,6 +20,7 @@ const mockDoc = {
 
 const baseProps = {
   pdfDoc: mockDoc,
+  kind: 'pdf' as const,
   numPages: 5,
   annotations: [],
   selectedId: null as null | string,

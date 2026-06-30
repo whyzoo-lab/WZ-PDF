@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { ViewerDoc } from '../../types/viewerDoc'
+import type { ViewerDoc, DocKind } from '../../types/viewerDoc'
 import { PdfPage } from './PdfPage'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { PDF_RENDER_SCALE, ZOOM_STEP, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants'
@@ -10,6 +10,7 @@ import type { PresentStroke, PresentToolState } from '../../types/present'
 
 interface FullscreenViewProps {
   pdfDoc: ViewerDoc
+  kind: DocKind
   numPages: number
   annotations: Annotation[]
   selectedId: string | null
@@ -29,6 +30,7 @@ interface FullscreenViewProps {
 
 export function FullscreenView({
   pdfDoc,
+  kind,
   numPages,
   annotations,
   selectedId,
@@ -286,6 +288,7 @@ export function FullscreenView({
 
   const pageProps = {
     pdfDoc,
+    kind,
     zoom,
     rotation,
     annotations,

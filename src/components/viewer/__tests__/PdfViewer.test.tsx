@@ -21,6 +21,7 @@ vi.mock('../FullscreenView', () => ({
 const mockDoc = {} as ViewerDoc
 const baseProps = {
   pdfDoc: mockDoc,
+  kind: 'pdf' as const,
   numPages: 3,
   zoom: 1,
   rotation: 0,
