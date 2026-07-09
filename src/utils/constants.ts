@@ -12,4 +12,6 @@ export const MAX_RENDER_SCALE = 4
 
 export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 3
-export const ZOOM_STEP = 0.25
+// Step for the +/- buttons and Ctrl+wheel. 10% keeps zooming fine-grained;
+// the ActionBar's editable zoom field allows jumping to an exact value.
+export const ZOOM_STEP = 0.1

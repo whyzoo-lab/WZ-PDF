@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { AppMode, ViewMode } from '../../types/viewModes'
 import type { ActiveMode } from '../../types/annotation'
 import { STAMP_PRESETS, svgToPng } from '../../utils/stampPresets'
+import { MIN_ZOOM, MAX_ZOOM } from '../../utils/constants'
 import { t } from '../../i18n'
 
 // ── SVG Icon components ────────────────────────────────────────────────────
@@ -156,9 +157,155 @@ const IconEditor = () => (
     <path d="M14 3l3 3-9 9H5v-3L14 3z" strokeLinejoin="round"/>
   </svg>
 )
+// Hamburger — collapsed left cluster.
+const IconMenu = () => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+    <path d="M3 5h14M3 10h14M3 15h14" strokeLinecap="round"/>
+  </svg>
+)
+// Vertical dots — collapsed right (actions) cluster.
+const IconMore = () => (
+  <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+    <circle cx="10" cy="4" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="10" cy="16" r="1.6"/>
+  </svg>
+)
 
 // ── Separator component ────────────────────────────────────────────────────
-const Sep = () => <div className="w-px h-5 bg-gray-600 mx-0.5 shrink-0" />
+const Sep = () => <div className="w-px h-5 bg-gray-600 mx-0.5 shrink-0 self-center" />
+
+// ── Shared button style tokens ─────────────────────────────────────────────
+const BTN_BASE = 'flex items-center justify-center w-9 h-9 rounded transition-all'
+const BTN_IDLE = 'text-gray-300 hover:bg-gray-700 hover:text-white'
+const BTN_ACTIVE = 'bg-blue-600 text-white shadow-sm'
+
+// ── Chrome-style editable zoom control ─────────────────────────────────────
+function ZoomControl({
+  zoom, onZoomIn, onZoomOut, onZoomSet, onZoomReset,
+}: {
+  zoom: number
+  onZoomIn: () => void
+  onZoomOut: () => void
+  onZoomSet: (zoom: number) => void
+  onZoomReset: () => void
+}) {
+  // `draft` is the in-progress text while the field is focused; when null the
+  // field mirrors the live `zoom` prop.
+  const [draft, setDraft] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const shown = draft ?? String(Math.round(zoom * 100))
+
+  const commit = () => {
+    if (draft === null) return
+    const n = parseInt(draft, 10)
+    if (!Number.isNaN(n) && n > 0) {
+      onZoomSet(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, n / 100)))
+    }
+    setDraft(null)
+  }
+
+  const stepBtn =
+    'flex items-center justify-center w-8 h-8 rounded text-gray-300 transition-all ' +
+    'hover:bg-gray-700 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-300'
+
+  return (
+    <div className="flex items-center gap-0.5 shrink-0">
+      <button onClick={onZoomOut} disabled={zoom <= MIN_ZOOM} className={stepBtn} title={t('tool.zoomOut')} aria-label={t('tool.zoomOut')}><IconZoomOut /></button>
+      <div className="flex items-center rounded px-1 h-8 hover:bg-gray-700/50 focus-within:bg-gray-700 focus-within:ring-1 focus-within:ring-blue-500">
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="numeric"
+          aria-label={t('tool.zoomLevel')}
+          title={t('tool.zoomReset')}
+          value={shown}
+          onFocus={e => { const el = e.currentTarget; setDraft(String(Math.round(zoom * 100))); requestAnimationFrame(() => el.select()) }}
+          onChange={e => setDraft(e.target.value.replace(/[^\d]/g, '').slice(0, 3))}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { commit(); inputRef.current?.blur() }
+            else if (e.key === 'Escape') { setDraft(null); inputRef.current?.blur() }
+          }}
+          onDoubleClick={() => { setDraft(null); onZoomReset() }}
+          className="w-8 bg-transparent text-right text-xs text-gray-100 tabular-nums outline-none"
+        />
+        <span className="text-xs text-gray-400 select-none pl-0.5 pointer-events-none">%</span>
+      </div>
+      <button onClick={onZoomIn} disabled={zoom >= MAX_ZOOM} className={stepBtn} title={t('tool.zoomIn')} aria-label={t('tool.zoomIn')}><IconZoomIn /></button>
+    </div>
+  )
+}
+
+/**
+ * Collapse the toolbar into hamburger menus when its inline controls no longer
+ * fit. Instead of a horizontal scrollbar (which the old layout produced on
+ * narrow windows) the left/right clusters fold into dropdown menus.
+ *
+ * Measures the header's content width against its box; `contentKey` forces a
+ * fresh re-measure whenever the set of visible controls changes (mode switch,
+ * PDF load, selection…). A remembered breakpoint gives hysteresis so the bar
+ * doesn't flicker around the threshold.
+ */
+function useToolbarCollapse(contentKey: string) {
+  const ref = useRef<HTMLElement | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
+  const collapsedRef = useRef(false)
+  const breakpoint = useRef(Infinity)
+
+  const apply = (v: boolean) => { collapsedRef.current = v; setCollapsed(v) }
+
+  // Sum of the inline clusters' natural widths. The header can't use
+  // `overflow:hidden` (it would clip the dropdowns), and `scrollWidth` on an
+  // overflow-visible flex box under-reports overflow — so we measure the
+  // shrink-0 child sections directly, which keep their natural width even when
+  // they overflow the bar. Only meaningful while expanded (the collapsed bar's
+  // children are the compact hamburgers).
+  const requiredWidth = (e: HTMLElement) => {
+    let total = 0
+    for (const c of Array.from(e.children)) total += (c as HTMLElement).offsetWidth
+    return total
+  }
+
+  // Resize path — width changed. Uses a remembered breakpoint for hysteresis so
+  // the bar doesn't flicker right at the threshold.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const onResize = () => {
+      const e = ref.current
+      if (!e) return
+      if (!collapsedRef.current) {
+        if (requiredWidth(e) > e.clientWidth + 1) { breakpoint.current = e.clientWidth; apply(true) }
+      } else if (e.clientWidth > breakpoint.current + 24) {
+        breakpoint.current = Infinity; apply(false)
+      }
+    }
+    const ro = new ResizeObserver(onResize)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Content-change path — a resize won't fire when the *content* grows/shrinks
+  // (PDF load, mode switch…). If currently collapsed, drop back to the expanded
+  // layout first so the measurement below sees the real content width.
+  useLayoutEffect(() => {
+    breakpoint.current = Infinity
+    if (collapsedRef.current) apply(false)
+  }, [contentKey])
+
+  // Measure synchronously after every commit that could change fit (content or
+  // the just-applied expand). rAF isn't used — it's throttled in background
+  // tabs, which would leave the bar un-collapsed.
+  useLayoutEffect(() => {
+    const e = ref.current
+    if (!e || collapsedRef.current) return
+    if (requiredWidth(e) > e.clientWidth + 1) {
+      breakpoint.current = e.clientWidth
+      apply(true)
+    }
+  }, [contentKey, collapsed])
+
+  return { ref, collapsed }
+}
 
 export interface ActionBarProps {
   hasPdf: boolean
@@ -186,6 +333,8 @@ export interface ActionBarProps {
   onZoomIn: () => void
   onZoomOut: () => void
   onZoomReset: () => void
+  /** Set an exact zoom (fraction, e.g. 1.25) — from the editable zoom field. */
+  onZoomSet: (zoom: number) => void
   onRotate: () => void
   onModeChange: (mode: ActiveMode) => void
   onStampSelect: (src: string, presetId?: string) => void
@@ -231,6 +380,7 @@ export function ActionBar({
   onZoomIn,
   onZoomOut,
   onZoomReset,
+  onZoomSet,
   onRotate,
   onModeChange,
   onStampSelect,
@@ -253,13 +403,26 @@ export function ActionBar({
   const [stampMenuRect, setStampMenuRect] = useState<DOMRect | null>(null)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [openMenuOpen, setOpenMenuOpen] = useState(false)
+  const [leftMenuOpen, setLeftMenuOpen] = useState(false)
+  const [rightMenuOpen, setRightMenuOpen] = useState(false)
   const fileInputRef  = useRef<HTMLInputElement>(null)
   const stampBtnRef   = useRef<HTMLButtonElement>(null)
   const stampPortalRef = useRef<HTMLDivElement>(null)
   const exportRef     = useRef<HTMLDivElement>(null)
   const openRef       = useRef<HTMLDivElement>(null)
+  const leftMenuRef   = useRef<HTMLDivElement>(null)
+  const rightMenuRef  = useRef<HTMLDivElement>(null)
 
-  // Close stamp menu on outside click (portal is in body, so check both refs)
+  const isFullscreen = viewMode === 'fullscreen'
+
+  // Re-measure the toolbar whenever the visible control set changes.
+  const contentKey = [
+    hasPdf, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
+  ].join('|')
+  const { ref: headerRef, collapsed } = useToolbarCollapse(contentKey)
+
+  // Close a dropdown when clicking outside of it. The stamp portal lives in
+  // <body>, so it checks both its portal node and its trigger button.
   useEffect(() => {
     if (!stampPanelOpen) return
     const onMouseDown = (e: MouseEvent) => {
@@ -271,29 +434,32 @@ export function ActionBar({
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [stampPanelOpen])
 
-  // Close export menu on outside click
   useEffect(() => {
-    if (!exportMenuOpen) return
+    const menus: [boolean, React.RefObject<HTMLElement | null>, (v: boolean) => void][] = [
+      [exportMenuOpen, exportRef, setExportMenuOpen],
+      [openMenuOpen, openRef, setOpenMenuOpen],
+      [leftMenuOpen, leftMenuRef, setLeftMenuOpen],
+      [rightMenuOpen, rightMenuRef, setRightMenuOpen],
+    ]
+    const active = menus.filter(([open]) => open)
+    if (active.length === 0) return
     const onMouseDown = (e: MouseEvent) => {
-      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
-        setExportMenuOpen(false)
+      for (const [, ref, set] of active) {
+        if (ref.current && !ref.current.contains(e.target as Node)) set(false)
       }
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [exportMenuOpen])
+  }, [exportMenuOpen, openMenuOpen, leftMenuOpen, rightMenuOpen])
 
-  // Close open menu on outside click
+  // Switching between the inline and collapsed layouts hides the other mode's
+  // dropdowns; reset them so a stale-open menu doesn't reappear on switch back.
   useEffect(() => {
-    if (!openMenuOpen) return
-    const onMouseDown = (e: MouseEvent) => {
-      if (openRef.current && !openRef.current.contains(e.target as Node)) {
-        setOpenMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [openMenuOpen])
+    const close = collapsed
+      ? [setExportMenuOpen, setOpenMenuOpen]
+      : [setLeftMenuOpen, setRightMenuOpen]
+    close.forEach(fn => fn(false))
+  }, [collapsed])
 
   const openStampMenu = () => {
     if (stampPanelOpen) { setStampPanelOpen(false); return }
@@ -344,37 +510,173 @@ export function ActionBar({
   }
 
   // ── Button style helpers ──────────────────────────────────────────────────
-  // Single shared icon-only size so every toolbar button hits the same grid.
-  // Tooltips (`title` attr) carry the label; visible text is reserved for
-  // status (page count, zoom %).
-  const BTN_BASE = 'flex items-center justify-center w-9 h-9 rounded transition-all'
-  const BTN_IDLE = 'text-gray-300 hover:bg-gray-700 hover:text-white'
-  const BTN_ACTIVE = 'bg-blue-600 text-white shadow-sm'
-
   const viewBtn = (mode: ViewMode) =>
     `${BTN_BASE} ${viewMode === mode ? BTN_ACTIVE : BTN_IDLE}`
-
   const modeToggleBtn = (mode: AppMode) =>
     `${BTN_BASE} ${appMode === mode ? BTN_ACTIVE : BTN_IDLE}`
-
   const toolBtn = (mode: ActiveMode) =>
     `${BTN_BASE} ${activeMode === mode ? BTN_ACTIVE : BTN_IDLE}`
+  const iconBtn = (extra = '') => `${BTN_BASE} ${BTN_IDLE} ${extra}`
 
-  const iconBtn = (_label: string, extra = '') => `${BTN_BASE} ${BTN_IDLE} ${extra}`
+  // ── Reusable control clusters (shared by the bar and the collapsed menus) ──
+  const brandingCluster = (
+    <div className="flex items-center gap-2.5 px-1.5 py-0.5 select-none">
+      <img src="./icon.svg" alt="" className="w-7 h-7 rounded-md shrink-0" draggable={false} />
+      <span className="text-lg font-bold tracking-tight bg-gradient-to-br from-sky-400 to-violet-400 bg-clip-text text-transparent leading-none">
+        WZ PDF
+      </span>
+      <span className="hidden sm:inline text-xs text-gray-500 ml-1">{t('app.tagline')}</span>
+      <span
+        className="ml-1 rounded-full border border-gray-700 px-2 py-px text-[10px] font-medium text-gray-400 tabular-nums"
+        title="App version"
+      >
+        v{__APP_VERSION__}
+      </span>
+    </div>
+  )
 
-  const isFullscreen = viewMode === 'fullscreen'
+  const viewCluster = (
+    <div className="flex items-center gap-0.5 shrink-0">
+      <button className={viewBtn('single')}     onClick={() => onViewModeChange('single')}     title={t('tool.single')}     aria-label={t('tool.single')}><IconSingle /></button>
+      <button className={viewBtn('spread')}     onClick={() => onViewModeChange('spread')}     title={t('tool.spread')}     aria-label={t('tool.spread')}><IconSpread /></button>
+      <button className={viewBtn('grid')}       onClick={() => onViewModeChange('grid')}       title={t('tool.grid')}       aria-label={t('tool.grid')}><IconGrid /></button>
+      <button className={viewBtn('fullscreen')} onClick={() => onViewModeChange('fullscreen')} title={t('tool.fullscreen')} aria-label={t('tool.fullscreen')}><IconFullscreen /></button>
+    </div>
+  )
+
+  const pageCounter = (
+    <span className="text-xs text-gray-400 tabular-nums shrink-0 px-1 min-w-[56px] text-center">
+      {currentPage} / {numPages}
+    </span>
+  )
+
+  const zoomCluster = (
+    <ZoomControl zoom={zoom} onZoomIn={onZoomIn} onZoomOut={onZoomOut} onZoomSet={onZoomSet} onZoomReset={onZoomReset} />
+  )
+
+  const rotateButton = (
+    <button
+      onClick={onRotate}
+      className={`${iconBtn()} ${rotation !== 0 ? 'text-blue-400' : ''}`}
+      title={t('tool.rotate', { deg: rotation })}
+      aria-label={t('tool.rotate', { deg: rotation })}
+    ><IconRotate /></button>
+  )
+
+  const pagesButton = (
+    <button
+      className={`${BTN_BASE} ${isPanelOpen ? BTN_ACTIVE : BTN_IDLE} shrink-0`}
+      onClick={onTogglePanel}
+      title={t('tool.pages')}
+      aria-label={t('tool.pages')}
+    >
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
+        <rect x="2" y="3" width="7" height="14" rx="1"/>
+        <path d="M13 6h4M13 10h4M13 14h4" strokeLinecap="round"/>
+      </svg>
+    </button>
+  )
+
+  const eraserButton = hasMarkups ? (
+    <button className={iconBtn()} onClick={onResetMarkups} title={t('tool.reset')} aria-label={t('tool.reset')}>
+      <IconReset />
+    </button>
+  ) : null
+
+  const editorCluster = (
+    <div className="flex items-center gap-0.5 shrink-0">
+      <button
+        className={toolBtn('select')}
+        onClick={() => { onModeChange('select'); setStampPanelOpen(false) }}
+        title={t('tool.select')}
+        aria-label={t('tool.select')}
+      ><IconSelect /></button>
+      <button
+        ref={stampBtnRef}
+        className={toolBtn('stamp')}
+        onClick={openStampMenu}
+        title={t('tool.stamp')}
+        aria-label={t('tool.stamp')}
+        aria-expanded={stampPanelOpen}
+      ><IconStamp /></button>
+      <button
+        className={toolBtn('signature')}
+        onClick={() => { onModeChange('signature'); onSignatureClick(); setStampPanelOpen(false) }}
+        title={t('tool.signature')}
+        aria-label={t('tool.signature')}
+      ><IconSignature /></button>
+      <button
+        className={toolBtn('watermark')}
+        onClick={() => { onModeChange('watermark'); onWatermarkClick(); setStampPanelOpen(false) }}
+        title={t('tool.watermark')}
+        aria-label={t('tool.watermark')}
+      ><IconWatermark /></button>
+      {selectedId && (
+        <button
+          onClick={onDeleteSelected}
+          className={`${BTN_BASE} bg-red-700 hover:bg-red-600 text-white`}
+          title={t('tool.delete')}
+          aria-label={t('tool.delete')}
+        ><IconDelete /></button>
+      )}
+    </div>
+  )
+
+  const modeToggleCluster = !embed ? (
+    <div className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
+      <button className={modeToggleBtn('viewer')} onClick={() => onAppModeChange('viewer')} title={t('tool.viewer')} aria-label={t('tool.viewer')}><IconViewer /></button>
+      <button className={modeToggleBtn('editor')} onClick={() => onAppModeChange('editor')} title={t('tool.editor')} aria-label={t('tool.editor')}><IconEditor /></button>
+    </div>
+  ) : null
+
+  const printButton = hasPdf ? (
+    <button
+      onClick={onPrint}
+      className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
+      title={t('tool.print')}
+      aria-label={t('tool.print')}
+    ><IconPrint /></button>
+  ) : null
+
+  const ocrCluster = hasPdf ? (
+    <div className="relative inline-flex items-center">
+      <button
+        type="button"
+        onClick={onRunOcr}
+        disabled={isOcrRunning || numPages === 0}
+        aria-label={t('ocr.runCurrent')}
+        title={t('ocr.runCurrent')}
+        className="p-2 rounded hover:bg-gray-700 disabled:opacity-40 text-gray-200"
+      ><IconOcr /></button>
+      <button
+        type="button"
+        onClick={onRunOcrAll}
+        disabled={isOcrRunning || numPages === 0}
+        aria-label={t('ocr.runAll')}
+        title={t('ocr.runAll')}
+        className="px-1 text-[10px] rounded hover:bg-gray-700 disabled:opacity-40 text-gray-300"
+      >ALL</button>
+      {ocrProgress && (
+        <span className="ml-1 text-[10px] text-gray-400 tabular-nums">{ocrProgress.done}/{ocrProgress.total}</span>
+      )}
+      {ocrProgress && (
+        <button
+          type="button"
+          onClick={onCancelOcr}
+          aria-label={t('ocr.cancel')}
+          title={t('ocr.cancel')}
+          className="ml-1 px-1 text-[10px] rounded hover:bg-gray-700 text-red-300"
+        >✕</button>
+      )}
+    </div>
+  ) : null
 
   // ── Stamp portal menu ─────────────────────────────────────────────────────
   const stampPortal = stampPanelOpen && stampMenuRect
     ? createPortal(
         <div
           ref={stampPortalRef}
-          style={{
-            position: 'fixed',
-            top: stampMenuRect.bottom + 4,
-            left: stampMenuRect.left,
-            zIndex: 9999,
-          }}
+          style={{ position: 'fixed', top: stampMenuRect.bottom + 4, left: stampMenuRect.left, zIndex: 9999 }}
           className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-1 flex flex-col gap-0.5 min-w-[140px]"
         >
           {STAMP_PRESETS.map(p => (
@@ -393,336 +695,207 @@ export function ActionBar({
       )
     : null
 
+  // ── Export dropdown menu body (shared by the split button & collapsed menu) ─
+  const exportMenuItems = (onDone: () => void) => (
+    <>
+      <button onClick={() => { onExportPdf(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+        <IconDownload /><span>{t('export.pdf')}</span><span className="ml-auto text-gray-500 text-[10px]">.pdf</span>
+      </button>
+      <button onClick={() => { onExportHtml(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+        <IconHtml /><span>{t('export.html')}</span><span className="ml-auto text-gray-500 text-[10px]">.html</span>
+      </button>
+      <button onClick={() => { onExportImages(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+        <IconImage /><span>{t('export.images')}</span><span className="ml-auto text-gray-500 text-[10px]">.zip</span>
+      </button>
+      {onExportExe && (
+        <>
+          <div className="my-1 border-t border-gray-600" />
+          <button onClick={() => { onExportExe(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-300 hover:bg-gray-700 transition-colors">
+            <IconExe /><span>{t('export.exe')}</span><span className="ml-auto text-gray-500 text-[10px]">.exe</span>
+          </button>
+        </>
+      )}
+    </>
+  )
+
+  // ── Expanded (inline) sections ─────────────────────────────────────────────
+  const expandedLeft = (
+    <div className="flex items-center gap-1 px-3 py-1.5 min-w-0 shrink-0">
+      {!hasPdf && brandingCluster}
+      {hasPdf && (
+        <>
+          {viewCluster}
+          {!isFullscreen && (<><Sep />{pageCounter}</>)}
+          {!isFullscreen && viewMode !== 'grid' && (<><Sep />{zoomCluster}</>)}
+          {!isFullscreen && (<><Sep />{rotateButton}</>)}
+          {!isFullscreen && (<><Sep />{pagesButton}{eraserButton}</>)}
+          {appMode === 'editor' && !isFullscreen && (<><Sep />{editorCluster}</>)}
+        </>
+      )}
+    </div>
+  )
+
+  const expandedRight = (
+    <div className="flex items-center gap-1 px-2 sm:px-3 py-1.5 shrink-0 border-l border-gray-700/40">
+      {modeToggleCluster}
+      {modeToggleCluster && <Sep />}
+
+      {/* Open dropdown — file or URL. Hidden in embed mode. */}
+      {!embed && (
+        <div ref={openRef} className="relative">
+          <button
+            onClick={() => setOpenMenuOpen(v => !v)}
+            aria-expanded={openMenuOpen}
+            className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
+            title={t('tool.open')}
+            aria-label={t('tool.open')}
+          ><IconUpload /></button>
+          {openMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[170px]">
+              <button onClick={() => { fileInputRef.current?.click(); setOpenMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+                <IconUpload /><span>{t('tool.openFile')}</span>
+              </button>
+              <button onClick={() => { onOpenUrl(); setOpenMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+                <IconLink /><span>{t('tool.openUrl')}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {printButton}
+      {ocrCluster}
+
+      {/* Export — split button: main downloads PDF, chevron opens the format menu. */}
+      {hasPdf && !embed && (
+        <div ref={exportRef} className="relative flex items-stretch">
+          <button
+            onClick={onExportPdf}
+            disabled={isExporting}
+            className="flex items-center justify-center w-9 h-9 rounded-l bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 transition-all"
+            title={isExporting ? t('tool.exporting') : t('tool.exportPdf')}
+            aria-label={t('tool.exportPdf')}
+          ><IconDownload /></button>
+          <button
+            onClick={() => setExportMenuOpen(v => !v)}
+            disabled={isExporting}
+            aria-expanded={exportMenuOpen}
+            aria-label={t('tool.export')}
+            title={t('tool.exportMore')}
+            className="flex items-center justify-center h-9 px-1 rounded-r bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 border-l border-blue-400/40 transition-all"
+          ><IconChevron /></button>
+          {exportMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[175px]">
+              {exportMenuItems(() => setExportMenuOpen(false))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  // ── Collapsed (hamburger) sections ─────────────────────────────────────────
+  const menuItem = 'w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors rounded'
+
+  const collapsedLeft = (
+    <div ref={leftMenuRef} className="relative flex items-center px-2 py-1.5">
+      {hasPdf ? (
+        <>
+          <button
+            onClick={() => setLeftMenuOpen(v => !v)}
+            aria-expanded={leftMenuOpen}
+            className={`${BTN_BASE} ${leftMenuOpen ? BTN_ACTIVE : BTN_IDLE}`}
+            title={t('tool.menuLeft')}
+            aria-label={t('tool.menuLeft')}
+          ><IconMenu /></button>
+          {leftMenuOpen && (
+            <div className="absolute left-2 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-2 z-50 flex flex-col gap-2">
+              {viewCluster}
+              {!isFullscreen && viewMode !== 'grid' && zoomCluster}
+              {!isFullscreen && (
+                <div className="flex items-center gap-0.5">
+                  {rotateButton}
+                  {pagesButton}
+                  {eraserButton}
+                </div>
+              )}
+              {appMode === 'editor' && !isFullscreen && editorCluster}
+            </div>
+          )}
+        </>
+      ) : brandingCluster}
+    </div>
+  )
+
+  const collapsedCenter = hasPdf && !isFullscreen ? pageCounter : <span />
+
+  const collapsedRight = (
+    <div ref={rightMenuRef} className="relative flex items-center px-2 py-1.5 border-l border-gray-700/40">
+      <button
+        onClick={() => setRightMenuOpen(v => !v)}
+        aria-expanded={rightMenuOpen}
+        className={`${BTN_BASE} ${rightMenuOpen ? BTN_ACTIVE : BTN_IDLE}`}
+        title={t('tool.menuRight')}
+        aria-label={t('tool.menuRight')}
+      ><IconMore /></button>
+      {rightMenuOpen && (
+        <div className="absolute right-2 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[190px]">
+          {!embed && (
+            <>
+              <div className="flex items-center gap-1 px-3 py-1.5">
+                <button className={modeToggleBtn('viewer')} onClick={() => onAppModeChange('viewer')} title={t('tool.viewer')} aria-label={t('tool.viewer')}><IconViewer /></button>
+                <button className={modeToggleBtn('editor')} onClick={() => onAppModeChange('editor')} title={t('tool.editor')} aria-label={t('tool.editor')}><IconEditor /></button>
+              </div>
+              <div className="my-1 border-t border-gray-600" />
+              <button onClick={() => { fileInputRef.current?.click(); setRightMenuOpen(false) }} className={menuItem}><IconUpload /><span>{t('tool.openFile')}</span></button>
+              <button onClick={() => { onOpenUrl(); setRightMenuOpen(false) }} className={menuItem}><IconLink /><span>{t('tool.openUrl')}</span></button>
+            </>
+          )}
+          {hasPdf && (
+            <>
+              <button onClick={() => { onPrint(); setRightMenuOpen(false) }} className={menuItem}><IconPrint /><span>{t('tool.print')}</span></button>
+              <button onClick={() => { onRunOcr(); setRightMenuOpen(false) }} disabled={isOcrRunning || numPages === 0} className={`${menuItem} disabled:opacity-40`}><IconOcr /><span>{t('ocr.runCurrent')}</span></button>
+              <button onClick={() => { onRunOcrAll(); setRightMenuOpen(false) }} disabled={isOcrRunning || numPages === 0} className={`${menuItem} disabled:opacity-40`}><IconOcr /><span>{t('ocr.runAll')}</span></button>
+            </>
+          )}
+          {hasPdf && !embed && (
+            <>
+              <div className="my-1 border-t border-gray-600" />
+              {exportMenuItems(() => setRightMenuOpen(false))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <>
-      {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
-      {/*                                                                        */}
-      {/*  ┌─────────────────────────────────────┬──────────────────────────┐  */}
-      {/*  │  LEFT  — overflow-x:auto             │  RIGHT — no overflow    │  */}
-      {/*  │  view / zoom / editor tools          │  mode / open / export   │  */}
-      {/*  └─────────────────────────────────────┴──────────────────────────┘  */}
-      {/*                                                                        */}
-      {/*  Keeping the right section out of the overflow container lets         */}
-      {/*  the Export dropdown render without being clipped.                    */}
-      {/*  The Stamp dropdown (left section) escapes via a React portal.        */}
-
+      {/* ── Toolbar ───────────────────────────────────────────────────────────
+          Two clusters justified to the edges. When the inline controls no
+          longer fit (narrow window) `useToolbarCollapse` folds each cluster
+          into a hamburger menu instead of showing a horizontal scrollbar. */}
       <header
-        className="flex bg-gray-900 text-white shadow-md z-10 shrink-0 border-b border-gray-700"
+        ref={headerRef}
+        className="flex items-stretch justify-between bg-gray-900 text-white shadow-md z-10 shrink-0 border-b border-gray-700 relative"
         onDragOver={e => e.preventDefault()}
         onDrop={handleDrop}
       >
-        {/* ── Left: scrollable view + editor controls ── */}
-        <div className="flex items-center gap-1 px-3 py-1.5 flex-1 min-w-0 overflow-x-auto">
-          {/* Empty-state branding — only when no PDF is loaded */}
-          {!hasPdf && (
-            <div className="flex items-center gap-2.5 px-1.5 py-0.5 select-none">
-              <img src="./icon.svg" alt="" className="w-7 h-7 rounded-md shrink-0" draggable={false} />
-              <span
-                className="text-lg font-bold tracking-tight bg-gradient-to-br from-sky-400 to-violet-400 bg-clip-text text-transparent leading-none"
-              >
-                WZ PDF
-              </span>
-              <span className="hidden sm:inline text-xs text-gray-500 ml-1">{t('app.tagline')}</span>
-              {/* Version pill — injected at build time from package.json via Vite. */}
-              <span
-                className="ml-1 rounded-full border border-gray-700 px-2 py-px text-[10px] font-medium text-gray-400 tabular-nums"
-                title="App version"
-              >
-                v{__APP_VERSION__}
-              </span>
-            </div>
-          )}
-
-          {hasPdf && (
-            <>
-              {/* View mode buttons */}
-              <div className="flex items-center gap-0.5 shrink-0">
-                <button className={viewBtn('single')}     onClick={() => onViewModeChange('single')}     title={t('tool.single')}     aria-label={t('tool.single')}><IconSingle /></button>
-                <button className={viewBtn('spread')}     onClick={() => onViewModeChange('spread')}     title={t('tool.spread')}     aria-label={t('tool.spread')}><IconSpread /></button>
-                <button className={viewBtn('grid')}       onClick={() => onViewModeChange('grid')}       title={t('tool.grid')}       aria-label={t('tool.grid')}><IconGrid /></button>
-                <button className={viewBtn('fullscreen')} onClick={() => onViewModeChange('fullscreen')} title={t('tool.fullscreen')} aria-label={t('tool.fullscreen')}><IconFullscreen /></button>
-              </div>
-
-              <Sep />
-
-              {/* Page counter */}
-              {!isFullscreen && (
-                <span className="text-xs text-gray-400 tabular-nums shrink-0 px-1 min-w-[56px] text-center">
-                  {currentPage} / {numPages}
-                </span>
-              )}
-
-              {/* Zoom — hidden in fullscreen & grid */}
-              {!isFullscreen && viewMode !== 'grid' && (
-                <>
-                  <Sep />
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <button onClick={onZoomOut}   className={iconBtn('Zoom out')} title={t('tool.zoomOut')} aria-label={t('tool.zoomOut')}><IconZoomOut /></button>
-                    <button onClick={onZoomReset} className="text-xs text-gray-300 hover:text-white w-12 text-center tabular-nums" title={t('tool.zoomReset')} aria-label={t('tool.zoomReset')}>
-                      {Math.round(zoom * 100)}%
-                    </button>
-                    <button onClick={onZoomIn} className={iconBtn('Zoom in')} title={t('tool.zoomIn')} aria-label={t('tool.zoomIn')}><IconZoomIn /></button>
-                  </div>
-                </>
-              )}
-
-              {/* Rotate */}
-              {!isFullscreen && (
-                <>
-                  <Sep />
-                  <button
-                    onClick={onRotate}
-                    className={`${iconBtn('Rotate 90°')} ${rotation !== 0 ? 'text-blue-400' : ''}`}
-                    title={t('tool.rotate', { deg: rotation })}
-                    aria-label={t('tool.rotate', { deg: rotation })}
-                  >
-                    <IconRotate />
-                  </button>
-                </>
-              )}
-
-              {/* Pages 패널 토글 — viewer/editor 양쪽 모드에서 사용 가능 */}
-              {!isFullscreen && (
-                <>
-                  <Sep />
-                  <button
-                    className={`${BTN_BASE} ${isPanelOpen ? BTN_ACTIVE : BTN_IDLE} shrink-0`}
-                    onClick={onTogglePanel}
-                    title={t('tool.pages')}
-                    aria-label={t('tool.pages')}
-                  >
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
-                      <rect x="2" y="3" width="7" height="14" rx="1"/>
-                      <path d="M13 6h4M13 10h4M13 14h4" strokeLinecap="round"/>
-                    </svg>
-                  </button>
-
-                  {/* Eraser — only shown once pen/rectangle markup exists. */}
-                  {hasMarkups && (
-                    <button
-                      className={iconBtn('Reset markups')}
-                      onClick={onResetMarkups}
-                      title={t('tool.reset')}
-                      aria-label={t('tool.reset')}
-                    >
-                      <IconReset />
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* Editor annotation tools */}
-              {appMode === 'editor' && !isFullscreen && (
-                <>
-                  <Sep />
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <button
-                      className={toolBtn('select')}
-                      onClick={() => { onModeChange('select'); setStampPanelOpen(false) }}
-                      title={t('tool.select')}
-                      aria-label={t('tool.select')}
-                    ><IconSelect /></button>
-
-                    {/* Stamp button — dropdown rendered via portal (escapes overflow) */}
-                    <button
-                      ref={stampBtnRef}
-                      className={toolBtn('stamp')}
-                      onClick={openStampMenu}
-                      title={t('tool.stamp')}
-                      aria-label={t('tool.stamp')}
-                      aria-expanded={stampPanelOpen}
-                    ><IconStamp /></button>
-
-                    <button
-                      className={toolBtn('signature')}
-                      onClick={() => { onModeChange('signature'); onSignatureClick(); setStampPanelOpen(false) }}
-                      title={t('tool.signature')}
-                      aria-label={t('tool.signature')}
-                    ><IconSignature /></button>
-
-                    <button
-                      className={toolBtn('watermark')}
-                      onClick={() => { onModeChange('watermark'); onWatermarkClick(); setStampPanelOpen(false) }}
-                      title={t('tool.watermark')}
-                      aria-label={t('tool.watermark')}
-                    ><IconWatermark /></button>
-
-                    {selectedId && (
-                      <button
-                        onClick={onDeleteSelected}
-                        className={`${BTN_BASE} bg-red-700 hover:bg-red-600 text-white`}
-                        title={t('tool.delete')}
-                        aria-label={t('tool.delete')}
-                      ><IconDelete /></button>
-                    )}
-                  </div>
-                </>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* ── Right: fixed controls (not inside overflow — dropdown safe) ── */}
-        <div className="flex items-center gap-1 px-2 sm:px-3 py-1.5 shrink-0 border-l border-gray-700/40">
-          {/* Viewer / Editor mode toggle (icon-only segmented control).
-              Hidden in embed mode — an embedded viewer is read-only. */}
-          {!embed && (
-            <>
-              <div className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
-                <button
-                  className={modeToggleBtn('viewer')}
-                  onClick={() => onAppModeChange('viewer')}
-                  title={t('tool.viewer')}
-                  aria-label={t('tool.viewer')}
-                ><IconViewer /></button>
-                <button
-                  className={modeToggleBtn('editor')}
-                  onClick={() => onAppModeChange('editor')}
-                  title={t('tool.editor')}
-                  aria-label={t('tool.editor')}
-                ><IconEditor /></button>
-              </div>
-
-              <Sep />
-            </>
-          )}
-
-          {/* Open dropdown — file or URL. Hidden in embed mode. */}
-          {!embed && (
-          <div ref={openRef} className="relative">
-            <button
-              onClick={() => setOpenMenuOpen(v => !v)}
-              aria-expanded={openMenuOpen}
-              className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
-              title={t('tool.open')}
-              aria-label={t('tool.open')}
-            ><IconUpload /></button>
-            {openMenuOpen && (
-              <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[170px]">
-                <button
-                  onClick={() => { fileInputRef.current?.click(); setOpenMenuOpen(false) }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
-                >
-                  <IconUpload /><span>{t('tool.openFile')}</span>
-                </button>
-                <button
-                  onClick={() => { onOpenUrl(); setOpenMenuOpen(false) }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
-                >
-                  <IconLink /><span>{t('tool.openUrl')}</span>
-                </button>
-              </div>
-            )}
-          </div>
-          )}
-          <input ref={fileInputRef} type="file" accept="application/pdf,.pdf,.hwp,.hwpx" className="hidden" onChange={handleFileChange} />
-
-          {/* Print */}
-          {hasPdf && (
-            <button
-              onClick={onPrint}
-              className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
-              title={t('tool.print')}
-              aria-label={t('tool.print')}
-            ><IconPrint /></button>
-          )}
-
-          {/* OCR — visible for any loaded PDF, both viewer and editor modes */}
-          {hasPdf && (
-            <div className="relative inline-flex items-center">
-              <button
-                type="button"
-                onClick={onRunOcr}
-                disabled={isOcrRunning || numPages === 0}
-                aria-label={t('ocr.runCurrent')}
-                title={t('ocr.runCurrent')}
-                className="p-2 rounded hover:bg-gray-700 disabled:opacity-40 text-gray-200"
-              ><IconOcr /></button>
-              <button
-                type="button"
-                onClick={onRunOcrAll}
-                disabled={isOcrRunning || numPages === 0}
-                aria-label={t('ocr.runAll')}
-                title={t('ocr.runAll')}
-                className="px-1 text-[10px] rounded hover:bg-gray-700 disabled:opacity-40 text-gray-300"
-              >ALL</button>
-              {ocrProgress && (
-                <span className="ml-1 text-[10px] text-gray-400 tabular-nums">
-                  {ocrProgress.done}/{ocrProgress.total}
-                </span>
-              )}
-              {ocrProgress && (
-                <button
-                  type="button"
-                  onClick={onCancelOcr}
-                  aria-label={t('ocr.cancel')}
-                  title={t('ocr.cancel')}
-                  className="ml-1 px-1 text-[10px] rounded hover:bg-gray-700 text-red-300"
-                >✕</button>
-              )}
-            </div>
-          )}
-
-          {/* Export dropdown — absolute child renders below this section, no overflow parent.
-              Hidden in embed mode (read-only viewer). */}
-          {hasPdf && !embed && (
-            <div ref={exportRef} className="relative">
-              <button
-                onClick={() => setExportMenuOpen(v => !v)}
-                disabled={isExporting}
-                aria-expanded={exportMenuOpen}
-                aria-label={t('tool.export')}
-                className={`${BTN_BASE} bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 w-auto px-2.5 gap-1`}
-                title={isExporting ? t('tool.exporting') : t('tool.export')}
-              >
-                <IconDownload />
-                <IconChevron />
-              </button>
-
-              {exportMenuOpen && (
-                <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[175px]">
-                  <button
-                    onClick={() => { onExportPdf(); setExportMenuOpen(false) }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
-                  >
-                    <IconDownload /><span>{t('export.pdf')}</span>
-                    <span className="ml-auto text-gray-500 text-[10px]">.pdf</span>
-                  </button>
-
-                  <button
-                    onClick={() => { onExportHtml(); setExportMenuOpen(false) }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
-                  >
-                    <IconHtml /><span>{t('export.html')}</span>
-                    <span className="ml-auto text-gray-500 text-[10px]">.html</span>
-                  </button>
-
-                  <button
-                    onClick={() => { onExportImages(); setExportMenuOpen(false) }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors"
-                  >
-                    <IconImage /><span>{t('export.images')}</span>
-                    <span className="ml-auto text-gray-500 text-[10px]">.zip</span>
-                  </button>
-
-                  {onExportExe && (
-                    <>
-                      <div className="my-1 border-t border-gray-600" />
-                      <button
-                        onClick={() => { onExportExe(); setExportMenuOpen(false) }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-300 hover:bg-gray-700 transition-colors"
-                      >
-                        <IconExe /><span>{t('export.exe')}</span>
-                        <span className="ml-auto text-gray-500 text-[10px]">.exe</span>
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        {collapsed ? (
+          <>
+            {collapsedLeft}
+            {collapsedCenter}
+            {collapsedRight}
+          </>
+        ) : (
+          <>
+            {expandedLeft}
+            {expandedRight}
+          </>
+        )}
       </header>
+
+      <input ref={fileInputRef} type="file" accept="application/pdf,.pdf,.hwp,.hwpx" className="hidden" onChange={handleFileChange} />
 
       {/* Stamp dropdown portal — rendered in <body> to escape toolbar overflow */}
       {stampPortal}

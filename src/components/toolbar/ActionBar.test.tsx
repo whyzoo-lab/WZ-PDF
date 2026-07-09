@@ -10,7 +10,7 @@ function baseProps(over: Partial<ActionBarProps>): ActionBarProps {
     selectedId: null, isExporting: false, numPages: 3, currentPage: 1, isPanelOpen: false,
     onTogglePanel: noop, onUpload: noop, onOpenUrl: noop, onExportPdf: noop, onExportHtml: noop,
     onExportImages: noop, onExportExe: noop, onPrint: noop, onAppModeChange: noop,
-    onViewModeChange: noop, onZoomIn: noop, onZoomOut: noop, onZoomReset: noop, onRotate: noop,
+    onViewModeChange: noop, onZoomIn: noop, onZoomOut: noop, onZoomReset: noop, onZoomSet: noop, onRotate: noop,
     onModeChange: noop, onStampSelect: noop, onSignatureClick: noop, onWatermarkClick: noop,
     onDeleteSelected: noop, onResetMarkups: noop, hasMarkups: false,
     onRunOcr: noop, onRunOcrAll: noop, onCancelOcr: noop, isOcrRunning: false, ocrProgress: null,

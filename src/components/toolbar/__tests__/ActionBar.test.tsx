@@ -24,6 +24,7 @@ const defaultProps = {
   onZoomIn: vi.fn(),
   onZoomOut: vi.fn(),
   onZoomReset: vi.fn(),
+  onZoomSet: vi.fn(),
   onRotate: vi.fn(),
   onModeChange: vi.fn(),
   onStampSelect: vi.fn(),
@@ -136,9 +137,19 @@ describe('ActionBar', () => {
     expect(defaultProps.onZoomIn).toHaveBeenCalled()
   })
 
-  it('displays zoom percentage', () => {
+  it('displays the current zoom in the editable field', () => {
     render(<ActionBar {...defaultProps} zoom={1.5} />)
-    expect(screen.getByRole('button', { name: /reset zoom/i })).toHaveTextContent('150%')
+    expect(screen.getByRole('textbox', { name: /zoom level/i })).toHaveValue('150')
+  })
+
+  it('commits a typed zoom via onZoomSet on Enter', () => {
+    const onZoomSet = vi.fn()
+    render(<ActionBar {...defaultProps} zoom={1} onZoomSet={onZoomSet} />)
+    const field = screen.getByRole('textbox', { name: /zoom level/i })
+    fireEvent.focus(field)
+    fireEvent.change(field, { target: { value: '175' } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(onZoomSet).toHaveBeenCalledWith(1.75)
   })
 
   // ── Export dropdown ─────────────────────────────────────────────────────

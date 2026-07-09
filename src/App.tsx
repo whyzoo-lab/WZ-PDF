@@ -503,6 +503,7 @@ export default function App() {
   const handleZoomIn    = useCallback(() => setZoom(z => Math.min(+(z + ZOOM_STEP).toFixed(2), MAX_ZOOM)), [])
   const handleZoomOut   = useCallback(() => setZoom(z => Math.max(+(z - ZOOM_STEP).toFixed(2), MIN_ZOOM)), [])
   const handleZoomReset = useCallback(() => setZoom(1), [])
+  const handleZoomSet   = useCallback((z: number) => setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, +z.toFixed(2)))), [])
 
   const handleDeleteSelected = useCallback(() => {
     if (selectedId) removeAnnotation(selectedId)
@@ -574,6 +575,7 @@ export default function App() {
     onZoomIn: handleZoomIn,
     onZoomOut: handleZoomOut,
     onZoomReset: handleZoomReset,
+    onZoomSet: handleZoomSet,
     onRotate: handleRotate,
     onModeChange: setActiveMode,
     onStampSelect: handleStampSelect,
