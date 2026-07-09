@@ -47,3 +47,6 @@ public/ocr/
 
 # Bundled HWP WASM binary — regenerate via: npm run setup:hwp
 public/hwp/
+
+# Bundled pdfjs WASM decoders (jbig2/openjpeg/qcms) — regenerate via: npm run setup:pdfjs
+public/wasm/
