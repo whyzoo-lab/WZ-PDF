@@ -45,6 +45,14 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         // text elements reference these fonts). With this flag, pdfjs draws
         // glyphs as canvas paths instead — same visual quality for our PNG output.
         disableFontFace: true,
+        // Location of pdfjs's WASM image decoders (jbig2 / openjpeg / qcms).
+        // pdfjs 5.x decodes JBIG2, CCITT-Fax and JPEG2000 images in WASM; without
+        // this it silently drops those images. Korean scanner (MRC) PDFs store
+        // their text as CCITT/JBIG2 ImageMasks, so omitting wasmUrl makes the
+        // text vanish and only the background layer renders. Bundled offline at
+        // public/wasm/ (copied by npm run setup:pdfjs); resolved against the
+        // document so it works over http(s) and Electron file://.
+        wasmUrl: new URL('wasm/', new URL('./', document.baseURI)).href,
       }).promise
       return { doc: doc as unknown as ViewerDoc, kind: 'pdf' }
     })
