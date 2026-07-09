@@ -326,6 +326,9 @@ Everything stored and exported uses the `effectiveZoom = PDF_RENDER_SCALE * zoom
 ### `page.render()` API (pdfjs 5.x)
 Call as `page.render({ canvas, viewport })` — NOT `{ canvasContext: ctx, viewport }`. The old API was removed in pdfjs 5.x.
 
+### pdfjs `wasmUrl` — required for JBIG2 / CCITT / JPEG2000 images
+pdfjs 5.x decodes JBIG2, CCITT-Fax and JPEG2000 images in WebAssembly and **silently drops any image it can't decode** if `getDocument` isn't given a `wasmUrl`. Korean scanner / MRC PDFs (e.g. 특허증) store their text as CCITT/JBIG2 `ImageMask`s layered over a DCTDecode background — without `wasmUrl` the masks vanish and only the faint background renders. `usePdfDocument.ts` passes `wasmUrl: new URL('wasm/', new URL('./', document.baseURI)).href` (same base-relative pattern as the OCR assets, so it works over http(s) and Electron `app://`). The decoders live at `public/wasm/` — **gitignored**; regenerate with `npm run setup:pdfjs` (runs automatically in `predev`, `predev:vite`, `build`, `build:exe`). Symptom of a missing/404 wasm: console spams `Jbig2Error: JBig2 failed to initialize` and the operator list has zero `paintImageMaskXObject` ops.
+
 ### Fullscreen two-step exit (ESC priority)
 The two-step ESC behavior ("first press clears markups, second press exits fullscreen") requires:
 1. **Keyboard Lock API** in FullscreenView: `navigator.keyboard.lock(['Escape'])` prevents the browser/OS from auto-exiting fullscreen before any JS handler fires.
