@@ -27,6 +27,11 @@ export const en = {
   'tool.print': 'Print (Ctrl+P)',
   'tool.export': 'Export',
   'tool.exporting': 'Exporting…',
+  'tool.exportPdf': 'Download PDF',
+  'tool.exportMore': 'Other formats',
+  'tool.zoomLevel': 'Zoom level (%)',
+  'tool.menuLeft': 'View & tools',
+  'tool.menuRight': 'Actions',
 
   // ── Stamp menu ────────────────────────────────────────────────────────────
   'stamp.uploadImage': 'Upload image…',

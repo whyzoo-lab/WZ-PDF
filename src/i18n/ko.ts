@@ -27,6 +27,11 @@ export const ko = {
   'tool.print': '인쇄 (Ctrl+P)',
   'tool.export': '내보내기',
   'tool.exporting': '내보내는 중…',
+  'tool.exportPdf': 'PDF 다운로드',
+  'tool.exportMore': '다른 형식',
+  'tool.zoomLevel': '확대·축소 비율 (%)',
+  'tool.menuLeft': '보기 · 도구',
+  'tool.menuRight': '작업',
 
   // ── Stamp menu ────────────────────────────────────────────────────────────
   'stamp.uploadImage': '이미지 업로드…',

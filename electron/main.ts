@@ -98,6 +98,11 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1280,
     height: 800,
+    // Floor the window size so the toolbar and viewer never distort. Below
+    // this the ActionBar folds its controls into hamburger menus (handled in
+    // the renderer), but we still stop the window from shrinking absurdly.
+    minWidth: 480,
+    minHeight: 360,
     title: 'WZ PDF',
     // ── Custom title bar ────────────────────────────────────────────────
     // Hide the native title bar so the ActionBar visually becomes the chrome.
