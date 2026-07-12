@@ -209,34 +209,44 @@ function findViewerTemplate(): string | null {
   return null
 }
 
-function extractEmbeddedPdf(): Buffer | null {
+async function extractEmbeddedPdf(): Promise<Buffer | null> {
   // Only the portable SFX entry point carries embedded PDFs — the NSIS app
   // never has bytes appended to its own exe. Skip when not portable.
   const exeFile = process.env['PORTABLE_EXECUTABLE_FILE']
   if (!exeFile) return null
 
+  // IMPORTANT: read ONLY the 20-byte footer (and the embedded PDF, if any) —
+  // never the whole exe. The portable exe is >140 MB, and a synchronous
+  // full-file read here blocks the main-process event loop (including the
+  // app:// protocol handler that serves the renderer), leaving the window on a
+  // blank background for seconds while the OS/antivirus scans the read. The
+  // common case (no PDF appended) now costs a single 20-byte read.
+  let handle: Awaited<ReturnType<typeof fs.promises.open>> | null = null
   try {
-    if (!fs.existsSync(exeFile)) return null
-    const exeBytes = fs.readFileSync(exeFile)
-    if (exeBytes.length < EMBED_FOOTER) return null
+    const stat = await fs.promises.stat(exeFile)
+    if (stat.size < EMBED_FOOTER) return null
 
-    // Check marker at the very end
-    const marker = exeBytes.slice(exeBytes.length - EMBED_MARKER.length)
-    if (!marker.equals(EMBED_MARKER)) return null
+    handle = await fs.promises.open(exeFile, 'r')
 
-    // Read PDF size (4 bytes before the marker)
-    const sizeOffset = exeBytes.length - EMBED_FOOTER
-    const pdfSize    = exeBytes.readUInt32LE(sizeOffset)
+    // Footer layout (last 20 bytes): [pdfSize UInt32LE (4)] [EMBED_MARKER (16)]
+    const footer = Buffer.allocUnsafe(EMBED_FOOTER)
+    await handle.read(footer, 0, EMBED_FOOTER, stat.size - EMBED_FOOTER)
+    if (!footer.subarray(4).equals(EMBED_MARKER)) return null
+
+    const pdfSize = footer.readUInt32LE(0)
     if (pdfSize === 0) return null
-
-    const pdfOffset = sizeOffset - pdfSize
+    const pdfOffset = stat.size - EMBED_FOOTER - pdfSize
     if (pdfOffset < 0) return null
 
+    const pdf = Buffer.alloc(pdfSize)   // dedicated ArrayBuffer (exact size for IPC transfer)
+    await handle.read(pdf, 0, pdfSize, pdfOffset)
     console.log('[WZ PDF] Embedded PDF detected — size:', pdfSize, 'bytes')
-    return exeBytes.slice(pdfOffset, pdfOffset + pdfSize)
+    return pdf
   } catch (err) {
     console.warn('[WZ PDF] extractEmbeddedPdf failed:', err)
     return null
+  } finally {
+    await handle?.close()
   }
 }
 
@@ -449,14 +459,16 @@ app.whenReady().then(() => {
       win?.webContents.send('open-file', filePath)
     })
   } else {
-    // Check for a PDF embedded in this portable exe (viewer-exe mode)
-    const embedded = extractEmbeddedPdf()
-    if (embedded && win) {
-      win.webContents.once('did-finish-load', () => {
-        // Send as a transferable ArrayBuffer so the renderer can use it directly
-        win?.webContents.send('open-pdf-bytes', embedded.buffer)
-      })
-    }
+    // Check for a PDF embedded in this portable exe (viewer-exe mode). Runs
+    // asynchronously so it never blocks the window's first paint; the read is
+    // now a couple of small partial reads instead of the whole exe.
+    extractEmbeddedPdf().then(embedded => {
+      if (!embedded || !win) return
+      // Send as a transferable ArrayBuffer so the renderer can use it directly.
+      const send = () => win?.webContents.send('open-pdf-bytes', embedded.buffer)
+      if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+      else send()
+    }).catch(() => { /* extractEmbeddedPdf already logs; ignore */ })
   }
 
   app.on('activate', () => {
