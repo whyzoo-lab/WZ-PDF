@@ -349,6 +349,9 @@ In spread (two-page) view, dragging a pen stroke across the boundary between two
 ### Electron native print timing
 Since Electron's `webContents.print` is asynchronous, do not restore the DOM canvases (`afterPrint` cleanup) immediately after starting the print. Instead, expose the print call as a Promise and `await` it in the renderer, so cleanup is deferred until the print dialog is closed.
 
+### Never read the whole exe at startup (blank-screen stall)
+`extractEmbeddedPdf()` (viewer-exe mode) runs in `app.whenReady()` right after `createWindow()`. It must only do **async partial reads** — the 20-byte trailer marker, then just the embedded PDF bytes if present. A synchronous `fs.readFileSync` of the whole portable exe (>140 MB, and it grows with every bundled asset — OCR/HWP/pdfjs wasm) blocks the main-process event loop, which stalls the `app://` protocol handler that serves the renderer, so the window sits on its dark `backgroundColor` for seconds (worst on first launch while AV scans the read). Only the portable / exported viewer exe is affected (`PORTABLE_EXECUTABLE_FILE` set); the NSIS app returns early. Any new startup work in the main process must stay off the event loop until the first paint.
+
 ### TypeScript Omit on union types
 TypeScript's `Omit<T, K>` does not distribute over union types (it resolves to common keys first, stripping unique properties from union members). Use a distributed utility:
 `type OmitId<T> = T extends any ? Omit<T, 'id'> : never`
