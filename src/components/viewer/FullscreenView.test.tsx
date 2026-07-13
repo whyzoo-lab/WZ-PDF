@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
-import { FullscreenView } from '../FullscreenView'
-import type { ViewerDoc } from '../../../types/viewerDoc'
+import { FullscreenView } from './FullscreenView'
+import type { ViewerDoc } from '../../types/viewerDoc'
 
-vi.mock('../PdfPage', () => ({
+vi.mock('./PdfPage', () => ({
   PdfPage: ({ pageNumber }: { pageNumber: number }) => (
     <div data-testid={`page-${pageNumber}`} />
   ),

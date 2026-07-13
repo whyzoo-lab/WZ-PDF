@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { base64ToUint8Array } from '../pdfExporter'
+import { base64ToUint8Array } from './pdfExporter'
 
 describe('base64ToUint8Array', () => {
   it('converts a base64 data URL to Uint8Array', () => {
