@@ -61,7 +61,15 @@ WZ PDF can open Korean `.hwp` (OLE2 binary) and `.hwpx` (zip-based XML) document
 - **Production/build:** copied to `public/hwp/` by `npm run setup:hwp` (script is prepended to `build` and `build:exe`; `public/hwp/` is gitignored — run `npm run setup:hwp` before building).
 - **Dev:** loaded directly from `node_modules/@rhwp/core/`.
 
-**Adapter** — `src/services/hwpDocAdapter.ts` wraps `HwpDocument` as a pdfjs-shaped `ViewerDoc` interface (`src/types/viewerDoc.ts`). `renderPageToCanvas` auto-sizes the canvas to match HWP page dimensions AND paints embedded pictures (logos, header bands) — verified by pixel-sampling its output. Do NOT re-composite images from `getPageLayerTree` on top; that double-draws them. (`getPageOverlayImages` returning empty `behind`/`front` arrays is a red herring — it's for a separate multi-layer overlay architecture, not a sign that pictures are unpainted.) Note: HWP pages are 0-based internally; the adapter converts to the app's 1-based page numbers.
+**Adapter** — `src/services/hwpDocAdapter.ts` wraps `HwpDocument` as a pdfjs-shaped `ViewerDoc` interface (`src/types/viewerDoc.ts`). `renderPageToCanvas` auto-sizes the canvas to match HWP page dimensions and paints text, shapes **and embedded pictures** (logos, header bands) — all at the correct position.
+
+**Two things the adapter must get right about embedded pictures:**
+
+1. **Do NOT composite images from `getPageLayerTree` on top of the render.** rhwp already draws each image; a second draw lands at a slightly different position/scale and shows as a **misplaced gray "blob"**, most visible at the app's HiDPI `renderScale` (3× on dpr-2 displays) where the header band balloons over the body text. (`getPageOverlayImages` returning empty `behind`/`front` arrays is a red herring — it does not mean pictures are unpainted.)
+
+2. **rhwp decodes pictures ASYNCHRONOUSLY, per page.** A page's first render(s) within ~200 ms of first touching that page paint the text but **omit the picture** — verified by pixel-sampling in Electron: 5 back-to-back renders all miss the logo, yet a render 200 ms later includes it (time-based, not render-count-based; and per-page, so warming page 1 does not warm page 3). This is why "the logo doesn't show" and why it looked non-deterministic (a browser tab that had already rendered other HWPs had a warm decoder; a cold Electron launch does not). `ensureImagePainted` fixes it: after the initial render, if the page has an image (from `getPageLayerTree`, cached per page) whose bbox region isn't painted yet, it re-renders in place every 80 ms until it appears (cap ~1.5 s), keeping rhwp's own single correct draw. Cost is only paid on the first cold render of each image-bearing page.
+
+Note: HWP pages are 0-based internally; the adapter converts to the app's 1-based page numbers.
 
 **Integration** — `usePdfDocument` detects the file type and returns `{ pdfDoc: ViewerDoc, kind: 'pdf'|'hwp', ... }`. All downstream code (viewer, annotations, OCR, print, export) consumes `ViewerDoc` unchanged and is unaware of the source format.
 
