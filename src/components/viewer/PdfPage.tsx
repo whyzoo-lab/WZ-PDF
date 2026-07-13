@@ -1,28 +1,27 @@
-import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react'
+import { memo, useMemo, useState, useEffect } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva'
 import type Konva from 'konva'
+import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva'
 import type { ViewerDoc, DocKind } from '../../types/viewerDoc'
 import { usePdfPage } from '../../hooks/usePdfPage'
+import { usePageDrawing } from '../../hooks/usePageDrawing'
+import { useRegionOcr } from '../../hooks/useRegionOcr'
+import { useHwpPageText } from '../../hooks/useHwpPageText'
 import { AnnotationLayer } from '../annotations/AnnotationLayer'
 import { PdfTextLayer } from './PdfTextLayer'
 import type { TextLayerHighlight, TextEditCommit } from './PdfTextLayer'
 import { OcrTextLayer } from './OcrTextLayer'
-import type { OcrPageResult, OcrWord } from '../../types/ocr'
+import type { OcrPageResult } from '../../types/ocr'
 import { t } from '../../i18n'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { annotationsForPage } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
 import { toStoredCoords } from '../../utils/coordinates'
 import { PDF_RENDER_SCALE } from '../../utils/constants'
+import { PEN_COLOR, PEN_STROKE_WIDTH, PEN_OPACITY, RECT_COLOR, RECT_STROKE_WIDTH } from '../../utils/markupConstants'
 import { sampleBackgroundColor } from '../../utils/sampleBgColor'
 
-// Visual constants for volatile markups
-const PEN_COLOR        = '#FFFF00'
-const PEN_STROKE_WIDTH = 14   // PDF points → renders ~21px at zoom=1
-const PEN_OPACITY      = 0.4
-const RECT_COLOR        = '#FF0000'
-const RECT_STROKE_WIDTH = 2   // PDF points
+type PointerEvt = Konva.KonvaEventObject<MouseEvent | TouchEvent>
 
 interface PdfPageProps {
   pdfDoc: ViewerDoc
@@ -81,136 +80,26 @@ function PdfPageInner({
   const desiredRenderScale = Math.ceil(PDF_RENDER_SCALE * zoom * dpr * 2) / 2
   const { pageData, isLoading } = usePdfPage(pdfDoc, pageNumber, desiredRenderScale)
 
-  // ── Drawing state for volatile markups (pen / rectangle) ─────────────────────
-  // Stored in PDF points so it scales naturally during in-flight zoom.
-  // Hooks must be declared before any early return, so we keep state + the
-  // commit fn + the window-level mouseup safety net all here at the top.
-  type PenDraw  = { kind: 'pen'; points: number[] }
-  type RectDraw = { kind: 'rect'; x: number; y: number; w: number; h: number }
-  const [draft, setDraft] = useState<PenDraw | RectDraw | null>(null)
-  const draftRef = useRef<PenDraw | RectDraw | null>(null)
+  // Coordinate divisor (PDF points ↔ screen). Hoisted above the early return so
+  // the input hooks below (which run before it) can convert pointer positions.
+  // Depends only on `zoom` + a constant, never on pageData.
+  const effectiveZoom = PDF_RENDER_SCALE * zoom
+  const isDrawing = activeMode === 'pen' || activeMode === 'rectangle'
 
-  // ── Ctrl+drag region → OCR → clipboard (view mode) ───────────────────────────
-  // A transient highlighter rectangle: stored in PDF points like the markup draft.
-  type Region = { x: number; y: number; w: number; h: number }
-  const [region, setRegion] = useState<Region | null>(null)
-  const regionRef = useRef<Region | null>(null)
-  const [regionBusy, setRegionBusy] = useState(false)
+  // ── Input pipelines (hooks must precede the loading early-return) ──────────
+  // Volatile pen/rectangle drawing.
+  const drawing = usePageDrawing(activeMode, pageNumber, effectiveZoom, onAnnotationAdd)
+  // Ctrl+drag region → OCR → clipboard (view mode).
+  const region = useRegionOcr(pageData, effectiveZoom, activeMode, isDrawing, onRegionCopy)
+  // HWP native selectable text (no OCR pass needed).
+  const { hwpWords, hasHwpText } = useHwpPageText(pdfDoc, pageNumber, kind)
 
   // Origin point (CSS px, relative to the page box) for the OCR scanning
-  // animation when it was kicked off by a double-click. null → the default
+  // animation when it was kicked off by a triple-click. null → the default
   // top→bottom sweep (e.g. when triggered from the toolbar button).
   const [ocrOrigin, setOcrOrigin] = useState<{ x: number; y: number } | null>(null)
   // Drop the origin once recognition ends so the next run starts clean.
   useEffect(() => { if (!ocrActive) setOcrOrigin(null) }, [ocrActive])
-
-  // ── HWP native text layer ────────────────────────────────────────────────
-  // HWP pages have no pdfjs text layer, but rhwp exposes positioned text runs.
-  // Fetch them and render the same selectable overlay OCR uses — so HWP text is
-  // selectable / copyable with no OCR pass. PDF and image-only HWP are unaffected.
-  const [hwpWords, setHwpWords] = useState<OcrWord[] | null>(null)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync reset on dep change
-    if (kind !== 'hwp' || !pdfDoc.getPageText) { setHwpWords(null); return }
-    let cancelled = false
-    pdfDoc.getPageText(pageNumber)
-      .then(runs => {
-        if (cancelled) return
-        setHwpWords(runs.map(r => ({
-          text: r.text, score: 1, x: r.x, y: r.y, width: r.width, height: r.height, rotation: 0,
-        })))
-      })
-      .catch(() => { if (!cancelled) setHwpWords([]) })
-    return () => { cancelled = true }
-  }, [pdfDoc, pageNumber, kind])
-  const hasHwpText = !!(hwpWords && hwpWords.length > 0)
-
-  // Ctrl+drag region → OCR the crop → hand the text back (clipboard). useCallback
-  // so the Stage's onMouseUp and the window-mouseup net (for drags that end off
-  // the Stage, e.g. on the gray margin) share one implementation.
-  const finishRegion = useCallback(() => {
-    const r = regionRef.current
-    regionRef.current = null
-    setRegion(null)
-    if (!r || !pageData || !onRegionCopy) return
-    const x = Math.min(r.x, r.x + r.w), y = Math.min(r.y, r.y + r.h)
-    const w = Math.abs(r.w), h = Math.abs(r.h)
-    if (w < 6 || h < 6) return   // ignore tiny drags / stray Ctrl-clicks
-    const s = pageData.renderScale
-    const sw = Math.max(1, Math.round(w * s)), sh = Math.max(1, Math.round(h * s))
-    const crop = document.createElement('canvas')
-    crop.width = sw; crop.height = sh
-    crop.getContext('2d')?.drawImage(pageData.canvas, Math.round(x * s), Math.round(y * s), sw, sh, 0, 0, sw, sh)
-    setRegionBusy(true)
-    void (async () => {
-      try {
-        const { predict } = await import('../../services/ocrEngine')
-        const lines = await predict(crop)
-        onRegionCopy(lines.map(l => l.text).join(' ').replace(/\s+/g, ' ').trim())
-      } catch {
-        onRegionCopy('')
-      } finally {
-        setRegionBusy(false)
-        crop.width = 0; crop.height = 0
-      }
-    })()
-  }, [pageData, onRegionCopy])
-
-  useEffect(() => {
-    if (!region) return
-    window.addEventListener('mouseup', finishRegion)
-    return () => window.removeEventListener('mouseup', finishRegion)
-  }, [region, finishRegion])
-
-  // Commit the in-progress draft as a real annotation. Reused by Stage's
-  // own onMouseUp and the window-level safety net below.
-  const commitDraft = useCallback(() => {
-    const d = draftRef.current
-    if (!d) return
-    draftRef.current = null
-    setDraft(null)
-    if (d.kind === 'pen') {
-      if (d.points.length >= 4) {
-        onAnnotationAdd({
-          type: 'pen',
-          page: pageNumber,
-          x: 0, y: 0, width: 0, height: 0,
-          rotation: 0,
-          points: d.points,
-          color: PEN_COLOR,
-          strokeWidth: PEN_STROKE_WIDTH,
-          opacity: PEN_OPACITY,
-        })
-      }
-    } else {
-      const nx = d.w < 0 ? d.x + d.w : d.x
-      const ny = d.h < 0 ? d.y + d.h : d.y
-      const nw = Math.abs(d.w)
-      const nh = Math.abs(d.h)
-      if (nw > 2 && nh > 2) {
-        onAnnotationAdd({
-          type: 'rectangle',
-          page: pageNumber,
-          x: nx, y: ny, width: nw, height: nh,
-          rotation: 0,
-          color: RECT_COLOR,
-          strokeWidth: RECT_STROKE_WIDTH,
-        })
-      }
-    }
-  }, [pageNumber, onAnnotationAdd])
-
-  // Window-level mouseup safety net: in spread mode the cursor often crosses
-  // from one page's Stage to the other (or to gray margin) before release,
-  // which means the originating Stage never sees mouseup and the stroke is
-  // orphaned. Listening on window guarantees we always commit on release.
-  useEffect(() => {
-    const isDrawingNow = activeMode === 'pen' || activeMode === 'rectangle'
-    if (!isDrawingNow) return
-    const onUp = () => commitDraft()
-    window.addEventListener('mouseup', onUp)
-    return () => window.removeEventListener('mouseup', onUp)
-  }, [activeMode, commitDraft])
 
   // Memoized per-page filter so AnnotationLayer keeps a stable prop reference
   // when unrelated annotations change.
@@ -240,7 +129,6 @@ function PdfPageInner({
   const renderedH = pageData.height * zoom
   const stageWidth  = isRotated90 ? renderedH : renderedW
   const stageHeight = isRotated90 ? renderedW : renderedH
-  const effectiveZoom = PDF_RENDER_SCALE * zoom
 
   // CSS transform: rotate around centre and then shift back so top-left aligns.
   // translateX/Y shift compensates for the origin moving during rotation.
@@ -301,82 +189,13 @@ function PdfPageInner({
       ? 'crosshair'
       : 'default'
 
-  // ── Drawing handlers (pen / rectangle) ─────────────────────────────────────
-  // Mouse and touch both go through the same handlers; Konva normalizes the
-  // pointer position via stage.getPointerPosition(), so the event payload only
-  // matters for the stage reference.
-  type PointerEvt = Konva.KonvaEventObject<MouseEvent | TouchEvent>
-  const getPointerStored = (e: PointerEvt): { x: number; y: number } | null => {
-    const stage = e.target.getStage()
-    const pos = stage?.getPointerPosition()
-    if (!pos) return null
-    return toStoredCoords(pos.x, pos.y, effectiveZoom)
-  }
-
-  const handleMouseDown = (e: PointerEvt) => {
-    if (activeMode === 'pen') {
-      const p = getPointerStored(e)
-      if (!p) return
-      const next: PenDraw = { kind: 'pen', points: [p.x, p.y] }
-      draftRef.current = next
-      setDraft(next)
-    } else if (activeMode === 'rectangle') {
-      const p = getPointerStored(e)
-      if (!p) return
-      const next: RectDraw = { kind: 'rect', x: p.x, y: p.y, w: 0, h: 0 }
-      draftRef.current = next
-      setDraft(next)
-    }
-  }
-
-  const handleMouseMove = (e: PointerEvt) => {
-    const d = draftRef.current
-    if (!d) return
-    const p = getPointerStored(e)
-    if (!p) return
-    if (d.kind === 'pen') {
-      const next: PenDraw = { kind: 'pen', points: [...d.points, p.x, p.y] }
-      draftRef.current = next
-      setDraft(next)
-    } else {
-      const next: RectDraw = { kind: 'rect', x: d.x, y: d.y, w: p.x - d.x, h: p.y - d.y }
-      draftRef.current = next
-      setDraft(next)
-    }
-  }
-
-  const handleMouseUp = commitDraft
-
-  const isDrawing = activeMode === 'pen' || activeMode === 'rectangle'
-
-  // ── Ctrl+drag region → OCR → clipboard ─────────────────────────────────────
-  // Active only in view/select mode (not while a markup tool is selected) and
-  // only for mouse + Ctrl, so it never interferes with normal clicks or touch.
-  const regionTrigger = (e: PointerEvt) =>
-    !isDrawing && !!onRegionCopy && (activeMode === null || activeMode === 'select') &&
-    e.evt instanceof MouseEvent && e.evt.ctrlKey
-
-  const startRegion = (e: PointerEvt) => {
-    const p = getPointerStored(e)
-    if (!p) return
-    const r: Region = { x: p.x, y: p.y, w: 0, h: 0 }
-    regionRef.current = r; setRegion(r)
-  }
-  const updateRegion = (e: PointerEvt) => {
-    const r = regionRef.current
-    if (!r) return
-    const p = getPointerStored(e)
-    if (!p) return
-    const next: Region = { x: r.x, y: r.y, w: p.x - r.x, h: p.y - r.y }
-    regionRef.current = next; setRegion(next)
-  }
-  // finishRegion is the useCallback defined in the hooks section above.
-
-  // Combined Stage pointer handlers: markup drawing when a tool is active,
-  // otherwise Ctrl+drag region selection.
-  const onStageDown = (e: PointerEvt) => { if (isDrawing) handleMouseDown(e); else if (regionTrigger(e)) startRegion(e) }
-  const onStageMove = (e: PointerEvt) => { if (draftRef.current) handleMouseMove(e); else if (regionRef.current) updateRegion(e) }
-  const onStageUp   = ()             => { if (draftRef.current) commitDraft(); else if (regionRef.current) finishRegion() }
+  // Combined Stage pointer handlers: the drawing and region hooks each no-op
+  // unless their own gesture is active (a draft and a region can never be active
+  // at once — drawing needs a pen/rectangle tool, region needs view/select), so
+  // invoking both is equivalent to the old draft-first `if/else if` dispatch.
+  const onStageDown = (e: PointerEvt) => { drawing.onDown(e); region.onDown(e) }
+  const onStageMove = (e: PointerEvt) => { drawing.onMove(e); region.onMove(e) }
+  const onStageUp   = ()             => { drawing.commit(); region.finish() }
 
   // Shared by the pdfjs text layer and the OCR text layer: turn an inline text
   // edit into a `textEdit` annotation. The patch is filled with the region's
@@ -441,9 +260,9 @@ function PdfPageInner({
           onMouseMove={onStageMove}
           onMouseUp={onStageUp}
           // Touch equivalents — markup only (region selection is mouse+Ctrl).
-          onTouchStart={isDrawing ? handleMouseDown : undefined}
-          onTouchMove={isDrawing ? handleMouseMove : undefined}
-          onTouchEnd={isDrawing ? handleMouseUp : undefined}
+          onTouchStart={isDrawing ? drawing.onDown : undefined}
+          onTouchMove={isDrawing ? drawing.onMove : undefined}
+          onTouchEnd={isDrawing ? drawing.commit : undefined}
           style={{ cursor }}
         >
           <Layer>
@@ -465,11 +284,11 @@ function PdfPageInner({
             onUpdate={onAnnotationUpdate}
           />
           {/* In-progress drawing preview */}
-          {draft && (
+          {drawing.draft && (
             <Layer listening={false}>
-              {draft.kind === 'pen' ? (
+              {drawing.draft.kind === 'pen' ? (
                 <Line
-                  points={draft.points.map(p => p * effectiveZoom)}
+                  points={drawing.draft.points.map(p => p * effectiveZoom)}
                   stroke={PEN_COLOR}
                   strokeWidth={PEN_STROKE_WIDTH * effectiveZoom}
                   opacity={PEN_OPACITY}
@@ -479,10 +298,10 @@ function PdfPageInner({
                 />
               ) : (
                 <Rect
-                  x={(draft.w < 0 ? draft.x + draft.w : draft.x) * effectiveZoom}
-                  y={(draft.h < 0 ? draft.y + draft.h : draft.y) * effectiveZoom}
-                  width={Math.abs(draft.w) * effectiveZoom}
-                  height={Math.abs(draft.h) * effectiveZoom}
+                  x={(drawing.draft.w < 0 ? drawing.draft.x + drawing.draft.w : drawing.draft.x) * effectiveZoom}
+                  y={(drawing.draft.h < 0 ? drawing.draft.y + drawing.draft.h : drawing.draft.y) * effectiveZoom}
+                  width={Math.abs(drawing.draft.w) * effectiveZoom}
+                  height={Math.abs(drawing.draft.h) * effectiveZoom}
                   stroke={RECT_COLOR}
                   strokeWidth={RECT_STROKE_WIDTH * effectiveZoom}
                   fill="transparent"
@@ -491,13 +310,13 @@ function PdfPageInner({
             </Layer>
           )}
           {/* Ctrl+drag region selection (yellow highlighter) */}
-          {region && (
+          {region.region && (
             <Layer listening={false}>
               <Rect
-                x={(region.w < 0 ? region.x + region.w : region.x) * effectiveZoom}
-                y={(region.h < 0 ? region.y + region.h : region.y) * effectiveZoom}
-                width={Math.abs(region.w) * effectiveZoom}
-                height={Math.abs(region.h) * effectiveZoom}
+                x={(region.region.w < 0 ? region.region.x + region.region.w : region.region.x) * effectiveZoom}
+                y={(region.region.h < 0 ? region.region.y + region.region.h : region.region.y) * effectiveZoom}
+                width={Math.abs(region.region.w) * effectiveZoom}
+                height={Math.abs(region.region.h) * effectiveZoom}
                 fill={PEN_COLOR}
                 opacity={0.3}
                 stroke={PEN_COLOR}
@@ -509,7 +328,7 @@ function PdfPageInner({
       </div>
 
       {/* Region OCR busy badge */}
-      {regionBusy && (
+      {region.regionBusy && (
         <div className="wz-ocr-badge no-print" style={{ position: 'absolute', top: 8, left: 8 }}>
           <span className="wz-ocr-badge-dot" />
           {t('region.recognizing')}
@@ -555,7 +374,7 @@ function PdfPageInner({
           onEditCommit={appMode === 'editor' ? commitTextEdit : undefined}
         />
       )}
-      {/* Scanning animation while OCR recognizes this page. A double-click
+      {/* Scanning animation while OCR recognizes this page. A triple-click
           origin radiates a ripple from the click; otherwise a top→bottom sweep. */}
       {ocrActive && (
         <div
