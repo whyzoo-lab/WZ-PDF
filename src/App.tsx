@@ -11,6 +11,7 @@ import { usePageOperations } from './hooks/usePageOperations'
 import { useOcr } from './hooks/useOcr'
 import { useSearch } from './hooks/useSearch'
 import { useOpenUrl } from './hooks/useOpenUrl'
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import { SearchBar } from './components/SearchBar'
 import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
@@ -21,7 +22,7 @@ import { Toast } from './components/Toast'
 import { UpdateToast } from './components/UpdateToast'
 import { useUpdateCheck } from './hooks/useUpdateCheck'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { t, LANG } from './i18n'
+import { t } from './i18n'
 
 // Modals are loaded on demand to shrink the initial bundle.
 // They only render when the user actively summons them, so the round-trip
@@ -139,100 +140,12 @@ export default function App() {
   }, [file])
 
   // ── Global keyboard shortcuts ─────────────────────────────────────────────
-  // Single capture-phase listener covers every shortcut so we don't have to
-  // reason about ordering between multiple `window.addEventListener` calls.
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const tgt = e.target as HTMLElement | null
-      const inInput = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)
-
-      // ── App-level shortcuts (work regardless of pdf state) ─────────────────
-      if (e.key === 'F1') {
-        // Help: open in user's default browser (Electron via IPC + shell;
-        // web fallback opens a new tab pointing at the same static asset).
-        // Korean locale → help.html, everything else → help.en.html.
-        e.preventDefault()
-        const helpFile = LANG === 'ko' ? 'help.html' : 'help.en.html'
-        if (window.electronAPI?.openHelp) {
-          window.electronAPI.openHelp(LANG)
-        } else {
-          window.open(`./${helpFile}`, '_blank', 'noopener,noreferrer')
-        }
-        return
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
-        e.preventDefault()
-        document.dispatchEvent(new CustomEvent('wz-print'))
-        return
-      }
-      // Ctrl/Cmd+F → open the find bar (replaces the browser's native find).
-      // Highlighting is single-view only, so switch out of grid/spread.
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && pdfDoc && viewMode !== 'fullscreen') {
-        e.preventDefault()
-        if (viewMode === 'grid' || viewMode === 'spread') setViewMode('single')
-        setShowSearch(true)
-        return
-      }
-      if (e.key === 'F2' && viewMode !== 'fullscreen') {
-        e.preventDefault()
-        fileInputRef.current?.click()
-        return
-      }
-      if (e.key === 'F5' && pdfDoc && viewMode !== 'fullscreen') {
-        // Inline the fullscreen-entry logic (it's also in handleViewModeChange
-        // but that's declared further down — avoid the temporal-dead-zone issue).
-        e.preventDefault()
-        prevViewModeRef.current = viewMode
-        setFullscreenLayout(viewMode === 'spread' ? 'spread' : 'single')
-        setViewMode('fullscreen')
-        return
-      }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && appMode === 'editor') {
-        removeAnnotation(selectedId)
-        return
-      }
-
-      // ── Markup shortcuts — require a PDF and not typing in an input ────────
-      if (!pdfDoc || inInput) return
-
-      // In fullscreen, FullscreenView owns the (ZoomIt-style) presenter keymap,
-      // so skip the normal-view markup shortcuts (Esc two-step, 1=pen, 2=rect).
-      const inPresentation = viewMode === 'fullscreen'
-
-      // ESC two-step priority:
-      //   1st press — drawing mode active OR pen/rectangle markups exist:
-      //               exit drawing mode + clear all markups (fullscreen stays).
-      //   2nd press — nothing to clear, falls through to FullscreenView which
-      //               exits fullscreen.
-      // Keyboard Lock API (in FullscreenView) keeps the browser from
-      // auto-exiting fullscreen on ESC, giving this handler first crack.
-      if (e.key === 'Escape' && !inPresentation) {
-        const drawingMode = activeMode === 'pen' || activeMode === 'rectangle'
-        const hasMarkups  = annotations.some(a => a.type === 'pen' || a.type === 'rectangle')
-        if (drawingMode || hasMarkups) {
-          e.preventDefault()
-          e.stopImmediatePropagation()
-          if (drawingMode) setActiveMode(null)
-          if (hasMarkups)  clearMarkups()
-          return
-        }
-      }
-
-      // "1" → highlighter pen, "2" → red rectangle. Toggle off when re-pressed.
-      if (e.key === '1' && !inPresentation) {
-        setActiveMode(activeMode === 'pen' ? null : 'pen')
-        return
-      }
-      if (e.key === '2' && !inPresentation) {
-        setActiveMode(activeMode === 'rectangle' ? null : 'rectangle')
-        return
-      }
-    }
-    // Capture phase ensures App's handler runs BEFORE FullscreenView's window
-    // listener, so stopImmediatePropagation() above actually blocks it.
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [selectedId, removeAnnotation, appMode, viewMode, pdfDoc, activeMode, annotations, clearMarkups, setActiveMode])
+  useGlobalShortcuts({
+    pdfDoc, viewMode, appMode, activeMode, annotations, selectedId,
+    setViewMode, setShowSearch, setFullscreenLayout,
+    prevViewModeRef, fileInputRef,
+    removeAnnotation, clearMarkups, setActiveMode,
+  })
 
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────
   useEffect(() => {
