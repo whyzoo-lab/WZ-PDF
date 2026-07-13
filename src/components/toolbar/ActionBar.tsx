@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { AppMode, ViewMode } from '../../types/viewModes'
 import type { ActiveMode } from '../../types/annotation'
 import { STAMP_PRESETS, svgToPng } from '../../utils/stampPresets'
+import { classifyDocFile } from '../../utils/detectDocType'
 import { t } from '../../i18n'
 import {
   IconSingle, IconSpread, IconGrid, IconFullscreen, IconRotate, IconSelect,
@@ -183,11 +184,7 @@ export function ActionBar({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const file = e.dataTransfer.files[0]
-    if (!file) return
-    const name = file.name.toLowerCase()
-    const isPdf = file.type === 'application/pdf' || name.endsWith('.pdf')
-    const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
-    if (isPdf || isHwp) onUpload(file)
+    if (file && classifyDocFile(file).supported) onUpload(file)
   }
 
   const handlePresetClick = async (presetId: string, svg: string) => {

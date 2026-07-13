@@ -48,11 +48,22 @@ export default defineConfig({
         // blank screen. Left alone, the OCR deps stay inside the dynamically
         // imported `ocrEngine` chunk and only load when the user runs OCR.
         manualChunks: (id: string) => {
+          // pdfjs main-thread code (getDocument, TextLayer, worker-src setup) —
+          // split into its own vendor chunk so it caches independently across
+          // releases. The pdfjs Worker bundle is emitted separately by Vite.
+          if (id.includes('node_modules/pdfjs-dist')) return 'vendor-pdfjs'
+          // Konva stack FIRST: 'node_modules/react-konva' and 'react-reconciler'
+          // both contain the substring 'node_modules/react', so the react branch
+          // below would otherwise swallow them into vendor-react. Order matters.
+          if (
+            id.includes('node_modules/konva') ||
+            id.includes('node_modules/react-konva') ||
+            id.includes('node_modules/react-reconciler')
+          ) {
+            return 'vendor-konva'
+          }
           if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
             return 'vendor-react'
-          }
-          if (id.includes('node_modules/konva') || id.includes('node_modules/react-konva')) {
-            return 'vendor-konva'
           }
         },
       },

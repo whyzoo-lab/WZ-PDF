@@ -14,6 +14,7 @@ import { SearchBar } from './components/SearchBar'
 import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
+import { classifyDocFile } from './utils/detectDocType'
 import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
 import { UpdateToast } from './components/UpdateToast'
@@ -318,10 +319,7 @@ export default function App() {
 
   /** Main upload handler — accepts PDF and HWP/HWPX files. */
   const handleUpload = useCallback((f: File) => {
-    const name = f.name.toLowerCase()
-    const isPdf = f.type.includes('pdf') || name.endsWith('.pdf')
-    const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
-    if (!isPdf && !isHwp) {
+    if (!classifyDocFile(f).supported) {
       alert(t('error.pdfOnly'))
       return
     }
