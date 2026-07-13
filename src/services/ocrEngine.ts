@@ -55,7 +55,7 @@ export function initOcr(): Promise<OcrInstance> {
     } catch (err) {
       initPromise = null
       console.error('[ocrEngine] init failed:', err)
-      throw new Error(`OCR engine failed to load: ${err instanceof Error ? err.message : String(err)}`)
+      throw new Error(`OCR engine failed to load: ${err instanceof Error ? err.message : String(err)}`, { cause: err })
     }
   })()
   return initPromise

@@ -25,12 +25,14 @@ export function useOcr(pdfDoc: ViewerDoc | null, numPages: number): UseOcrReturn
   const [ocrActivePage, setOcrActivePage] = useState<number | null>(null)
   const [ocrError, setOcrError] = useState<string | null>(null)
   const resultsRef = useRef(ocrResults)
+  // eslint-disable-next-line react-hooks/refs -- keep a latest-value ref so async OCR callbacks read current results
   resultsRef.current = ocrResults
   const abortRef = useRef(false)
 
   // Reset OCR state whenever the document changes (new file, or page CRUD which
   // produces a fresh PDFDocumentProxy). Stale results would map to wrong pages.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when the document changes
     setOcrResults(new Map())
     setOcrError(null)
     setOcrActivePage(null)

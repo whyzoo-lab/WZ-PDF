@@ -102,6 +102,7 @@ function PdfPageInner({
   // top→bottom sweep (e.g. when triggered from the toolbar button).
   const [ocrOrigin, setOcrOrigin] = useState<{ x: number; y: number } | null>(null)
   // Drop the origin once recognition ends so the next run starts clean.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when OCR finishes
   useEffect(() => { if (!ocrActive) setOcrOrigin(null) }, [ocrActive])
 
   // ── HWP native text layer ────────────────────────────────────────────────
