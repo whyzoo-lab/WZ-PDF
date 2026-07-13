@@ -63,6 +63,8 @@ WZ PDF can open Korean `.hwp` (OLE2 binary) and `.hwpx` (zip-based XML) document
 
 **Adapter** — `src/services/hwpDocAdapter.ts` wraps `HwpDocument` as a pdfjs-shaped `ViewerDoc` interface (`src/types/viewerDoc.ts`). `renderPageToCanvas` auto-sizes the canvas to match HWP page dimensions. Note: HWP pages are 0-based internally; the adapter converts to the app's 1-based page numbers.
 
+**Embedded images (logos / header bands)** — rhwp's `renderPageToCanvas` paints text and shapes but **not** embedded pictures (its `getPageOverlayImages` reports a count but returns empty arrays). So the adapter composites them itself: after the text render it walks `getPageLayerTree(page)` for `type: 'image'` nodes (each carries a page-space `bbox` in scale-1 px + base64 bytes + transform), decodes them once per page (cached), and draws each onto the canvas at `bbox × scale` in the render `promise`. Without this, Korean gov/corporate HWPX (which almost always carry a logo) render with the logo missing.
+
 **Integration** — `usePdfDocument` detects the file type and returns `{ pdfDoc: ViewerDoc, kind: 'pdf'|'hwp', ... }`. All downstream code (viewer, annotations, OCR, print, export) consumes `ViewerDoc` unchanged and is unaware of the source format.
 
 **Text / search** — HWP has no selectable text layer; `PdfTextLayer` is gated to `kind === 'pdf'`. HWP text selection and search rely on OCR operating on the rendered canvas (same path as scanned PDFs).
