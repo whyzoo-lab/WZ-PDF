@@ -61,9 +61,7 @@ WZ PDF can open Korean `.hwp` (OLE2 binary) and `.hwpx` (zip-based XML) document
 - **Production/build:** copied to `public/hwp/` by `npm run setup:hwp` (script is prepended to `build` and `build:exe`; `public/hwp/` is gitignored — run `npm run setup:hwp` before building).
 - **Dev:** loaded directly from `node_modules/@rhwp/core/`.
 
-**Adapter** — `src/services/hwpDocAdapter.ts` wraps `HwpDocument` as a pdfjs-shaped `ViewerDoc` interface (`src/types/viewerDoc.ts`). `renderPageToCanvas` auto-sizes the canvas to match HWP page dimensions. Note: HWP pages are 0-based internally; the adapter converts to the app's 1-based page numbers.
-
-**Embedded images (logos / header bands)** — rhwp's `renderPageToCanvas` paints text and shapes but **not** embedded pictures (its `getPageOverlayImages` reports a count but returns empty arrays). So the adapter composites them itself: after the text render it walks `getPageLayerTree(page)` for `type: 'image'` nodes (each carries a page-space `bbox` in scale-1 px + base64 bytes + transform), decodes them once per page (cached), and draws each onto the canvas at `bbox × scale` in the render `promise`. Without this, Korean gov/corporate HWPX (which almost always carry a logo) render with the logo missing.
+**Adapter** — `src/services/hwpDocAdapter.ts` wraps `HwpDocument` as a pdfjs-shaped `ViewerDoc` interface (`src/types/viewerDoc.ts`). `renderPageToCanvas` auto-sizes the canvas to match HWP page dimensions AND paints embedded pictures (logos, header bands) — verified by pixel-sampling its output. Do NOT re-composite images from `getPageLayerTree` on top; that double-draws them. (`getPageOverlayImages` returning empty `behind`/`front` arrays is a red herring — it's for a separate multi-layer overlay architecture, not a sign that pictures are unpainted.) Note: HWP pages are 0-based internally; the adapter converts to the app's 1-based page numbers.
 
 **Integration** — `usePdfDocument` detects the file type and returns `{ pdfDoc: ViewerDoc, kind: 'pdf'|'hwp', ... }`. All downstream code (viewer, annotations, OCR, print, export) consumes `ViewerDoc` unchanged and is unaware of the source format.
 
