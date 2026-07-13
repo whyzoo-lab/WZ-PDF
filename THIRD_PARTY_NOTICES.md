@@ -51,6 +51,30 @@ Full license: <https://scripts.sil.org/OFL>
 
 ---
 
+## PaddleOCR — PP-OCRv5 models + @paddleocr/paddleocr-js — Apache License 2.0
+
+On-device OCR toolkit and PP-OCRv5 detection / recognition models. Bundled
+offline under `public/ocr/` (models + onnxruntime-web wasm).
+
+> Copyright PaddlePaddle Authors. Licensed under the Apache License,
+> Version 2.0. Source: <https://github.com/PaddlePaddle/PaddleOCR>.
+
+---
+
+## ONNX Runtime Web — onnxruntime-web — MIT License
+
+> Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+> Source: <https://github.com/microsoft/onnxruntime>.
+
+---
+
+## OpenCV — opencv.js via @techstark/opencv-js — Apache License 2.0
+
+> Copyright OpenCV team. Licensed under the Apache License, Version 2.0.
+> Source: <https://github.com/opencv/opencv>.
+
+---
+
 ## react / react-dom / react-konva / konva / pdf-lib / @pdf-lib/fontkit / @modelcontextprotocol/sdk / and other runtime deps — MIT
 
 All under the standard MIT License. See each package's `LICENSE` file

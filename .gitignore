@@ -50,3 +50,6 @@ public/hwp/
 
 # Bundled pdfjs WASM decoders (jbig2/openjpeg/qcms) — regenerate via: npm run setup:pdfjs
 public/wasm/
+
+# Superpowers SDD ledger (dev-only)
+.superpowers/
