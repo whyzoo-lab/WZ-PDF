@@ -198,6 +198,7 @@ export default function App() {
       // on platforms we can't easily inspect (e.g. iOS Safari) are diagnosable.
       const prefix = 'OCR engine failed to load: '
       const detail = ocr.ocrError.startsWith(prefix) ? ocr.ocrError.slice(prefix.length) : ocr.ocrError
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- surfacing an engine error as a toast is the effect's purpose
       showToast(`${t('ocr.engineError')}: ${detail}`)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -75,6 +75,7 @@ export function FullscreenView({
   }, [currentPage, onCurrentPageChange])
 
   // Presenter strokes are per-slide and transient.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional per-slide reset on page change
   useEffect(() => { setStrokes([]); setSpot(null) }, [currentPage])
 
   // ── OS fullscreen lifecycle ───────────────────────────────────────────────

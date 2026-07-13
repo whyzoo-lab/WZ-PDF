@@ -56,6 +56,7 @@ export function PresentationOverlay({ strokes, tool, onAddStroke }: Presentation
   const drawing = isDrawingTool(tool.kind)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the laser dot when leaving laser mode
     if (tool.kind !== 'laser') { setLaser(null); return }
     const onMove = (e: PointerEvent) => setLaser(localPoint(svgRef.current, e))
     window.addEventListener('pointermove', onMove)
