@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
 import type { OcrWord } from '../../types/ocr'
 import type { TextLayerHighlight, TextEditCommit } from './PdfTextLayer'
 
@@ -29,15 +29,18 @@ interface OcrTextLayerProps {
  * swaps it for an inline <input>. Because OCR words already carry PDF-point
  * bounds, the commit passes them straight through (no CSS→PDF conversion).
  */
-export function OcrTextLayer({ words, scale, width, height, highlights, onEditCommit, reveal = true }: OcrTextLayerProps) {
-  const activeSet = new Set<number>()
-  const hlSet = new Set<number>()
-  for (const h of highlights ?? []) {
-    for (let i = h.itemStart; i <= h.itemEnd; i++) {
-      hlSet.add(i)
-      if (h.active) activeSet.add(i)
+export const OcrTextLayer = memo(function OcrTextLayer({ words, scale, width, height, highlights, onEditCommit, reveal = true }: OcrTextLayerProps) {
+  const { hlSet, activeSet } = useMemo(() => {
+    const hlSet = new Set<number>()
+    const activeSet = new Set<number>()
+    for (const h of highlights ?? []) {
+      for (let i = h.itemStart; i <= h.itemEnd; i++) {
+        hlSet.add(i)
+        if (h.active) activeSet.add(i)
+      }
     }
-  }
+    return { hlSet, activeSet }
+  }, [highlights])
 
   const [editing, setEditing] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -149,4 +152,4 @@ export function OcrTextLayer({ words, scale, width, height, highlights, onEditCo
       )}
     </div>
   )
-}
+})

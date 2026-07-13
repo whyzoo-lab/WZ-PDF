@@ -1,20 +1,20 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { PdfViewer } from '../PdfViewer'
-import type { ViewerDoc } from '../../../types/viewerDoc'
+import { PdfViewer } from './PdfViewer'
+import type { ViewerDoc } from '../../types/viewerDoc'
 
-vi.mock('../LazyPdfPage', () => ({
+vi.mock('./LazyPdfPage', () => ({
   LazyPdfPage: ({ pageNumber }: { pageNumber: number }) => (
     <div data-testid={`page-${pageNumber}`} />
   ),
 }))
-vi.mock('../SpreadView', () => ({
+vi.mock('./SpreadView', () => ({
   SpreadView: () => <div data-testid="spread-view" />,
 }))
-vi.mock('../GridView', () => ({
+vi.mock('./GridView', () => ({
   GridView: () => <div data-testid="grid-view" />,
 }))
-vi.mock('../FullscreenView', () => ({
+vi.mock('./FullscreenView', () => ({
   FullscreenView: () => <div data-testid="fullscreen-view" />,
 }))
 

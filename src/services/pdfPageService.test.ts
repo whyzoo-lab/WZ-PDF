@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
-import { deletePages, insertBlankPage, insertPagesFromPdf, reorderPages } from '../pdfPageService'
+import { deletePages, insertBlankPage, insertPagesFromPdf, reorderPages } from './pdfPageService'
 
 async function makeTestPdf(pageCount: number): Promise<ArrayBuffer> {
   const doc = await PDFDocument.create()

@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, memo } from 'react'
 import { PdfPage } from './PdfPage'
 import { useInViewport } from '../../hooks/useInViewport'
 import { PDF_RENDER_SCALE } from '../../utils/constants'
@@ -39,7 +39,7 @@ interface LazyPdfPageProps {
  * Konva Stage when the container is near the viewport. Once mounted, stays
  * mounted — `usePdfPage`'s module-level cache handles re-mount fast-path.
  */
-export function LazyPdfPage(props: LazyPdfPageProps) {
+export const LazyPdfPage = memo(function LazyPdfPage(props: LazyPdfPageProps) {
   const ref = useRef<HTMLDivElement>(null)
   const inView = useInViewport(ref)
   const isRotated90 = props.rotation === 90 || props.rotation === 270
@@ -60,4 +60,4 @@ export function LazyPdfPage(props: LazyPdfPageProps) {
       )}
     </div>
   )
-}
+})

@@ -5,7 +5,7 @@ import {
   toScreenSize,
   toPdfLibY,
   hexToRgb,
-} from '../coordinates'
+} from './coordinates'
 
 describe('toScreenCoords', () => {
   it('scales stored coords by zoom', () => {

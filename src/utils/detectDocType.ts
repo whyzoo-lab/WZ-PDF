@@ -8,6 +8,19 @@ function startsWith(bytes: Uint8Array, sig: number[]): boolean {
   return true
 }
 
+/**
+ * Cheap MIME/extension classification for upload/drop gating — no byte read
+ * (the authoritative magic-byte routing happens later in usePdfDocument via
+ * detectDocType). The PDF rule is permissive (`type` contains "pdf" OR .pdf
+ * extension) so browser MIME quirks don't reject valid files.
+ */
+export function classifyDocFile(file: File): { isPdf: boolean; isHwp: boolean; supported: boolean } {
+  const name = file.name.toLowerCase()
+  const isPdf = file.type.includes('pdf') || name.endsWith('.pdf')
+  const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
+  return { isPdf, isHwp, supported: isPdf || isHwp }
+}
+
 /** Identify a document by magic bytes, with the file extension as tiebreaker. */
 export function detectDocType(name: string, bytes: ArrayBuffer): 'pdf' | 'hwp' | 'unknown' {
   const head = new Uint8Array(bytes.slice(0, 8))

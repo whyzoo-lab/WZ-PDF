@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { SpreadView } from '../SpreadView'
-import type { ViewerDoc } from '../../../types/viewerDoc'
+import { SpreadView } from './SpreadView'
+import type { ViewerDoc } from '../../types/viewerDoc'
 
-vi.mock('../LazyPdfPage', () => ({
+vi.mock('./LazyPdfPage', () => ({
   LazyPdfPage: ({ pageNumber }: { pageNumber: number }) => (
     <div data-testid={`page-${pageNumber}`} />
   ),
