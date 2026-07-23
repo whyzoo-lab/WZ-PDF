@@ -48,8 +48,11 @@ public/ocr/
 # Bundled HWP WASM binary — regenerate via: npm run setup:hwp
 public/hwp/
 
-# Bundled pdfjs WASM decoders (jbig2/openjpeg/qcms) — regenerate via: npm run setup:pdfjs
+# Bundled pdfjs runtime assets (wasm decoders, CJK cmaps, standard fonts)
+# — regenerate via: npm run setup:pdfjs
 public/wasm/
+public/cmaps/
+public/standard_fonts/
 
 # Superpowers SDD ledger (dev-only)
 .superpowers/

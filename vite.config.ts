@@ -39,28 +39,36 @@ export default defineConfig({
         // (handled by Vite automatically) so it's not listed here. Rolldown
         // exposes manualChunks only via the function form.
         //
-        // NOTE: do NOT add @paddleocr / onnxruntime-web / opencv-js here. Forcing
-        // them into a manual chunk made rolldown hoist that chunk into the entry's
-        // STATIC graph (a `import "./vendor-paddleocr.js"` at the top of the entry
-        // + a modulepreload), so the OCR runtime evaluated at startup. That runs
-        // opencv's emscripten `new Function(...)`, which the packaged app's CSP
-        // (script-src without 'unsafe-eval') blocks → the renderer died with a
-        // blank screen. Left alone, the OCR deps stay inside the dynamically
-        // imported `ocrEngine` chunk and only load when the user runs OCR.
+        // NOTE: only list libraries the FIRST PAINT genuinely needs.
+        // Forcing a lazily-used library into a manual chunk makes rolldown hoist
+        // that chunk into the entry's STATIC graph (an `import "./vendor-x.js"`
+        // at the top of the entry + a modulepreload) — which silently cancels
+        // any React.lazy/dynamic-import work done to keep it off startup.
+        //
+        // Two things were bitten by this:
+        //  - @paddleocr / onnxruntime-web / opencv-js: the OCR runtime evaluated
+        //    at startup, running opencv's emscripten `new Function(...)`, which
+        //    the packaged app's CSP (script-src without 'unsafe-eval') blocks →
+        //    the renderer died with a blank screen.
+        //  - pdfjs-dist + konva/react-konva (~730 KB): both are only needed once
+        //    a document is open (the viewer subtree is React.lazy'd and pdfjs is
+        //    imported on demand in usePdfDocument), yet the manual chunks pinned
+        //    them to the entry, so every cold launch paid for them before the
+        //    window could paint. Left unlisted they ride along inside the
+        //    dynamically imported PdfViewer chunk and load while the file parses.
+        //
+        // Only react/react-dom stay split: they ARE in the first paint, and a
+        // stable vendor chunk lets them cache across releases.
         manualChunks: (id: string) => {
-          // pdfjs main-thread code (getDocument, TextLayer, worker-src setup) —
-          // split into its own vendor chunk so it caches independently across
-          // releases. The pdfjs Worker bundle is emitted separately by Vite.
-          if (id.includes('node_modules/pdfjs-dist')) return 'vendor-pdfjs'
-          // Konva stack FIRST: 'node_modules/react-konva' and 'react-reconciler'
-          // both contain the substring 'node_modules/react', so the react branch
-          // below would otherwise swallow them into vendor-react. Order matters.
+          // react-konva / react-reconciler also contain the substring
+          // 'node_modules/react' — exclude them so they don't get dragged into
+          // vendor-react (which IS eager) and undo the lazy loading above.
           if (
             id.includes('node_modules/konva') ||
             id.includes('node_modules/react-konva') ||
             id.includes('node_modules/react-reconciler')
           ) {
-            return 'vendor-konva'
+            return
           }
           if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
             return 'vendor-react'

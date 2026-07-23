@@ -119,16 +119,25 @@ describe('ActionBar', () => {
     expect(defaultProps.onViewModeChange).toHaveBeenCalledWith('spread')
   })
 
-  it('calls onAppModeChange("editor") when Editor button clicked', () => {
+  // The viewer/editor control is a segmented switch: two role="radio" options
+  // whose accessible name is their visible label (not a separate aria-label —
+  // that would violate "Label in Name").
+  it('calls onAppModeChange("editor") when the Edit segment is clicked', () => {
     render(<ActionBar {...defaultProps} />)
-    fireEvent.click(screen.getByRole('button', { name: /editor mode/i }))
+    fireEvent.click(screen.getByRole('radio', { name: /edit/i }))
     expect(defaultProps.onAppModeChange).toHaveBeenCalledWith('editor')
   })
 
-  it('calls onAppModeChange("viewer") when Viewer button clicked', () => {
+  it('calls onAppModeChange("viewer") when the View segment is clicked', () => {
     render(<ActionBar {...defaultProps} appMode="editor" />)
-    fireEvent.click(screen.getByRole('button', { name: /viewer mode/i }))
+    fireEvent.click(screen.getByRole('radio', { name: /view/i }))
     expect(defaultProps.onAppModeChange).toHaveBeenCalledWith('viewer')
+  })
+
+  it('marks the active mode segment as checked', () => {
+    render(<ActionBar {...defaultProps} appMode="editor" />)
+    expect(screen.getByRole('radio', { name: /edit/i })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: /view/i })).toHaveAttribute('aria-checked', 'false')
   })
 
   it('shows Upload PDF button always', () => {

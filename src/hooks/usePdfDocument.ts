@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import * as pdfjs from 'pdfjs-dist'
 import type { ViewerDoc, DocKind } from '../types/viewerDoc'
 import { detectDocType } from '../utils/detectDocType'
 
@@ -23,10 +22,11 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
       // Clearing document state when the source file is removed — intentional
       // effect-driven reset, not a cascading-render smell.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPdfDoc(null); setNumPages(0); setError(null); setKind('pdf')
+      setPdfDoc(null); setNumPages(0); setIsLoading(false); setError(null); setKind('pdf')
       return
     }
     let cancelled = false
+    let loadedDoc: ViewerDoc | null = null
     setIsLoading(true); setError(null)
 
     file.arrayBuffer().then(async (buffer): Promise<{ doc: ViewerDoc; kind: DocKind }> => {
@@ -36,7 +36,16 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         const { createHwpViewerDoc } = await import('../services/hwpDocAdapter')
         return { doc: createHwpViewerDoc(await loadHwp(buffer)), kind: 'hwp' }
       }
-      // PDF (or unknown → try pdfjs, which errors clearly on non-PDF)
+      // PDF (or unknown → try pdfjs, which errors clearly on non-PDF).
+      // pdfjs is imported HERE rather than at module scope so its ~400 KB chunk
+      // is fetched on first document open instead of during app startup.
+      const [pdfjs, { getPdfWorkerUrl }] = await Promise.all([
+        import('pdfjs-dist'),
+        import('../services/pdfjsWorker'),
+      ])
+      if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+        pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl()
+      }
       const doc = await pdfjs.getDocument({
         data: buffer,
         // Disable CSS @font-face / FontFace API for embedded fonts.
@@ -53,10 +62,22 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         // public/wasm/ (copied by npm run setup:pdfjs); resolved against the
         // document so it works over http(s) and Electron file://.
         wasmUrl: new URL('wasm/', new URL('./', document.baseURI)).href,
+        // Glyph sources for fonts the PDF references but does NOT embed.
+        // `disableFontFace: true` above also disables pdfjs's system-font
+        // fallback, so a non-embedded font has no glyph source at all and every
+        // character renders as a .notdef box (▯) — e.g. the account-number /
+        // date / phone fields of a bank passbook printout, while the surrounding
+        // embedded-font body text renders fine. standardFontDataUrl supplies the
+        // substitute font programs; cMapUrl supplies the predefined CJK CMaps a
+        // Korean CID font needs. Bundled offline alongside the wasm decoders.
+        standardFontDataUrl: new URL('standard_fonts/', new URL('./', document.baseURI)).href,
+        cMapUrl: new URL('cmaps/', new URL('./', document.baseURI)).href,
+        cMapPacked: true, // pdfjs ships .bcmap (packed) CMaps
       }).promise
       return { doc: doc as unknown as ViewerDoc, kind: 'pdf' }
     })
       .then(({ doc, kind }) => {
+        loadedDoc = doc
         if (cancelled) { doc.destroy(); return }
         setPdfDoc(doc); setNumPages(doc.numPages); setKind(kind); setIsLoading(false)
       })
@@ -66,7 +87,13 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         setIsLoading(false)
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // Release page caches, worker resources, and decoded images when a
+      // document is replaced or the viewer unmounts.
+      loadedDoc?.destroy()
+      loadedDoc = null
+    }
   }, [file])
 
   return { pdfDoc, numPages, isLoading, error, kind }

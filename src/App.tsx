@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { ActionBar } from './components/toolbar/ActionBar'
-import { PdfViewer } from './components/viewer/PdfViewer'
 import type { WatermarkSettings } from './components/modals/WatermarkConfig'
 import { usePdfDocument } from './hooks/usePdfDocument'
 import { useAnnotations } from './hooks/useAnnotations'
@@ -31,6 +30,13 @@ const SignaturePad     = lazy(() => import('./components/modals/SignaturePad').t
 const WatermarkConfig  = lazy(() => import('./components/modals/WatermarkConfig').then(m => ({ default: m.WatermarkConfig })))
 const OpenUrlModal     = lazy(() => import('./components/modals/OpenUrlModal').then(m => ({ default: m.OpenUrlModal })))
 const PrintPreviewModal = lazy(() => import('./components/modals/PrintPreviewModal').then(m => ({ default: m.PrintPreviewModal })))
+
+// The viewer subtree is the app's heaviest dependency cluster (Konva + the
+// pdfjs TextLayer) and renders only once a document is open — so it is loaded
+// on demand too. Keeping it out of the entry chunk is what lets the window
+// paint its toolbar immediately instead of waiting on ~700 KB of JS that an
+// empty viewer never uses. Its chunk is fetched while the file is being parsed.
+const PdfViewer = lazy(() => import('./components/viewer/PdfViewer').then(m => ({ default: m.PdfViewer })))
 
 export default function App() {
   // ── Document state ────────────────────────────────────────────────────────
@@ -549,6 +555,12 @@ export default function App() {
           )}
           {pdfDoc && (
             <ErrorBoundary>
+              <Suspense fallback={
+                <div className="flex h-full items-center justify-center gap-2 text-gray-400 text-sm select-none">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent" />
+                  {t('url.loading')}
+                </div>
+              }>
               <PdfViewer
                 pdfDoc={pdfDoc}
                 numPages={numPages}
@@ -575,6 +587,7 @@ export default function App() {
                 onOcrRequest={ocr.runPage}
                 onRegionCopy={handleRegionCopy}
               />
+              </Suspense>
             </ErrorBoundary>
           )}
         </main>

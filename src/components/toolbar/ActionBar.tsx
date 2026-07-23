@@ -216,8 +216,6 @@ export function ActionBar({
   // ── Button style helpers ──────────────────────────────────────────────────
   const viewBtn = (mode: ViewMode) =>
     `${BTN_BASE} ${viewMode === mode ? BTN_ACTIVE : BTN_IDLE}`
-  const modeToggleBtn = (mode: AppMode) =>
-    `${BTN_BASE} ${appMode === mode ? BTN_ACTIVE : BTN_IDLE}`
   const toolBtn = (mode: ActiveMode) =>
     `${BTN_BASE} ${activeMode === mode ? BTN_ACTIVE : BTN_IDLE}`
   const iconBtn = (extra = '') => `${BTN_BASE} ${BTN_IDLE} ${extra}`
@@ -326,10 +324,44 @@ export function ActionBar({
     </div>
   )
 
+  // Viewer/editor is a MODE, not just another toggle button, so it gets a
+  // segmented-switch treatment: a recessed track with a single sliding thumb.
+  // The thumb is one element that translates between the two halves, which is
+  // what makes it read as a switch rather than as two independent icon buttons.
   const modeToggleCluster = !embed ? (
-    <div className="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-700">
-      <button className={modeToggleBtn('viewer')} onClick={() => onAppModeChange('viewer')} title={t('tool.viewer')} aria-label={t('tool.viewer')}><IconViewer /></button>
-      <button className={modeToggleBtn('editor')} onClick={() => onAppModeChange('editor')} title={t('tool.editor')} aria-label={t('tool.editor')}><IconEditor /></button>
+    <div
+      role="radiogroup"
+      aria-label={t('tool.viewer.short') + ' / ' + t('tool.editor.short')}
+      // grid-cols-2 (not flex) so both segments are EXACTLY equal width: the
+      // thumb below is 50% of the track, so content-sized segments would let it
+      // drift whenever the two labels differ in width (e.g. "View" vs "Edit").
+      className="relative grid grid-cols-2 items-center h-9 p-0.5 rounded-lg bg-gray-900/70 ring-1 ring-inset ring-gray-700 shrink-0"
+    >
+      {/* Sliding thumb — sits behind the labels and animates between halves. */}
+      <span
+        aria-hidden
+        className={`absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded-md bg-blue-600 shadow transition-transform duration-200 ease-out ${
+          appMode === 'editor' ? 'translate-x-full' : 'translate-x-0'
+        }`}
+      />
+      {([
+        ['viewer', IconViewer, t('tool.viewer.short'), t('tool.viewer')],
+        ['editor', IconEditor, t('tool.editor.short'), t('tool.editor')],
+      ] as const).map(([mode, Icon, label, tip]) => (
+        <button
+          key={mode}
+          role="radio"
+          aria-checked={appMode === mode}
+          onClick={() => onAppModeChange(mode)}
+          title={tip}
+          className={`relative z-10 flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-md text-xs font-medium transition-colors ${
+            appMode === mode ? 'text-white' : 'text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          <Icon />
+          <span className="hidden sm:inline">{label}</span>
+        </button>
+      ))}
     </div>
   ) : null
 
@@ -546,9 +578,33 @@ export function ActionBar({
         <div className="absolute right-2 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[190px]">
           {!embed && (
             <>
-              <div className="flex items-center gap-1 px-3 py-1.5">
-                <button className={modeToggleBtn('viewer')} onClick={() => onAppModeChange('viewer')} title={t('tool.viewer')} aria-label={t('tool.viewer')}><IconViewer /></button>
-                <button className={modeToggleBtn('editor')} onClick={() => onAppModeChange('editor')} title={t('tool.editor')} aria-label={t('tool.editor')}><IconEditor /></button>
+              {/* Same segmented switch, full-width inside the dropdown. */}
+              <div className="px-2 py-1.5">
+                <div role="radiogroup" className="relative grid grid-cols-2 items-center h-9 p-0.5 rounded-lg bg-gray-900/70 ring-1 ring-inset ring-gray-700">
+                  <span
+                    aria-hidden
+                    className={`absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded-md bg-blue-600 shadow transition-transform duration-200 ease-out ${
+                      appMode === 'editor' ? 'translate-x-full' : 'translate-x-0'
+                    }`}
+                  />
+                  {([
+                    ['viewer', IconViewer, t('tool.viewer.short'), t('tool.viewer')],
+                    ['editor', IconEditor, t('tool.editor.short'), t('tool.editor')],
+                  ] as const).map(([mode, Icon, label, tip]) => (
+                    <button
+                      key={mode}
+                      role="radio"
+                      aria-checked={appMode === mode}
+                      onClick={() => onAppModeChange(mode)}
+                      title={tip}
+                      className={`relative z-10 flex items-center justify-center gap-1.5 h-8 rounded-md text-xs font-medium transition-colors ${
+                        appMode === mode ? 'text-white' : 'text-gray-400 hover:text-gray-200'
+                      }`}
+                    >
+                      <Icon /><span>{label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="my-1 border-t border-gray-600" />
               <button onClick={() => { fileInputRef.current?.click(); setRightMenuOpen(false) }} className={menuItem}><IconUpload /><span>{t('tool.openFile')}</span></button>

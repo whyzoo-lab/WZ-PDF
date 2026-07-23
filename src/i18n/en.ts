@@ -23,6 +23,9 @@ export const en = {
   'tool.delete': 'Delete selected',
   'tool.viewer': 'Viewer mode — read only',
   'tool.editor': 'Editor mode — stamp / sign / watermark',
+  // Short labels shown inside the viewer/editor segmented switch.
+  'tool.viewer.short': 'View',
+  'tool.editor.short': 'Edit',
   'tool.open': 'Open PDF (F2)',
   'tool.print': 'Print (Ctrl+P)',
   'tool.export': 'Export',

@@ -1,6 +1,5 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import * as pdfjs from 'pdfjs-dist'
 import './index.css'
 import App from './App'
 
@@ -29,36 +28,12 @@ if (!Map.prototype.getOrInsertComputed) {
     writable: true, configurable: true,
   })
 }
+// The matching WORKER-thread copies of both polyfills live in
+// src/services/pdfjsWorker.ts, which also builds the worker blob URL. That
+// module is imported lazily (first document load) together with pdfjs itself,
+// so the ~400 KB pdfjs chunk stays out of the startup critical path — nothing
+// here needs pdfjs until the user actually opens a file.
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Build the worker URL so we can reference it inside the blob wrapper.
-const _pdfjsWorkerUrl = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString()
-
-// Worker-thread polyfills injected before the real pdfjs worker module loads.
-// The blob runs as a Module Worker ({type:"module"}) so top-level await is valid.
-const _workerPolyfills =
-  // Uint8Array.prototype.toHex
-  `if(!Uint8Array.prototype.toHex){` +
-  `Object.defineProperty(Uint8Array.prototype,'toHex',{` +
-  `value:function(){let h='';for(let i=0;i<this.length;i++)h+=this[i].toString(16).padStart(2,'0');return h;},` +
-  `writable:true,configurable:true});` +
-  `}` +
-  // Map.prototype.getOrInsertComputed
-  `if(!Map.prototype.getOrInsertComputed){` +
-  `Object.defineProperty(Map.prototype,'getOrInsertComputed',{` +
-  `value:function(key,fn){if(!this.has(key))this.set(key,fn(key));return this.get(key);},` +
-  `writable:true,configurable:true});` +
-  `}`
-
-pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(
-  new Blob(
-    [_workerPolyfills + `await import(${JSON.stringify(_pdfjsWorkerUrl)});`],
-    { type: 'text/javascript' },
-  ),
-)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

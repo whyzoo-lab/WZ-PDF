@@ -1,165 +1,191 @@
 // Toolbar SVG icon components — pure, presentational, no props.
 // Extracted from ActionBar.tsx so the toolbar layout logic stays readable.
+//
+// ── One system, one set of rules ────────────────────────────────────────────
+// Every icon below follows the SAME spec so the bar reads as one family:
+//   * viewBox   24×24        (was a mix of 20×20 and 24×24 — different optical
+//                             weights at the same rendered size)
+//   * stroke    1.8, currentColor, fill="none"
+//               (was a mix of 1.5 / 1.7 / 1.8 / 2, and several icons declared
+//                fill="currentColor" on <svg> then fill="none" on every child)
+//   * caps      round cap + round join everywhere
+//   * size      w-4 h-4, set once in ICON_CLS
+// Solid fills are used only where a shape is genuinely solid (the select arrow,
+// the "more" dots). Keep new icons on this spec — mixing weights is what made
+// the old set look noisy.
 
+const ICON_CLS = 'w-4 h-4'
+
+/** Shared wrapper: fixes viewBox, stroke weight and line joins in one place. */
+function Icon({ children, className = ICON_CLS }: { children: React.ReactNode; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+// ── View modes ──────────────────────────────────────────────────────────────
 export const IconSingle = () => (
-  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-    <rect x="5" y="3" width="10" height="14" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-  </svg>
+  <Icon><rect x="7" y="3" width="10" height="18" rx="1.5" /></Icon>
 )
 export const IconSpread = () => (
-  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-    <rect x="1" y="3" width="8" height="14" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-    <rect x="11" y="3" width="8" height="14" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-  </svg>
+  <Icon>
+    <rect x="2.5" y="4" width="8.5" height="16" rx="1.5" />
+    <rect x="13" y="4" width="8.5" height="16" rx="1.5" />
+  </Icon>
 )
 export const IconGrid = () => (
-  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-    <rect x="2" y="2" width="6" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-    <rect x="12" y="2" width="6" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-    <rect x="2" y="11" width="6" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-    <rect x="12" y="11" width="6" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-  </svg>
+  <Icon>
+    <rect x="3" y="3" width="7.5" height="8.5" rx="1.2" />
+    <rect x="13.5" y="3" width="7.5" height="8.5" rx="1.2" />
+    <rect x="3" y="12.5" width="7.5" height="8.5" rx="1.2" />
+    <rect x="13.5" y="12.5" width="7.5" height="8.5" rx="1.2" />
+  </Icon>
 )
 export const IconFullscreen = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/>
-  </svg>
+  <Icon><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></Icon>
 )
 export const IconRotate = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M4 10a6 6 0 0 1 10.5-4H12" strokeLinecap="round"/>
-    <path d="M14.5 6l1.5-2.5L13.5 2" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M16 10a6 6 0 0 1-10.5 4H8" strokeLinecap="round"/>
-    <path d="M5.5 14l-1.5 2.5L6.5 18" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
+  <Icon>
+    <path d="M20 12a8 8 0 1 1-2.3-5.6" />
+    <path d="M20 3v4.5h-4.5" />
+  </Icon>
 )
+
+// ── Zoom ────────────────────────────────────────────────────────────────────
 export const IconZoomOut = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-    <circle cx="9" cy="9" r="6"/>
-    <path d="M6.5 9h5M15 15l2.5 2.5" strokeLinecap="round"/>
-  </svg>
+  <Icon><circle cx="10.5" cy="10.5" r="6.5" /><path d="M7.5 10.5h6M20 20l-4.4-4.4" /></Icon>
 )
 export const IconZoomIn = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-    <circle cx="9" cy="9" r="6"/>
-    <path d="M9 6.5v5M6.5 9h5M15 15l2.5 2.5" strokeLinecap="round"/>
-  </svg>
+  <Icon><circle cx="10.5" cy="10.5" r="6.5" /><path d="M10.5 7.5v6M7.5 10.5h6M20 20l-4.4-4.4" /></Icon>
 )
+
+// ── Editor tools ────────────────────────────────────────────────────────────
 export const IconSelect = () => (
-  <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-    <path d="M4 2l12 8-6.5 1.5L7 18 4 2z"/>
-  </svg>
+  // Solid on purpose: a cursor arrow reads wrong as an outline.
+  <Icon><path d="M5 3l14 9-6.2 1.6L10 20 5 3z" fill="currentColor" stroke="none" /></Icon>
 )
 export const IconStamp = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <rect x="4" y="13" width="12" height="4" rx="1"/>
-    <path d="M7 13V8a3 3 0 0 1 6 0v5"/>
-  </svg>
+  <Icon>
+    <path d="M9 10V7a3 3 0 1 1 6 0v3" />
+    <path d="M7 10h10l-.7 4H7.7L7 10z" />
+    <rect x="5" y="16.5" width="14" height="3.5" rx="1.2" />
+  </Icon>
 )
 export const IconSignature = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M3 15c2-4 4-8 5-10 .5-1 2-1 2 0s-1 3-1 5c0 2 3-2 4-3" strokeLinecap="round"/>
-    <path d="M3 17h14" strokeLinecap="round"/>
-  </svg>
+  <Icon>
+    <path d="M3 16c2.5-5 4.5-9.5 5.6-11.4.6-1.1 2.3-.9 2.3.4 0 2.2-1.4 4.3-1.4 6.4 0 2.4 3.4-1.6 4.8-2.7" />
+    <path d="M3 20h18" />
+  </Icon>
 )
 export const IconWatermark = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4" opacity="0.85">
-    <rect x="2" y="2" width="16" height="16" rx="1"/>
-    <text x="5" y="14" fontSize="9" fill="currentColor" stroke="none" opacity="0.7" fontWeight="bold">W</text>
-  </svg>
+  // Diagonal repeated strokes over a page — no SVG <text> glyph (the old "W"
+  // rendered at the mercy of the system font and looked different everywhere).
+  <Icon>
+    <rect x="3.5" y="3" width="17" height="18" rx="1.8" />
+    <path d="M7 15.5l4-6M11.5 15.5l4-6" opacity="0.9" />
+  </Icon>
 )
 export const IconDelete = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M5 6h10l-1 11H6L5 6zM3 6h14M8 6V4h4v2" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
+  <Icon>
+    <path d="M4 6.5h16" />
+    <path d="M9.5 6.5V4.5h5v2" />
+    <path d="M6.5 6.5l.9 13a1 1 0 0 0 1 .9h7.2a1 1 0 0 0 1-.9l.9-13" />
+    <path d="M10.5 10.5v6M13.5 10.5v6" />
+  </Icon>
 )
+export const IconReset = () => (
+  // Eraser — deliberately distinct from the rotate/undo arcs.
+  <Icon>
+    <path d="M9.5 19.5l-4.6-4.6a1.6 1.6 0 0 1 0-2.3l7.3-7.3a1.6 1.6 0 0 1 2.3 0l4.2 4.2a1.6 1.6 0 0 1 0 2.3L13.5 19.5H9.5z" />
+    <path d="M20 19.5h-8" />
+    <path d="M7.2 10.6l6.2 6.2" />
+  </Icon>
+)
+
+// ── File / export ───────────────────────────────────────────────────────────
 export const IconUpload = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M10 13V5M7 8l3-3 3 3" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M4 15h12" strokeLinecap="round"/>
-  </svg>
-)
-export const IconLink = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M8 11a3 3 0 004.24 0l2.5-2.5a3 3 0 00-4.24-4.24L11 5" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M12 9a3 3 0 00-4.24 0l-2.5 2.5a3 3 0 004.24 4.24L9 15" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
+  <Icon><path d="M12 15.5V4.5M8 8l4-3.5L16 8" /><path d="M4.5 19.5h15" /></Icon>
 )
 export const IconDownload = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M10 5v8M7 10l3 3 3-3" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M4 15h12" strokeLinecap="round"/>
-  </svg>
+  <Icon><path d="M12 4.5v11M8 12l4 3.5 4-3.5" /><path d="M4.5 19.5h15" /></Icon>
+)
+export const IconLink = () => (
+  <Icon>
+    <path d="M10 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1" />
+    <path d="M14 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1" />
+  </Icon>
 )
 export const IconHtml = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M5 7l-3 3 3 3M15 7l3 3-3 3" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M12 4l-4 12" strokeLinecap="round"/>
-  </svg>
+  <Icon><path d="M8 8l-4 4 4 4M16 8l4 4-4 4" /><path d="M13.5 5l-3 14" /></Icon>
 )
 export const IconImage = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <rect x="2" y="4" width="16" height="12" rx="1.5"/>
-    <circle cx="7" cy="8.5" r="1.5"/>
-    <path d="M2 14l4-4 3 3 3-3 6 5" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-)
-export const IconChevron = () => (
-  <svg viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-    <path d="M5 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-)
-export const IconPrint = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <rect x="4" y="8" width="12" height="8" rx="1"/>
-    <path d="M6 8V4h8v4" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="M6 12h8M6 14.5h5" strokeLinecap="round"/>
-    <circle cx="15" cy="11" r="0.8" fill="currentColor" stroke="none"/>
-  </svg>
-)
-export const IconOcr = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
-    <path d="M7 8h6M7 12h10M7 16h8" />
-  </svg>
-)
-// Eraser — distinct from the (similar-looking) view/rotate icons.
-export const IconReset = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="w-4 h-4">
-    <path d="M8.5 16.5l-3.8-3.8a1.5 1.5 0 0 1 0-2.12l6-6a1.5 1.5 0 0 1 2.12 0l3.3 3.3a1.5 1.5 0 0 1 0 2.12L11.5 16.5H8.5z" strokeLinejoin="round"/>
-    <path d="M16.5 16.5H8.5" strokeLinecap="round"/>
-    <path d="M6.2 8.8l5 5" />
-  </svg>
+  <Icon>
+    <rect x="3" y="4.5" width="18" height="15" rx="2" />
+    <circle cx="8.5" cy="9.5" r="1.6" />
+    <path d="M3.5 17l5-5 3.5 3.5 3-3 5.5 5" />
+  </Icon>
 )
 export const IconExe = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <rect x="3" y="4" width="14" height="12" rx="1.5"/>
-    <path d="M7 8h6M7 10.5h4" strokeLinecap="round"/>
-    <path d="M13 13l2 2" strokeLinecap="round"/>
-    <circle cx="14.5" cy="14.5" r="2.5" fill="currentColor" stroke="none" opacity="0.9"/>
-    <path d="M13.8 14.5h1.4M14.5 13.8v1.4" stroke="white" strokeWidth="1.2" strokeLinecap="round"/>
-  </svg>
+  // App window + a small gear-free "run" chevron; the old version stacked a
+  // filled circle and a white cross, which muddied at 16px.
+  <Icon>
+    <rect x="3" y="4.5" width="18" height="15" rx="2" />
+    <path d="M3 9h18" />
+    <path d="M10 12.5l3 2.5-3 2.5" />
+  </Icon>
 )
+export const IconPrint = () => (
+  <Icon>
+    <path d="M7 9V4h10v5" />
+    <path d="M7 17.5H5.5A1.5 1.5 0 0 1 4 16v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a1.5 1.5 0 0 1-1.5 1.5H17" />
+    <rect x="7" y="14" width="10" height="6" rx="1" />
+  </Icon>
+)
+export const IconOcr = () => (
+  <Icon>
+    <path d="M3 8V5.5A2.5 2.5 0 0 1 5.5 3H8M16 3h2.5A2.5 2.5 0 0 1 21 5.5V8M21 16v2.5a2.5 2.5 0 0 1-2.5 2.5H16M8 21H5.5A2.5 2.5 0 0 1 3 18.5V16" />
+    <path d="M7.5 9h6M7.5 12h9M7.5 15h7" />
+  </Icon>
+)
+
+// ── Modes ───────────────────────────────────────────────────────────────────
 export const IconViewer = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M10 4C5 4 2 10 2 10s3 6 8 6 8-6 8-6-3-6-8-6z"/>
-    <circle cx="10" cy="10" r="2.5"/>
-  </svg>
+  <Icon>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
 )
 export const IconEditor = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
-    <path d="M14 3l3 3-9 9H5v-3L14 3z" strokeLinejoin="round"/>
-  </svg>
+  <Icon>
+    <path d="M16.5 3.5l4 4L9 19H5v-4L16.5 3.5z" />
+    <path d="M14 6l4 4" />
+  </Icon>
 )
-// Hamburger — collapsed left cluster.
+
+// ── Chrome ──────────────────────────────────────────────────────────────────
+export const IconChevron = () => (
+  <Icon className="w-3 h-3"><path d="M6 9l6 6 6-6" /></Icon>
+)
+/** Hamburger — collapsed left cluster. */
 export const IconMenu = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
-    <path d="M3 5h14M3 10h14M3 15h14" strokeLinecap="round"/>
-  </svg>
+  <Icon className="w-5 h-5"><path d="M4 6h16M4 12h16M4 18h16" /></Icon>
 )
-// Vertical dots — collapsed right (actions) cluster.
+/** Vertical dots — collapsed right (actions) cluster. */
 export const IconMore = () => (
-  <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-    <circle cx="10" cy="4" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="10" cy="16" r="1.6"/>
-  </svg>
+  <Icon className="w-5 h-5">
+    <circle cx="12" cy="5" r="1.7" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="19" r="1.7" fill="currentColor" stroke="none" />
+  </Icon>
 )
