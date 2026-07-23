@@ -104,7 +104,8 @@ describe('ActionBar', () => {
   it('highlights the active view mode button', () => {
     render(<ActionBar {...defaultProps} viewMode="spread" />)
     const spreadBtn = screen.getByRole('button', { name: /spread/i })
-    expect(spreadBtn.className).toContain('bg-blue-600')
+    // Active = soft tint (BTN_ACTIVE), not a saturated filled square.
+    expect(spreadBtn.className).toContain('bg-white/15')
   })
 
   it('does not highlight inactive view mode buttons', () => {
@@ -119,25 +120,25 @@ describe('ActionBar', () => {
     expect(defaultProps.onViewModeChange).toHaveBeenCalledWith('spread')
   })
 
-  // The viewer/editor control is a segmented switch: two role="radio" options
-  // whose accessible name is their visible label (not a separate aria-label —
-  // that would violate "Label in Name").
-  it('calls onAppModeChange("editor") when the Edit segment is clicked', () => {
-    render(<ActionBar {...defaultProps} />)
-    fireEvent.click(screen.getByRole('radio', { name: /edit/i }))
+  // Editing is a single on/off lock (role="switch"), not two destinations:
+  // locked = read-only viewer, unlocked = editor.
+  it('unlocks editing when the lock switch is turned on', () => {
+    render(<ActionBar {...defaultProps} appMode="viewer" />)
+    fireEvent.click(screen.getByRole('switch'))
     expect(defaultProps.onAppModeChange).toHaveBeenCalledWith('editor')
   })
 
-  it('calls onAppModeChange("viewer") when the View segment is clicked', () => {
+  it('locks back to viewer when the lock switch is turned off', () => {
     render(<ActionBar {...defaultProps} appMode="editor" />)
-    fireEvent.click(screen.getByRole('radio', { name: /view/i }))
+    fireEvent.click(screen.getByRole('switch'))
     expect(defaultProps.onAppModeChange).toHaveBeenCalledWith('viewer')
   })
 
-  it('marks the active mode segment as checked', () => {
-    render(<ActionBar {...defaultProps} appMode="editor" />)
-    expect(screen.getByRole('radio', { name: /edit/i })).toHaveAttribute('aria-checked', 'true')
-    expect(screen.getByRole('radio', { name: /view/i })).toHaveAttribute('aria-checked', 'false')
+  it('reflects the current mode in the lock switch state', () => {
+    const { rerender } = render(<ActionBar {...defaultProps} appMode="editor" />)
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true')
+    rerender(<ActionBar {...defaultProps} appMode="viewer" />)
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
   })
 
   it('shows Upload PDF button always', () => {

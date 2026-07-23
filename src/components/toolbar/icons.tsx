@@ -160,6 +160,22 @@ export const IconOcr = () => (
 )
 
 // ── Modes ───────────────────────────────────────────────────────────────────
+/** Closed padlock — viewer mode (document is locked / read-only). */
+export const IconLock = () => (
+  <Icon>
+    <rect x="4.5" y="10.5" width="15" height="10" rx="2.2" />
+    <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+  </Icon>
+)
+/** Open padlock — editor mode (editing unlocked). The shackle swings right, so
+ *  the two states differ in silhouette, not just in colour. */
+export const IconLockOpen = () => (
+  <Icon>
+    <rect x="4.5" y="10.5" width="15" height="10" rx="2.2" />
+    <path d="M8 10.5V7.5a4 4 0 0 1 7.8-1.2" />
+  </Icon>
+)
+
 export const IconViewer = () => (
   <Icon>
     <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />

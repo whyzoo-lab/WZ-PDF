@@ -24,8 +24,8 @@ export const ko = {
   'tool.viewer': '뷰어 모드 — 읽기 전용',
   'tool.editor': '편집 모드 — 도장 · 서명 · 워터마크',
   // Short labels shown inside the viewer/editor segmented switch.
-  'tool.viewer.short': '보기',
-  'tool.editor.short': '편집',
+  // Accessible label for the edit-lock switch (locked = read-only viewer).
+  'tool.editLock': '편집 잠금',
   'tool.open': 'PDF 열기 (F2)',
   'tool.print': '인쇄 (Ctrl+P)',
   'tool.export': '내보내기',

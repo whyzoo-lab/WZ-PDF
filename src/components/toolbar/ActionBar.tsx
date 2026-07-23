@@ -9,9 +9,9 @@ import {
   IconSingle, IconSpread, IconGrid, IconFullscreen, IconRotate, IconSelect,
   IconStamp, IconSignature, IconWatermark, IconDelete, IconUpload, IconLink,
   IconDownload, IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
-  IconExe, IconViewer, IconEditor, IconMenu, IconMore,
+  IconExe, IconLock, IconLockOpen, IconMenu, IconMore,
 } from './icons'
-import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE } from './toolbarStyles'
+import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED } from './toolbarStyles'
 import { ZoomControl } from './ZoomControl'
 import { useToolbarCollapse } from '../../hooks/useToolbarCollapse'
 
@@ -217,7 +217,7 @@ export function ActionBar({
   const viewBtn = (mode: ViewMode) =>
     `${BTN_BASE} ${viewMode === mode ? BTN_ACTIVE : BTN_IDLE}`
   const toolBtn = (mode: ActiveMode) =>
-    `${BTN_BASE} ${activeMode === mode ? BTN_ACTIVE : BTN_IDLE}`
+    `${BTN_BASE} ${activeMode === mode ? BTN_ARMED : BTN_IDLE}`
   const iconBtn = (extra = '') => `${BTN_BASE} ${BTN_IDLE} ${extra}`
 
   // ── Reusable control clusters (shared by the bar and the collapsed menus) ──
@@ -328,41 +328,24 @@ export function ActionBar({
   // segmented-switch treatment: a recessed track with a single sliding thumb.
   // The thumb is one element that translates between the two halves, which is
   // what makes it read as a switch rather than as two independent icon buttons.
+  // Editing is a lock, not a pair of destinations: locked = read-only viewer,
+  // unlocked = editing tools appear. One round ghost button, like every other
+  // control in the bar — `role="switch"` gives it real on/off semantics.
   const modeToggleCluster = !embed ? (
-    <div
-      role="radiogroup"
-      aria-label={t('tool.viewer.short') + ' / ' + t('tool.editor.short')}
-      // grid-cols-2 (not flex) so both segments are EXACTLY equal width: the
-      // thumb below is 50% of the track, so content-sized segments would let it
-      // drift whenever the two labels differ in width (e.g. "View" vs "Edit").
-      className="relative grid grid-cols-2 items-center h-9 p-0.5 rounded-lg bg-gray-900/70 ring-1 ring-inset ring-gray-700 shrink-0"
+    <button
+      role="switch"
+      aria-checked={appMode === 'editor'}
+      aria-label={t('tool.editLock')}
+      title={appMode === 'editor' ? t('tool.editor') : t('tool.viewer')}
+      onClick={() => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor')}
+      className={`${BTN_BASE} ${
+        appMode === 'editor'
+          ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
+          : BTN_IDLE
+      }`}
     >
-      {/* Sliding thumb — sits behind the labels and animates between halves. */}
-      <span
-        aria-hidden
-        className={`absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded-md bg-blue-600 shadow transition-transform duration-200 ease-out ${
-          appMode === 'editor' ? 'translate-x-full' : 'translate-x-0'
-        }`}
-      />
-      {([
-        ['viewer', IconViewer, t('tool.viewer.short'), t('tool.viewer')],
-        ['editor', IconEditor, t('tool.editor.short'), t('tool.editor')],
-      ] as const).map(([mode, Icon, label, tip]) => (
-        <button
-          key={mode}
-          role="radio"
-          aria-checked={appMode === mode}
-          onClick={() => onAppModeChange(mode)}
-          title={tip}
-          className={`relative z-10 flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-md text-xs font-medium transition-colors ${
-            appMode === mode ? 'text-white' : 'text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          <Icon />
-          <span className="hidden sm:inline">{label}</span>
-        </button>
-      ))}
-    </div>
+      {appMode === 'editor' ? <IconLockOpen /> : <IconLock />}
+    </button>
   ) : null
 
   const printButton = hasPdf ? (
@@ -482,7 +465,7 @@ export function ActionBar({
           <button
             onClick={() => setOpenMenuOpen(v => !v)}
             aria-expanded={openMenuOpen}
-            className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
+            className={`${BTN_BASE} ${openMenuOpen ? BTN_ACTIVE : BTN_IDLE}`}
             title={t('tool.open')}
             aria-label={t('tool.open')}
           ><IconUpload /></button>
@@ -578,34 +561,19 @@ export function ActionBar({
         <div className="absolute right-2 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[190px]">
           {!embed && (
             <>
-              {/* Same segmented switch, full-width inside the dropdown. */}
-              <div className="px-2 py-1.5">
-                <div role="radiogroup" className="relative grid grid-cols-2 items-center h-9 p-0.5 rounded-lg bg-gray-900/70 ring-1 ring-inset ring-gray-700">
-                  <span
-                    aria-hidden
-                    className={`absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded-md bg-blue-600 shadow transition-transform duration-200 ease-out ${
-                      appMode === 'editor' ? 'translate-x-full' : 'translate-x-0'
-                    }`}
-                  />
-                  {([
-                    ['viewer', IconViewer, t('tool.viewer.short'), t('tool.viewer')],
-                    ['editor', IconEditor, t('tool.editor.short'), t('tool.editor')],
-                  ] as const).map(([mode, Icon, label, tip]) => (
-                    <button
-                      key={mode}
-                      role="radio"
-                      aria-checked={appMode === mode}
-                      onClick={() => onAppModeChange(mode)}
-                      title={tip}
-                      className={`relative z-10 flex items-center justify-center gap-1.5 h-8 rounded-md text-xs font-medium transition-colors ${
-                        appMode === mode ? 'text-white' : 'text-gray-400 hover:text-gray-200'
-                      }`}
-                    >
-                      <Icon /><span>{label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* Same lock switch, as a labelled row inside the dropdown. */}
+              <button
+                role="switch"
+                aria-checked={appMode === 'editor'}
+                onClick={() => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor')}
+                className={menuItem}
+              >
+                {appMode === 'editor' ? <IconLockOpen /> : <IconLock />}
+                <span className="flex-1 text-left">{t('tool.editLock')}</span>
+                <span className={`text-[10px] font-semibold ${appMode === 'editor' ? 'text-amber-300' : 'text-gray-500'}`}>
+                  {appMode === 'editor' ? 'ON' : 'OFF'}
+                </span>
+              </button>
               <div className="my-1 border-t border-gray-600" />
               <button onClick={() => { fileInputRef.current?.click(); setRightMenuOpen(false) }} className={menuItem}><IconUpload /><span>{t('tool.openFile')}</span></button>
               <button onClick={() => { onOpenUrl(); setRightMenuOpen(false) }} className={menuItem}><IconLink /><span>{t('tool.openUrl')}</span></button>
