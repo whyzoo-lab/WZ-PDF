@@ -301,6 +301,10 @@ export default function App() {
     setAppMode(mode)
     if (mode === 'editor') {
       setViewMode(prev => prev === 'fullscreen' ? 'single' : prev)
+      // Editing is page work — reordering, inserting, deleting — so bring the
+      // page list out with the tools. Only opened on the way IN: leaving editor
+      // keeps whatever the user last chose, so a manual close isn't undone.
+      setIsPanelOpen(true)
     }
   }, [])
 
