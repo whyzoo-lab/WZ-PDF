@@ -22,11 +22,44 @@
   "afterPack": "./scripts/afterPack.cjs",
 
   // Files bundled into the asar (renderer + compiled main process)
+  // Files bundled into the asar (renderer + compiled main process).
+  //
+  // node_modules is EXCLUDED on purpose. electron-builder ships production
+  // dependencies by default, but nothing here needs them at runtime: Vite has
+  // already bundled every renderer dependency into dist/, and the main process
+  // imports only `electron` plus Node built-ins. Shipping them anyway added
+  // ~237 MB of exact duplicates to app.asar (@napi-rs/canvas native binaries,
+  // @paddleocr, @techstark/opencv-js, @rhwp/core, pdfjs-dist …) — 3106 of the
+  // asar's 3182 entries. That matters beyond disk: Windows opens app.asar on
+  // every launch, and Defender scanning a 364 MB file on the first access after
+  // a boot or an update is exactly the kind of intermittent multi-second
+  // start-up stall it produced.
+  //
+  // If the main process ever does need a real runtime dependency, add it here
+  // explicitly (e.g. "node_modules/some-pkg/**/*") rather than dropping the
+  // exclusion.
   "files": [
     "dist/**/*",
     "electron/**/*.js",
+    "!electron/**/*.test.js",
     "electron/package.json",
-    "package.json"
+    "package.json",
+    "!node_modules/**/*"
+  ],
+
+  // Keep the big, lazily-loaded binaries OUT of the asar. They are only read
+  // when the user actually runs OCR / opens a HWP / renders a PDF, so leaving
+  // them inside would put ~120 MB back into the one file that is opened (and
+  // AV-scanned) at every launch. Node's fs transparently redirects reads from
+  // app.asar/<path> to app.asar.unpacked/<path>, so the app:// handler needs no
+  // change. Hashed filenames are matched by glob.
+  "asarUnpack": [
+    "dist/ocr/**",              // PP-OCR models (~56 MB)
+    "dist/hwp/**",              // rhwp wasm (~5.7 MB)
+    "dist/wasm/**",             // pdfjs image decoders
+    "dist/assets/*.wasm",       // onnxruntime + rhwp wasm emitted by Vite
+    "dist/assets/ocrEngine-*.js",
+    "dist/assets/worker-entry-*.js"
   ],
 
   // Only bundle these Electron locales (drops ~50 unused ones, ~10MB saving)

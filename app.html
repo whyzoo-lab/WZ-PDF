@@ -12,9 +12,43 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="WZ PDF" />
+    <!--
+      First-paint shell. The entry bundle has to be fetched, parsed and executed
+      before React can render anything, and on a cold start that reliably varies
+      (measured in the packaged app: 69 ms on a warm cache, but up to ~1.8 s when
+      the OS/AV has to fault the files in). Until then #root is empty, so the
+      window sat as a dark void for that whole time — which is what "sometimes it
+      takes ages to come up" actually looked like.
+
+      This markup ships inside the HTML, so it paints on the first frame, with no
+      extra request. It deliberately mirrors the real shell — 48px gray-900 bar
+      with a gray-700 underline, matching the window's backgroundColor — so when
+      React mounts and replaces it there is no flash, just the controls arriving.
+      createRoot() clears #root on its first render, so no cleanup is needed.
+    -->
+    <style>
+      html, body { margin: 0; height: 100%; background: #111827; }
+      #boot { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+      #boot .bar {
+        height: 48px; flex: none;
+        background: #111827; border-bottom: 1px solid #374151;
+        display: flex; align-items: center; gap: 8px; padding: 0 12px;
+        font: 600 13px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #e5e7eb; -webkit-app-region: drag;
+      }
+      #boot .dot { width: 14px; height: 14px; border-radius: 4px; background: #2563eb; }
+      #boot .body { flex: 1; display: flex; align-items: center; justify-content: center; }
+      #boot .spin {
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid #4b5563; border-top-color: transparent;
+        animation: boot-spin .7s linear infinite;
+      }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #boot .spin { animation: none; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="boot"><div class="bar"><span class="dot"></span>WZ PDF</div><div class="body"><span class="spin"></span></div></div></div>
     <noscript>
       WZ PDF is a free, in-browser PDF viewer and editor. JavaScript is required to run the app.
     </noscript>
