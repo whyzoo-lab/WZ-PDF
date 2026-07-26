@@ -33,10 +33,30 @@ const PrintPreviewModal = lazy(() => import('./components/modals/PrintPreviewMod
 
 // The viewer subtree is the app's heaviest dependency cluster (Konva + the
 // pdfjs TextLayer) and renders only once a document is open — so it is loaded
-// on demand too. Keeping it out of the entry chunk is what lets the window
-// paint its toolbar immediately instead of waiting on ~700 KB of JS that an
-// empty viewer never uses. Its chunk is fetched while the file is being parsed.
-const PdfViewer = lazy(() => import('./components/viewer/PdfViewer').then(m => ({ default: m.PdfViewer })))
+// on demand. Keeping it out of the entry chunk is what lets the window paint
+// its toolbar immediately instead of waiting on ~700 KB of JS that an empty
+// viewer never uses.
+const importPdfViewer = () => import('./components/viewer/PdfViewer')
+const PdfViewer = lazy(() => importPdfViewer().then(m => ({ default: m.PdfViewer })))
+
+/**
+ * Pull the viewer chunks in as soon as the shell has painted.
+ *
+ * Deferring them fixed start-up, but it moved the cost rather than removing it:
+ * the common desktop flow is "double-click a PDF", so the app booted fast and
+ * then sat on the Suspense fallback while ~750 KB (viewer + pdfjs) downloaded —
+ * a second, now-visible wait that felt slower than the old single one.
+ *
+ * Fetching them right after first paint gets both halves: the first frame still
+ * only needs the entry chunk, and by the time a document is ready the modules
+ * are already in the registry, so <Suspense> resolves without ever showing its
+ * fallback. Fire-and-forget on purpose — a failure here is not an error, the
+ * real import on the render path will surface it.
+ */
+function prefetchViewerChunks(): void {
+  void importPdfViewer().catch(() => {})
+  void import('pdfjs-dist').catch(() => {})
+}
 
 export default function App() {
   // ── Document state ────────────────────────────────────────────────────────
@@ -76,6 +96,8 @@ export default function App() {
   // Track the view mode before entering fullscreen so we can restore on exit
   const prevViewModeRef = useRef<ViewMode>('single')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // The viewer viewport — measured by useFitZoom so auto-fit uses real space.
+  const mainRef = useRef<HTMLElement>(null)
 
   const { pdfDoc, numPages, isLoading, error, kind } = usePdfDocument(file)
   const {
@@ -92,7 +114,7 @@ export default function App() {
   } = useAnnotations()
 
   // ── Hooks: feature bundles ────────────────────────────────────────────────
-  useFitZoom({ pdfDoc, viewMode, rotation, setZoom })
+  useFitZoom({ pdfDoc, viewMode, rotation, setZoom, viewportRef: mainRef })
   const update = useUpdateCheck()
   const ocr = useOcr(pdfDoc, numPages)
   const search = useSearch(pdfDoc, numPages, (page) => {
@@ -128,6 +150,20 @@ export default function App() {
     handleInsertFromPdf,
     handleReorderPages,
   } = usePageOperations({ fileBytes, onResult: handlePageOpResult })
+
+  // ── Warm the viewer chunks once the shell is on screen ────────────────────
+  // See prefetchViewerChunks: this is what stops "open a PDF" from paying a
+  // second download. Scheduled off the critical path so it never competes with
+  // the first paint, but early enough to win the race against the user.
+  useEffect(() => {
+    const ric = window.requestIdleCallback
+    if (ric) {
+      const id = ric(() => prefetchViewerChunks(), { timeout: 1500 })
+      return () => window.cancelIdleCallback?.(id)
+    }
+    const t = window.setTimeout(prefetchViewerChunks, 200) // Safari / older WebKit
+    return () => window.clearTimeout(t)
+  }, [])
 
   // ── Window title + raw bytes ───────────────────────────────────────────────
   useEffect(() => {
@@ -508,6 +544,7 @@ export default function App() {
           </div>
         )}
         <main
+          ref={mainRef}
           className="flex-1 overflow-hidden"
           onDragOver={e => e.preventDefault()}
           onDrop={e => {
