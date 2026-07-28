@@ -2,8 +2,8 @@
 export const ko = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'PDF를 쉽고 빠르게',
-  'empty.desktop': 'PDF · HWP를 여기에 드래그하거나 Open 버튼 또는 F2를 누르세요',
-  'empty.mobile': '탭하거나 Open 버튼으로 PDF · HWP를 여세요',
+  'empty.desktop': 'PDF · HWP · EML을 여기에 드래그하거나 Open 버튼 또는 F2를 누르세요',
+  'empty.mobile': '탭하거나 Open 버튼으로 PDF · HWP · EML을 여세요',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': '한 장 보기',
@@ -137,4 +137,16 @@ export const ko = {
   'present.arrow': '화살표',
   'present.laser': '레이저',
   'present.zoom': '스팟 줌',
+  // ── Email (.eml) ──────────────────────────────────────────────────────────
+  'email.from': '보낸사람',
+  'email.to': '받는사람',
+  'email.cc': '참조',
+  'email.date': '날짜',
+  'email.noSubject': '(제목 없음)',
+  'email.noBody': '표시할 본문이 없습니다.',
+  'email.attachments': '첨부파일',
+  'email.download': '다운로드',
+  'email.openHere': '뷰어에서 열기',
+  'email.imagesBlocked': '외부 이미지 {n}개를 차단했습니다. 발신자에게 열람 사실이 알려질 수 있습니다.',
+  'email.loadImages': '이미지 표시',
 } as const

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { ViewerDoc, DocKind } from '../types/viewerDoc'
+import type { ParsedEmail } from '../services/emlParser'
 import { detectDocType } from '../utils/detectDocType'
 
 interface UsePdfDocumentReturn {
@@ -8,6 +9,8 @@ interface UsePdfDocumentReturn {
   isLoading: boolean
   error: string | null
   kind: DocKind
+  /** Set only when kind === 'eml'; pdfDoc stays null in that case. */
+  email: ParsedEmail | null
 }
 
 export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
@@ -16,25 +19,32 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [kind, setKind] = useState<DocKind>('pdf')
+  const [email, setEmail] = useState<ParsedEmail | null>(null)
 
   useEffect(() => {
     if (!file) {
       // Clearing document state when the source file is removed — intentional
       // effect-driven reset, not a cascading-render smell.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPdfDoc(null); setNumPages(0); setIsLoading(false); setError(null); setKind('pdf')
+      setPdfDoc(null); setNumPages(0); setIsLoading(false); setError(null); setKind('pdf'); setEmail(null)
       return
     }
     let cancelled = false
     let loadedDoc: ViewerDoc | null = null
     setIsLoading(true); setError(null)
 
-    file.arrayBuffer().then(async (buffer): Promise<{ doc: ViewerDoc; kind: DocKind }> => {
+    type Loaded = { doc: ViewerDoc | null; kind: DocKind; email: ParsedEmail | null }
+    file.arrayBuffer().then(async (buffer): Promise<Loaded> => {
       const type = detectDocType(file.name, buffer)
+      if (type === 'eml') {
+        // Messages skip the page pipeline entirely — see EmailView.
+        const { parseEml } = await import('../services/emlParser')
+        return { doc: null, kind: 'eml', email: parseEml(buffer) }
+      }
       if (type === 'hwp') {
         const { loadHwp } = await import('../services/hwpEngine')
         const { createHwpViewerDoc } = await import('../services/hwpDocAdapter')
-        return { doc: createHwpViewerDoc(await loadHwp(buffer)), kind: 'hwp' }
+        return { doc: createHwpViewerDoc(await loadHwp(buffer)), kind: 'hwp', email: null }
       }
       // PDF (or unknown → try pdfjs, which errors clearly on non-PDF).
       // pdfjs is imported HERE rather than at module scope so its ~400 KB chunk
@@ -74,12 +84,16 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         cMapUrl: new URL('cmaps/', new URL('./', document.baseURI)).href,
         cMapPacked: true, // pdfjs ships .bcmap (packed) CMaps
       }).promise
-      return { doc: doc as unknown as ViewerDoc, kind: 'pdf' }
+      return { doc: doc as unknown as ViewerDoc, kind: 'pdf', email: null }
     })
-      .then(({ doc, kind }) => {
+      .then(({ doc, kind, email }) => {
         loadedDoc = doc
-        if (cancelled) { doc.destroy(); return }
-        setPdfDoc(doc); setNumPages(doc.numPages); setKind(kind); setIsLoading(false)
+        if (cancelled) { doc?.destroy(); return }
+        setPdfDoc(doc)
+        setNumPages(doc?.numPages ?? 0)
+        setKind(kind)
+        setEmail(email)
+        setIsLoading(false)
       })
       .catch(err => {
         if (cancelled) return
@@ -96,5 +110,5 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
     }
   }, [file])
 
-  return { pdfDoc, numPages, isLoading, error, kind }
+  return { pdfDoc, numPages, isLoading, error, kind, email }
 }

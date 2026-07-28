@@ -14,15 +14,31 @@ function startsWith(bytes: Uint8Array, sig: number[]): boolean {
  * detectDocType). The PDF rule is permissive (`type` contains "pdf" OR .pdf
  * extension) so browser MIME quirks don't reject valid files.
  */
-export function classifyDocFile(file: File): { isPdf: boolean; isHwp: boolean; supported: boolean } {
+export function classifyDocFile(file: File): {
+  isPdf: boolean; isHwp: boolean; isEml: boolean; supported: boolean
+} {
   const name = file.name.toLowerCase()
   const isPdf = file.type.includes('pdf') || name.endsWith('.pdf')
   const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
-  return { isPdf, isHwp, supported: isPdf || isHwp }
+  const isEml = file.type === 'message/rfc822' || name.endsWith('.eml')
+  return { isPdf, isHwp, isEml, supported: isPdf || isHwp || isEml }
+}
+
+/**
+ * Does this look like an RFC 5322 message? .eml has no magic number, so the
+ * check is structural: the file must open with header lines, one of which is a
+ * header only a real message carries. Used as a fallback for files that arrive
+ * without a usable extension — the extension itself is checked first.
+ */
+function looksLikeEmail(head: string): boolean {
+  const firstLine = head.split(/\r?\n/, 1)[0] ?? ''
+  if (!/^[A-Za-z][A-Za-z0-9-]*:\s/.test(firstLine)) return false
+  return /^(?:from|to|subject|date|received|return-path|message-id|mime-version|delivered-to):/im
+    .test(head)
 }
 
 /** Identify a document by magic bytes, with the file extension as tiebreaker. */
-export function detectDocType(name: string, bytes: ArrayBuffer): 'pdf' | 'hwp' | 'unknown' {
+export function detectDocType(name: string, bytes: ArrayBuffer): 'pdf' | 'hwp' | 'eml' | 'unknown' {
   const head = new Uint8Array(bytes.slice(0, 8))
   const ext = name.toLowerCase().split('.').pop() ?? ''
 
@@ -35,5 +51,12 @@ export function detectDocType(name: string, bytes: ArrayBuffer): 'pdf' | 'hwp' |
   // generic container like zip).
   if (ext === 'pdf') return 'pdf'
   if (ext === 'hwp' || ext === 'hwpx') return 'hwp'
+  if (ext === 'eml') return 'eml'
+
+  // No extension to go on: sniff for message headers. Read as ASCII — a real
+  // message's headers are ASCII by definition, and a binary file will not match.
+  const text = new TextDecoder('ascii', { fatal: false })
+    .decode(new Uint8Array(bytes.slice(0, 2048)))
+  if (looksLikeEmail(text)) return 'eml'
   return 'unknown'
 }

@@ -320,3 +320,25 @@ canvas {
 @page {
   margin: 0;
 }
+
+/* ── Message body (.eml) ─────────────────────────────────────────────────────
+   Mail arrives with its own markup and inline styles, written for some other
+   client's width. These rules only stop it from breaking the surrounding
+   layout — they deliberately do not restyle the message itself.
+   Sanitizing happens in src/services/emailHtml.ts; this is presentation only. */
+.wz-email-body img { max-width: 100%; height: auto; }
+/* Wide tables are extremely common in mail; scroll them instead of letting one
+   push the whole app sideways. */
+.wz-email-body table { max-width: 100%; }
+.wz-email-body { overflow-x: auto; }
+.wz-email-body a { color: #1d4ed8; text-decoration: underline; }
+.wz-email-body blockquote {
+  margin: 0.5rem 0; padding-left: 0.75rem;
+  border-left: 3px solid #e5e7eb; color: #4b5563;
+}
+/* An image whose remote source we withheld: show a placeholder box rather than
+   a broken-image icon, so the reader can tell something was held back. */
+.wz-email-body img[data-wz-blocked-src] {
+  display: inline-block; min-width: 1.5rem; min-height: 1.5rem;
+  border: 1px dashed #d1d5db; border-radius: 2px; background: #f9fafb;
+}

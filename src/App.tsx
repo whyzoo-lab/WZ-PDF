@@ -38,6 +38,9 @@ const PrintPreviewModal = lazy(() => import('./components/modals/PrintPreviewMod
 // viewer never uses.
 const importPdfViewer = () => import('./components/viewer/PdfViewer')
 const PdfViewer = lazy(() => importPdfViewer().then(m => ({ default: m.PdfViewer })))
+// Messages render outside the page pipeline; its chunk also carries the HTML
+// sanitizer, so it only loads when a .eml is actually opened.
+const EmailView = lazy(() => import('./components/email/EmailView').then(m => ({ default: m.EmailView })))
 
 /**
  * Pull the viewer chunks in as soon as the shell has painted.
@@ -99,7 +102,7 @@ export default function App() {
   // The viewer viewport — measured by useFitZoom so auto-fit uses real space.
   const mainRef = useRef<HTMLElement>(null)
 
-  const { pdfDoc, numPages, isLoading, error, kind } = usePdfDocument(file)
+  const { pdfDoc, numPages, isLoading, error, kind, email } = usePdfDocument(file)
   const {
     annotations,
     selectedId,
@@ -497,7 +500,7 @@ export default function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,.pdf,.hwp,.hwpx"
+        accept="application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822"
         className="hidden"
         onChange={e => {
           const f = e.target.files?.[0]
@@ -566,7 +569,7 @@ export default function App() {
           )}
           {/* Drag/Open prompt — hidden in embed mode (can't drop into an iframe;
               the PDF auto-loads from ?url). */}
-          {!pdfDoc && !isLoading && !error && !embed && (
+          {!pdfDoc && !email && !isLoading && !error && !embed && (
             <div
               className="flex flex-col items-center justify-center h-full gap-3 text-gray-400 select-none cursor-pointer px-6 text-center"
               onClick={handleMainDoubleClick}
@@ -593,6 +596,13 @@ export default function App() {
                 {t('url.loading')}
               </div>
             )
+          )}
+          {email && (
+            <ErrorBoundary>
+              <Suspense fallback={null}>
+                <EmailView email={email} onOpenAttachment={handleUpload} />
+              </Suspense>
+            </ErrorBoundary>
           )}
           {pdfDoc && (
             <ErrorBoundary>

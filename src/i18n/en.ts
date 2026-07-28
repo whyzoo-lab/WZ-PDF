@@ -2,8 +2,8 @@
 export const en = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'Fast and simple PDF',
-  'empty.desktop': 'Drag a PDF · HWP here, or click Open / press F2',
-  'empty.mobile': 'Tap or use the Open button to open a PDF · HWP',
+  'empty.desktop': 'Drag a PDF · HWP · EML here, or click Open / press F2',
+  'empty.mobile': 'Tap or use the Open button to open a PDF · HWP · EML',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': 'Single page',
@@ -137,4 +137,16 @@ export const en = {
   'present.arrow': 'Arrow',
   'present.laser': 'Laser',
   'present.zoom': 'Spotlight zoom',
+  // ── Email (.eml) ──────────────────────────────────────────────────────────
+  'email.from': 'From',
+  'email.to': 'To',
+  'email.cc': 'Cc',
+  'email.date': 'Date',
+  'email.noSubject': '(no subject)',
+  'email.noBody': 'This message has no displayable body.',
+  'email.attachments': 'Attachments',
+  'email.download': 'Download',
+  'email.openHere': 'Open here',
+  'email.imagesBlocked': 'Blocked {n} remote image(s) — loading them tells the sender you opened this.',
+  'email.loadImages': 'Load images',
 } as const
