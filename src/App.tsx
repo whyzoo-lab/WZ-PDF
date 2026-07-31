@@ -500,7 +500,7 @@ export default function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822"
+        accept="application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp"
         className="hidden"
         onChange={e => {
           const f = e.target.files?.[0]

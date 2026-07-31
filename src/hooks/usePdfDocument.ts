@@ -41,6 +41,12 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         const { parseEml } = await import('../services/emlParser')
         return { doc: null, kind: 'eml', email: parseEml(buffer) }
       }
+      if (type === 'image') {
+        // Images are page-like, so they become a one-page ViewerDoc and reuse
+        // the whole viewer/annotate/export pipeline unchanged.
+        const { createImageViewerDoc } = await import('../services/imageDocAdapter')
+        return { doc: await createImageViewerDoc(buffer, file.type), kind: 'image', email: null }
+      }
       if (type === 'hwp') {
         const { loadHwp } = await import('../services/hwpEngine')
         const { createHwpViewerDoc } = await import('../services/hwpDocAdapter')

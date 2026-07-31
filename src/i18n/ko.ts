@@ -2,8 +2,8 @@
 export const ko = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'PDF를 쉽고 빠르게',
-  'empty.desktop': 'PDF · HWP · EML을 여기에 드래그하거나 Open 버튼 또는 F2를 누르세요',
-  'empty.mobile': '탭하거나 Open 버튼으로 PDF · HWP · EML을 여세요',
+  'empty.desktop': 'PDF · HWP · EML · 이미지를 여기에 드래그하거나 Open 버튼 또는 F2를 누르세요',
+  'empty.mobile': '탭하거나 Open 버튼으로 PDF · HWP · EML · 이미지를 여세요',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': '한 장 보기',
@@ -49,6 +49,7 @@ export const ko = {
   'export.imagesDone': '이미지 저장 완료 — {name}',
   'export.exeDone': 'EXE Viewer 저장 완료',
   'export.imagesFailed': '이미지 내보내기 실패: {error}',
+  'export.htmlFailed': 'HTML 내보내기 실패: {error}',
   'export.exeFailed': 'EXE 내보내기 실패\n\n{error}',
   'export.exeError': 'EXE 내보내기 오류: {error}',
   'export.exeUnknownError': '알 수 없는 오류',

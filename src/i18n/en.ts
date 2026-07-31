@@ -2,8 +2,8 @@
 export const en = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'Fast and simple PDF',
-  'empty.desktop': 'Drag a PDF · HWP · EML here, or click Open / press F2',
-  'empty.mobile': 'Tap or use the Open button to open a PDF · HWP · EML',
+  'empty.desktop': 'Drag a PDF · HWP · EML · image here, or click Open / press F2',
+  'empty.mobile': 'Tap or use the Open button to open a PDF · HWP · EML · image',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': 'Single page',
@@ -49,6 +49,7 @@ export const en = {
   'export.imagesDone': 'Images saved — {name}',
   'export.exeDone': 'EXE Viewer saved',
   'export.imagesFailed': 'Image export failed: {error}',
+  'export.htmlFailed': 'HTML export failed: {error}',
   'export.exeFailed': 'EXE export failed\n\n{error}',
   'export.exeError': 'EXE export error: {error}',
   'export.exeUnknownError': 'Unknown error',

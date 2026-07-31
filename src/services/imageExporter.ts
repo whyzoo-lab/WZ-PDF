@@ -11,7 +11,7 @@
 
 import JSZip from 'jszip'
 import type { ViewerDoc } from '../types/viewerDoc'
-import { downloadBlob, stripPdfExt } from '../utils/download'
+import { downloadBlob, stripDocExt } from '../utils/download'
 
 /** Render scale for exported images — 2× gives ~144 DPI equivalent. */
 const EXPORT_SCALE = 2
@@ -40,7 +40,7 @@ export async function exportAsImages(
   filename: string,
   onProgress?: (current: number, total: number) => void,
 ): Promise<void> {
-  const baseName  = stripPdfExt(filename)
+  const baseName  = stripDocExt(filename)
   const padWidth  = String(numPages).length   // e.g. 3 for 100+ pages
   const zip       = new JSZip()
 

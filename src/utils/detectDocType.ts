@@ -1,6 +1,12 @@
 const OLE2 = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]
 const PDF  = [0x25, 0x50, 0x44, 0x46]            // %PDF
 const ZIP  = [0x50, 0x4B, 0x03, 0x04]            // PK\x03\x04
+// Bitmaps — decoded by the browser itself, so we only need to recognise them.
+const PNG  = [0x89, 0x50, 0x4E, 0x47]            // \x89PNG
+const JPEG = [0xFF, 0xD8, 0xFF]
+const GIF  = [0x47, 0x49, 0x46, 0x38]            // GIF8
+const BMP  = [0x42, 0x4D]                        // BM
+const RIFF = [0x52, 0x49, 0x46, 0x46]            // RIFF … WEBP
 
 function startsWith(bytes: Uint8Array, sig: number[]): boolean {
   if (bytes.length < sig.length) return false
@@ -14,14 +20,18 @@ function startsWith(bytes: Uint8Array, sig: number[]): boolean {
  * detectDocType). The PDF rule is permissive (`type` contains "pdf" OR .pdf
  * extension) so browser MIME quirks don't reject valid files.
  */
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'avif', 'ico']
+
 export function classifyDocFile(file: File): {
-  isPdf: boolean; isHwp: boolean; isEml: boolean; supported: boolean
+  isPdf: boolean; isHwp: boolean; isEml: boolean; isImage: boolean; supported: boolean
 } {
   const name = file.name.toLowerCase()
+  const ext = name.split('.').pop() ?? ''
   const isPdf = file.type.includes('pdf') || name.endsWith('.pdf')
   const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
   const isEml = file.type === 'message/rfc822' || name.endsWith('.eml')
-  return { isPdf, isHwp, isEml, supported: isPdf || isHwp || isEml }
+  const isImage = file.type.startsWith('image/') || IMAGE_EXTS.includes(ext)
+  return { isPdf, isHwp, isEml, isImage, supported: isPdf || isHwp || isEml || isImage }
 }
 
 /**
@@ -38,20 +48,29 @@ function looksLikeEmail(head: string): boolean {
 }
 
 /** Identify a document by magic bytes, with the file extension as tiebreaker. */
-export function detectDocType(name: string, bytes: ArrayBuffer): 'pdf' | 'hwp' | 'eml' | 'unknown' {
-  const head = new Uint8Array(bytes.slice(0, 8))
+export function detectDocType(
+  name: string,
+  bytes: ArrayBuffer,
+): 'pdf' | 'hwp' | 'eml' | 'image' | 'unknown' {
+  const head = new Uint8Array(bytes.slice(0, 16))
   const ext = name.toLowerCase().split('.').pop() ?? ''
 
   // Magic bytes are authoritative (a wrong/forced extension must not override them).
   if (startsWith(head, PDF)) return 'pdf'                    // %PDF
   if (startsWith(head, OLE2)) return 'hwp'                   // .hwp binary (OLE2)
   if (startsWith(head, ZIP) && ext === 'hwpx') return 'hwp'  // .hwpx (zip)
+  if (startsWith(head, PNG) || startsWith(head, JPEG) ||
+      startsWith(head, GIF) || startsWith(head, BMP)) return 'image'
+  // WEBP is RIFF with a 'WEBP' tag at byte 8 — RIFF alone is also .wav/.avi.
+  if (startsWith(head, RIFF) &&
+      String.fromCharCode(...head.slice(8, 12)) === 'WEBP') return 'image'
 
   // Extension fallback when the bytes are inconclusive (short/unreadable, or a
   // generic container like zip).
   if (ext === 'pdf') return 'pdf'
   if (ext === 'hwp' || ext === 'hwpx') return 'hwp'
   if (ext === 'eml') return 'eml'
+  if (IMAGE_EXTS.includes(ext)) return 'image'
 
   // No extension to go on: sniff for message headers. Read as ASCII — a real
   // message's headers are ASCII by definition, and a binary file will not match.

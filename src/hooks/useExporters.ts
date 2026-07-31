@@ -3,7 +3,7 @@ import type { ViewerDoc } from '../types/viewerDoc'
 import type { DocKind } from '../types/viewerDoc'
 import type { Annotation } from '../types/annotation'
 import { t } from '../i18n'
-import { downloadBlob, stripPdfExt } from '../utils/download'
+import { downloadBlob, stripDocExt } from '../utils/download'
 
 interface UseExportersArgs {
   file: File | null
@@ -44,7 +44,7 @@ export function useExporters({
   const handleExportPdf = useCallback(async () => {
     setIsExporting(true)
     try {
-      const baseName = file ? stripPdfExt(file.name) : 'document'
+      const baseName = file ? stripDocExt(file.name) : 'document'
       const downloadName = `${baseName}_annotated.pdf`
 
       if (kind === 'hwp') {
@@ -71,12 +71,39 @@ export function useExporters({
   }, [fileBytes, pdfDoc, annotations, file, kind, onSuccess])
 
   const handleExportHtml = useCallback(async () => {
-    if (!fileBytes) return
-    const { exportAsHtml } = await import('../services/htmlExporter')
-    const filename = file?.name ?? 'document.pdf'
-    exportAsHtml(fileBytes, filename)
-    onSuccess(t('export.htmlDone', { name: `${stripPdfExt(filename)}.html` }))
-  }, [fileBytes, file, onSuccess])
+    setIsExporting(true)
+    try {
+      const filename = file?.name ?? 'document.pdf'
+      let pdfBytes: ArrayBuffer
+
+      if (kind === 'pdf') {
+        if (!fileBytes) return
+        pdfBytes = fileBytes
+      } else {
+        // The exported page hands its bytes to the browser's PDF viewer, so
+        // they must BE a PDF. Passing the source bytes straight through was the
+        // bug: a .hwp (or an image) was embedded as application/pdf and the
+        // generated page could never display it. Convert first — the same
+        // canvas-compositing path "Download PDF" uses, so what you see in the
+        // exported page matches what you saw in the viewer.
+        if (!pdfDoc) return
+        const { exportHwpToPdf } = await import('../services/pdfExporter')
+        const bytes = await exportHwpToPdf(pdfDoc, annotations)
+        pdfBytes = bytes.buffer.slice(
+          bytes.byteOffset, bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer
+      }
+
+      const { exportAsHtml } = await import('../services/htmlExporter')
+      exportAsHtml(pdfBytes, filename)
+      onSuccess(t('export.htmlDone', { name: `${stripDocExt(filename)}.html` }))
+    } catch (err) {
+      console.error('HTML export failed:', err)
+      alert(t('export.htmlFailed', { error: err instanceof Error ? err.message : String(err) }))
+    } finally {
+      setIsExporting(false)
+    }
+  }, [fileBytes, pdfDoc, annotations, file, kind, onSuccess])
 
   const handleExportImages = useCallback(async () => {
     if (!pdfDoc) return
@@ -85,7 +112,7 @@ export function useExporters({
       const { exportAsImages } = await import('../services/imageExporter')
       const filename = file?.name ?? 'document.pdf'
       await exportAsImages(pdfDoc, numPages, filename)
-      onSuccess(t('export.imagesDone', { name: `${stripPdfExt(filename)}.zip` }))
+      onSuccess(t('export.imagesDone', { name: `${stripDocExt(filename)}.zip` }))
     } catch (err) {
       console.error('Image export failed:', err)
       alert(t('export.imagesFailed', { error: err instanceof Error ? err.message : String(err) }))

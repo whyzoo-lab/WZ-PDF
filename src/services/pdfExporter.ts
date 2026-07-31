@@ -32,6 +32,16 @@ async function loadKoreanFontBytes(): Promise<Uint8Array> {
   return _koFontBytes
 }
 
+/** Remove C0/C1 control characters, which have no glyph in any font. */
+function stripControlChars(s: string): string {
+  let out = ''
+  for (const ch of s) {
+    const c = ch.codePointAt(0) ?? 0
+    out += (c < 0x20 || c === 0x7f) ? ' ' : ch
+  }
+  return out
+}
+
 /** True if any character is outside the Latin-1 supplement block — i.e. needs the CJK font. */
 function needsKoreanFont(s: string): boolean {
   for (let i = 0; i < s.length; i++) {
@@ -166,6 +176,8 @@ export async function exportHwpToPdf(
   const { getOrRenderPage } = await import('../hooks/usePdfPage')
 
   const pdfDoc = await PDFDocument.create()
+  // Embedded on first use — a document with no extractable text pays nothing.
+  let textFont: PDFFont | null = null
 
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
     const { canvas, renderScale } = await getOrRenderPage(doc, pageNum)
@@ -245,6 +257,48 @@ export async function exportHwpToPdf(
     // size may differ from the source's true physical dimensions; visual proportions are correct.
     const page = pdfDoc.addPage([pageWidth, pageHeight])
     page.drawImage(jpegImage, { x: 0, y: 0, width: pageWidth, height: pageHeight })
+
+    // ── Selectable text layer ────────────────────────────────────────────────
+    // The picture alone would make an image-only PDF: it looks right but no
+    // text can be selected, copied or searched. rhwp gives us the real text with
+    // its geometry, so we draw each run invisibly on top of the pixels it
+    // corresponds to — the same technique OCR layers use. Readers then select
+    // and copy normally, and the visible result is unchanged.
+    const runs = (await doc.getPageText?.(pageNum)) ?? []
+    if (runs.length > 0) {
+      if (!textFont) {
+        const { default: fontkit } = await import('@pdf-lib/fontkit')
+        pdfDoc.registerFontkit(fontkit)
+        // Subset, or the whole CJK face would be embedded once per export.
+        textFont = await pdfDoc.embedFont(await loadKoreanFontBytes(), { subset: true })
+      }
+      for (const run of runs) {
+        // Drop control characters — they have no glyph and abort encoding.
+        const text = stripControlChars(run.text).trim()
+        if (!text || run.height <= 0) continue
+        try {
+          // Size the run so its drawn width matches the width rhwp measured.
+          // The text is invisible, so vertical distortion never shows, while
+          // matching the width keeps selection highlights aligned with the glyphs.
+          const unit = textFont.widthOfTextAtSize(text, 100)
+          const size = unit > 0
+            ? Math.min(Math.max((run.width / unit) * 100, 1), run.height * 2)
+            : run.height * 0.8
+          page.drawText(text, {
+            x: run.x,
+            // Runs are top-down like the canvas; PDF is bottom-up. Sit the
+            // baseline near the bottom of the run box rather than at its edge.
+            y: pageHeight - run.y - run.height * 0.82,
+            size,
+            font: textFont,
+            opacity: 0, // present and selectable, but never painted
+          })
+        } catch {
+          // A glyph the font lacks (emoji, rare CJK) must not fail the export —
+          // that run simply stays unselectable.
+        }
+      }
+    }
   }
 
   return pdfDoc.save()
