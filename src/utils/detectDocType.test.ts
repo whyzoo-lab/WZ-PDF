@@ -66,3 +66,28 @@ describe('classifyDocFile', () => {
     expect(classifyDocFile(f('a.exe')).supported).toBe(false)
   })
 })
+
+describe('detectDocType — content wins over a misleading name', () => {
+  // The Viewer EXE hands its payload to the renderer as "document.pdf" whatever
+  // was embedded, so these are the cases that used to open as a broken PDF.
+  const enc = (s: string) => new TextEncoder().encode(s).buffer
+
+  it('spots an HWPX by its OCF mimetype entry, not the extension', () => {
+    // PK header, then the uncompressed `mimetype` entry HWPX always starts with.
+    const zip = 'PK\x03\x04' + '\x00'.repeat(26) + 'mimetypeapplication/hwp+zip'
+    expect(detectDocType('document.pdf', enc(zip))).toBe('hwp')
+  })
+
+  it('still refuses a plain zip', () => {
+    expect(detectDocType('document.pdf', enc('PK\x03\x04' + '\x00'.repeat(40)))).toBe('pdf')
+    expect(detectDocType('a.zip', enc('PK\x03\x04' + '\x00'.repeat(40)))).toBe('unknown')
+  })
+
+  it('spots a message by its headers even when named .pdf', () => {
+    expect(detectDocType('document.pdf', enc('From: a@b.com\r\nSubject: hi\r\n\r\nbody'))).toBe('eml')
+  })
+
+  it('does not mistake an actual PDF for a message', () => {
+    expect(detectDocType('document.pdf', enc('%PDF-1.7\nFrom: x'))).toBe('pdf')
+  })
+})

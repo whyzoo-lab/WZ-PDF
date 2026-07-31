@@ -1,6 +1,6 @@
 # WZ PDF
 
-**Present, annotate, OCR, and convert PDF _and_ Korean HWP — 100% in your browser. No upload.**
+**Open PDF, Korean HWP, e-mail and images — present, annotate, OCR and convert. 100% in your browser. No upload.**
 
 Introduce : https://whyzoo.com/WzPDF/ · Demo : https://whyzoo-lab.github.io/WZ-PDF/ · Download : [Releases](https://github.com/whyzoo-lab/WZ-PDF/releases)
 
@@ -13,12 +13,14 @@ Introduce : https://whyzoo.com/WzPDF/ · Demo : https://whyzoo-lab.github.io/WZ-
 <img width="1590" height="870" alt="image" src="https://github.com/user-attachments/assets/a7eea157-9be1-4749-bda5-076134bed0db" />
 <img width="1455" height="1000" alt="image" src="https://github.com/user-attachments/assets/2fa5af89-d1c0-434c-b5ab-96172fa2f551" />
 
-> A presentation-focused PDF & HWP viewer, editor, and distribution platform.
+> A presentation-focused viewer, editor, and distribution platform for the
+> documents that actually land in your inbox.
 
-WZ PDF is a fast, **fully client-side** document tool. Open a PDF or a Korean
-`.hwp` / `.hwpx`, read and select its text, mark it up, run OCR, present it
-fullscreen, and export it in multiple formats — all in the browser or as a
-desktop app. **No backend, no upload: your file never leaves your machine.**
+WZ PDF is a fast, **fully client-side** document tool. Open a PDF, a Korean
+`.hwp` / `.hwpx`, a saved e-mail (`.eml`) or an image — read and select the text,
+mark it up, run OCR, present it fullscreen, and export it in several formats —
+all in the browser or as a desktop app. **No backend, no upload: your file never
+leaves your machine.**
 
 Built with React, Konva, pdfjs, pdf-lib, and Electron, plus a Rust→WASM HWP
 engine ([`@rhwp/core`](https://www.npmjs.com/package/@rhwp/core)) and an on-device
@@ -31,10 +33,15 @@ OCR runtime. Ships with an optional
 ## Why WZ PDF
 
 - 🔒 **Private by design** — everything runs in the browser/desktop. Nothing is uploaded.
-- 📄 **PDF _and_ HWP/HWPX** — open Korean word-processor files exactly like a PDF, with **native selectable text** (no OCR needed) and one-click **HWP → PDF** export.
+- 📄 **PDF _and_ HWP/HWPX** — open Korean word-processor files exactly like a PDF, with **native selectable text** (no OCR needed).
+- 🔁 **HWP → PDF that you can actually copy from** — the converted file carries a real text layer, so text stays selectable and searchable in any reader. Not a picture of a document.
+- 📦 **Any document → standalone `.exe`** — hand someone a single file that opens itself. Works for HWP/HWPX too, not just PDF.
+- ✉️ **Open `.eml` mail** — headers, body and **attachments you can save**, with Korean encodings (EUC-KR bodies, encoded subjects and filenames) handled properly. Remote images are blocked until you ask, so opening a message doesn't report back to the sender.
+- 🖼️ **Images too** — jpg / png / bmp / gif / webp open as documents, so zoom, annotation, OCR and every export just work.
 - 🎯 **Made for presenting** — fullscreen mode with ZoomIt-style presenter tools (pen, highlighter, arrow, laser pointer, spotlight zoom).
 - 🔎 **On-device OCR** — recognize text in scanned pages and images, **fully offline** (Korean + English). Plus **Ctrl-drag any region → OCR → clipboard**.
 - 🧩 **Embed anywhere** — drop the viewer into any website with a single `<iframe>` (see below).
+- ⚡ **Starts fast, stays sharp** — the desktop app boots without waiting on code it isn't using yet, and pages are rasterised at the size they're shown so small text stays crisp.
 - 🖥️ **Web + Windows desktop** — same app, and the desktop build associates with `.pdf` / `.hwp` / `.hwpx`.
 
 ## Embed the viewer in your site

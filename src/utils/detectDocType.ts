@@ -58,12 +58,28 @@ export function detectDocType(
   // Magic bytes are authoritative (a wrong/forced extension must not override them).
   if (startsWith(head, PDF)) return 'pdf'                    // %PDF
   if (startsWith(head, OLE2)) return 'hwp'                   // .hwp binary (OLE2)
-  if (startsWith(head, ZIP) && ext === 'hwpx') return 'hwp'  // .hwpx (zip)
+  if (startsWith(head, ZIP)) {
+    // .hwpx is an OCF zip: the first entry is an uncompressed `mimetype` holding
+    // `application/hwp+zip`. Sniffing that beats trusting the name — the Viewer
+    // EXE hands its payload over as "document.pdf", so an extension-only rule
+    // sent embedded HWPX files to pdfjs and they failed to open.
+    const zipHead = new TextDecoder('ascii', { fatal: false })
+      .decode(new Uint8Array(bytes.slice(0, 256)))
+    if (zipHead.includes('application/hwp+zip')) return 'hwp'
+    if (ext === 'hwpx') return 'hwp'
+  }
   if (startsWith(head, PNG) || startsWith(head, JPEG) ||
       startsWith(head, GIF) || startsWith(head, BMP)) return 'image'
   // WEBP is RIFF with a 'WEBP' tag at byte 8 — RIFF alone is also .wav/.avi.
   if (startsWith(head, RIFF) &&
       String.fromCharCode(...head.slice(8, 12)) === 'WEBP') return 'image'
+
+  // Message headers are also content, so this is checked before the extension:
+  // a real PDF/HWP/image already matched above, and the Viewer EXE presents its
+  // payload as "document.pdf" regardless of what was embedded.
+  const text = new TextDecoder('ascii', { fatal: false })
+    .decode(new Uint8Array(bytes.slice(0, 2048)))
+  if (looksLikeEmail(text)) return 'eml'
 
   // Extension fallback when the bytes are inconclusive (short/unreadable, or a
   // generic container like zip).
@@ -71,11 +87,5 @@ export function detectDocType(
   if (ext === 'hwp' || ext === 'hwpx') return 'hwp'
   if (ext === 'eml') return 'eml'
   if (IMAGE_EXTS.includes(ext)) return 'image'
-
-  // No extension to go on: sniff for message headers. Read as ASCII — a real
-  // message's headers are ASCII by definition, and a binary file will not match.
-  const text = new TextDecoder('ascii', { fatal: false })
-    .decode(new Uint8Array(bytes.slice(0, 2048)))
-  if (looksLikeEmail(text)) return 'eml'
   return 'unknown'
 }
