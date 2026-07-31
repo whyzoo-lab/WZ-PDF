@@ -42,8 +42,16 @@ export function peekCachedPage(doc: ViewerDoc, pageNumber: number): PageData | n
   return pageCache.get(doc)?.get(pageNumber) ?? null
 }
 
+// The raster may go BELOW the logical scale. Rasterising a page at 1.5 px/pt and
+// then letting the compositor squeeze it into 0.6 px/pt of screen is what made
+// small Korean glyphs look broken: a 2.4x reduction through canvas's default
+// (low-quality) filter drops strokes. Rendering near the size actually shown
+// lets the rasteriser antialias correctly instead. The floor only stops the
+// value collapsing to something absurd on extreme zoom-out.
+const MIN_RENDER_SCALE = 0.4
+
 function clampScale(scale: number): number {
-  return Math.min(MAX_RENDER_SCALE, Math.max(PDF_RENDER_SCALE, scale))
+  return Math.min(MAX_RENDER_SCALE, Math.max(MIN_RENDER_SCALE, scale))
 }
 
 async function renderPage(pdfDoc: ViewerDoc, pageNumber: number, renderScale: number): Promise<PageData> {

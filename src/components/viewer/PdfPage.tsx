@@ -78,7 +78,9 @@ function PdfPageInner({
   // Zooming out keeps the higher-res canvas (the hook only upgrades), so this is
   // effectively "max scale shown so far".
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
-  const desiredRenderScale = Math.ceil(PDF_RENDER_SCALE * zoom * dpr * 2) / 2
+  // Quantised to 0.25 (not 0.5): the coarser step overshot badly at small
+  // zooms — at 41% it asked for 1.5x the pixels the screen would show.
+  const desiredRenderScale = Math.ceil(PDF_RENDER_SCALE * zoom * dpr * 4) / 4
   const { pageData, isLoading } = usePdfPage(pdfDoc, pageNumber, desiredRenderScale)
 
   // ── Drawing state for volatile markups (pen / rectangle) ─────────────────────
@@ -87,6 +89,18 @@ function PdfPageInner({
   // commit fn + the window-level mouseup safety net all here at the top.
   type PenDraw  = { kind: 'pen'; points: number[] }
   type RectDraw = { kind: 'rect'; x: number; y: number; w: number; h: number }
+  // Zooming out keeps the higher-resolution canvas (the cache only upgrades), so
+  // the compositor still has to shrink it. Canvas defaults to a low-quality
+  // filter, which is what mangles small glyphs; ask for the good one. Konva has
+  // no config for this, so we reach the underlying 2D context once after mount —
+  // read-only access to a field, not a patched library.
+  const pageLayerRef = useRef<import('konva/lib/Layer').Layer>(null)
+  useEffect(() => {
+    const raw = (pageLayerRef.current?.getCanvas()?.getContext() as unknown as
+      { _context?: CanvasRenderingContext2D } | undefined)?._context
+    if (raw) raw.imageSmoothingQuality = 'high'
+  }, [])
+
   const [draft, setDraft] = useState<PenDraw | RectDraw | null>(null)
   const draftRef = useRef<PenDraw | RectDraw | null>(null)
 
@@ -447,7 +461,7 @@ function PdfPageInner({
           onTouchEnd={isDrawing ? handleMouseUp : undefined}
           style={{ cursor }}
         >
-          <Layer>
+          <Layer ref={pageLayerRef}>
             <KonvaImage
               image={pageData.canvas}
               x={0}

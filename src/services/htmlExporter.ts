@@ -6,7 +6,7 @@
  * No external dependencies — works fully offline.
  */
 
-import { downloadBlob, stripDocExt } from '../utils/download'
+import { stripDocExt } from '../utils/download'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -90,10 +90,10 @@ function buildHtml(title: string, base64Pdf: string): string {
  * @param fileBytes  Raw PDF bytes (original or annotated)
  * @param filename   Source filename — used to derive the .html download name
  */
-export function exportAsHtml(fileBytes: ArrayBuffer, filename: string): void {
+export function buildHtmlExport(fileBytes: ArrayBuffer, filename: string): { blob: Blob; filename: string } {
   const title   = stripDocExt(filename)
   const base64  = arrayBufferToBase64(fileBytes)
   const html    = buildHtml(title, base64)
   const blob    = new Blob([html], { type: 'text/html;charset=utf-8' })
-  downloadBlob(blob, `${title}.html`)
+  return { blob, filename: `${title}.html` }
 }

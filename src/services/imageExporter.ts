@@ -11,7 +11,7 @@
 
 import JSZip from 'jszip'
 import type { ViewerDoc } from '../types/viewerDoc'
-import { downloadBlob, stripDocExt } from '../utils/download'
+import { stripDocExt } from '../utils/download'
 
 /** Render scale for exported images — 2× gives ~144 DPI equivalent. */
 const EXPORT_SCALE = 2
@@ -34,12 +34,12 @@ function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
  * @param filename    Source filename — used to derive file/folder names
  * @param onProgress  Called after each page is rendered: (current, total)
  */
-export async function exportAsImages(
+export async function buildImagesExport(
   pdfDoc: ViewerDoc,
   numPages: number,
   filename: string,
   onProgress?: (current: number, total: number) => void,
-): Promise<void> {
+): Promise<{ blob: Blob; filename: string }> {
   const baseName  = stripDocExt(filename)
   const padWidth  = String(numPages).length   // e.g. 3 for 100+ pages
   const zip       = new JSZip()
@@ -67,5 +67,5 @@ export async function exportAsImages(
     compressionOptions: { level: 6 },
   })
 
-  downloadBlob(zipBlob, `${baseName}_images.zip`)
+  return { blob: zipBlob, filename: `${baseName}_images.zip` }
 }

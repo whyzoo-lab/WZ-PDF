@@ -3,7 +3,7 @@ import type { ViewerDoc } from '../types/viewerDoc'
 import type { DocKind } from '../types/viewerDoc'
 import type { Annotation } from '../types/annotation'
 import { t } from '../i18n'
-import { downloadBlob, stripDocExt } from '../utils/download'
+import { pickSaveTarget, saveBlobTo, stripDocExt } from '../utils/download'
 
 interface UseExportersArgs {
   file: File | null
@@ -42,27 +42,34 @@ export function useExporters({
   const [isExporting, setIsExporting] = useState(false)
 
   const handleExportPdf = useCallback(async () => {
+    const baseName = file ? stripDocExt(file.name) : 'document'
+    const downloadName = `${baseName}_annotated.pdf`
+    // Ask where to save BEFORE building anything: the picker needs the click's
+    // activation, which a long export would outlive. It also means the success
+    // toast can wait until the bytes are really on disk.
+    const target = await pickSaveTarget(downloadName, {
+      description: 'PDF document', accept: { 'application/pdf': ['.pdf'] },
+    })
+    if (target.kind === 'canceled') return
+
     setIsExporting(true)
     try {
-      const baseName = file ? stripDocExt(file.name) : 'document'
-      const downloadName = `${baseName}_annotated.pdf`
-
-      if (kind === 'hwp') {
-        // HWP bytes are not a PDF — build a fresh PDF by compositing rendered
-        // page canvases with annotations (same technique as the print pipeline).
-        if (!pdfDoc) return
-        const { exportHwpToPdf } = await import('../services/pdfExporter')
-        const pdfBytes = await exportHwpToPdf(pdfDoc, annotations)
-        const blob = new Blob([pdfBytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
-        downloadBlob(blob, downloadName)
-      } else {
+      let blob: Blob
+      if (kind === 'pdf') {
         if (!fileBytes) return
         const { exportPdf } = await import('../services/pdfExporter')
-        const blob = await exportPdf(fileBytes, annotations)
-        downloadBlob(blob, downloadName)
+        blob = await exportPdf(fileBytes, annotations)
+      } else {
+        // Non-PDF sources have no PDF to patch — build one from the rendered
+        // pages (this is also the HWP→PDF converter).
+        if (!pdfDoc) return
+        const { exportHwpToPdf } = await import('../services/pdfExporter')
+        const bytes = await exportHwpToPdf(pdfDoc, annotations)
+        blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
       }
-
-      onSuccess(t('export.pdfDone', { name: downloadName }))
+      if (await saveBlobTo(target, blob, downloadName)) {
+        onSuccess(t('export.pdfDone', { name: downloadName }))
+      }
     } catch (err) {
       console.error('PDF export failed:', err)
     } finally {
@@ -71,21 +78,22 @@ export function useExporters({
   }, [fileBytes, pdfDoc, annotations, file, kind, onSuccess])
 
   const handleExportHtml = useCallback(async () => {
+    const filename = file?.name ?? 'document.pdf'
+    const outName = `${stripDocExt(filename)}.html`
+    const target = await pickSaveTarget(outName, {
+      description: 'HTML viewer', accept: { 'text/html': ['.html'] },
+    })
+    if (target.kind === 'canceled') return
+
     setIsExporting(true)
     try {
-      const filename = file?.name ?? 'document.pdf'
       let pdfBytes: ArrayBuffer
-
       if (kind === 'pdf') {
         if (!fileBytes) return
         pdfBytes = fileBytes
       } else {
-        // The exported page hands its bytes to the browser's PDF viewer, so
-        // they must BE a PDF. Passing the source bytes straight through was the
-        // bug: a .hwp (or an image) was embedded as application/pdf and the
-        // generated page could never display it. Convert first — the same
-        // canvas-compositing path "Download PDF" uses, so what you see in the
-        // exported page matches what you saw in the viewer.
+        // The generated page hands its bytes to the browser's PDF viewer, so
+        // they must BE a PDF — passing a .hwp straight through was the bug.
         if (!pdfDoc) return
         const { exportHwpToPdf } = await import('../services/pdfExporter')
         const bytes = await exportHwpToPdf(pdfDoc, annotations)
@@ -93,10 +101,11 @@ export function useExporters({
           bytes.byteOffset, bytes.byteOffset + bytes.byteLength,
         ) as ArrayBuffer
       }
-
-      const { exportAsHtml } = await import('../services/htmlExporter')
-      exportAsHtml(pdfBytes, filename)
-      onSuccess(t('export.htmlDone', { name: `${stripDocExt(filename)}.html` }))
+      const { buildHtmlExport } = await import('../services/htmlExporter')
+      const out = buildHtmlExport(pdfBytes, filename)
+      if (await saveBlobTo(target, out.blob, out.filename)) {
+        onSuccess(t('export.htmlDone', { name: out.filename }))
+      }
     } catch (err) {
       console.error('HTML export failed:', err)
       alert(t('export.htmlFailed', { error: err instanceof Error ? err.message : String(err) }))
@@ -107,12 +116,20 @@ export function useExporters({
 
   const handleExportImages = useCallback(async () => {
     if (!pdfDoc) return
+    const filename = file?.name ?? 'document.pdf'
+    const outName = `${stripDocExt(filename)}_images.zip`
+    const target = await pickSaveTarget(outName, {
+      description: 'ZIP archive', accept: { 'application/zip': ['.zip'] },
+    })
+    if (target.kind === 'canceled') return
+
     setIsExporting(true)
     try {
-      const { exportAsImages } = await import('../services/imageExporter')
-      const filename = file?.name ?? 'document.pdf'
-      await exportAsImages(pdfDoc, numPages, filename)
-      onSuccess(t('export.imagesDone', { name: `${stripDocExt(filename)}.zip` }))
+      const { buildImagesExport } = await import('../services/imageExporter')
+      const out = await buildImagesExport(pdfDoc, numPages, filename)
+      if (await saveBlobTo(target, out.blob, out.filename)) {
+        onSuccess(t('export.imagesDone', { name: out.filename }))
+      }
     } catch (err) {
       console.error('Image export failed:', err)
       alert(t('export.imagesFailed', { error: err instanceof Error ? err.message : String(err) }))
