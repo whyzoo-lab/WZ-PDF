@@ -41,13 +41,18 @@ The renderer never uses Node APIs directly. All IPC calls go through `window.ele
 ### Rendering pipeline
 
 ```
-PDF bytes  → pdfjs-dist (Worker)   → HTMLCanvasElement → Konva Stage (KonvaImage)
-HWP bytes  → @rhwp/core (WASM)     → HTMLCanvasElement → Konva Stage (KonvaImage)
-HWPX bytes → @rhwp/core (WASM)     → HTMLCanvasElement → Konva Stage (KonvaImage)
+PDF bytes   → pdfjs-dist (Worker)  → HTMLCanvasElement → Konva Stage (KonvaImage)
+HWP/HWPX    → @rhwp/core (WASM)    → HTMLCanvasElement → Konva Stage (KonvaImage)
+image bytes → browser decoder      → HTMLCanvasElement → Konva Stage (KonvaImage)
+EML bytes   → emlParser            → sanitized HTML    → EmailView (NOT this pipeline)
 ```
 
+Everything except mail becomes a `ViewerDoc`, so zoom / rotate / fit / annotations
+/ print / OCR / every export work through one set of paths. Mail is the deliberate
+exception: it reflows and has no page geometry (see "Email (.eml)").
+
 Key points:
-- **pdfjs worker** is loaded via a blob URL wrapper in `src/main.tsx` that polyfills `Uint8Array.prototype.toHex` and `Map.prototype.getOrInsertComputed` before importing the real worker — both methods are absent in the Electron Chromium version but required by pdfjs 5.x.
+- **pdfjs worker** is built in `src/services/pdfjsWorker.ts` — a blob URL wrapper that polyfills `Uint8Array.prototype.toHex` and `Map.prototype.getOrInsertComputed` before importing the real worker (both are absent in the Electron Chromium version but required by pdfjs 5.x). That module imports no pdfjs itself, so it stays off the startup path; `usePdfDocument` pulls it in with pdfjs on first document open.
 - `usePdfPage` renders each page once and stores the result in a **module-level WeakMap cache** (`pageCache`). View-mode switches (single ↔ spread ↔ grid ↔ fullscreen) do not re-render pages.
 - `PdfPage` passes `pageData.canvas` directly to `<KonvaImage>` — no `toDataURL` / `new Image()` round-trip.
 
@@ -71,15 +76,98 @@ WZ PDF can open Korean `.hwp` (OLE2 binary) and `.hwpx` (zip-based XML) document
 
 Note: HWP pages are 0-based internally; the adapter converts to the app's 1-based page numbers.
 
-**Integration** — `usePdfDocument` detects the file type and returns `{ pdfDoc: ViewerDoc, kind: 'pdf'|'hwp', ... }`. All downstream code (viewer, annotations, OCR, print, export) consumes `ViewerDoc` unchanged and is unaware of the source format.
+**Integration** — `usePdfDocument` detects the file type and returns `{ pdfDoc: ViewerDoc | null, kind: 'pdf'|'hwp'|'image'|'eml', email, ... }`. Downstream code consumes `ViewerDoc` and is unaware of the source format; `pdfDoc` is null only for `eml`.
 
-**Text / search** — HWP has no selectable text layer; `PdfTextLayer` is gated to `kind === 'pdf'`. HWP text selection and search rely on OCR operating on the rendered canvas (same path as scanned PDFs).
+**Text / search** — on screen HWP has no selectable text layer; `PdfTextLayer` is gated to `kind === 'pdf'`, and in-app selection/search go through OCR on the rendered canvas (same path as scanned PDFs).
 
-**Export → PDF** — `exportHwpToPdf` in `src/services/pdfExporter.ts` composites the rendered page canvases (plus any annotation overlays) into a fresh PDF via pdf-lib. This doubles as an HWP→PDF converter. Other export formats (HTML viewer, Images ZIP, Viewer EXE) are not available for HWP.
+**Export → PDF** — `exportHwpToPdf` in `src/services/pdfExporter.ts` composites the rendered page canvases (plus any annotation overlays) into a fresh PDF via pdf-lib, and doubles as an HWP→PDF converter.
+
+It also writes a **selectable text layer**: the page picture alone would be an
+image-only PDF (looks right, nothing copyable or searchable), so each run from
+`getPageTextLayout` is drawn invisibly (`opacity: 0`) over the pixels it belongs
+to — the technique OCR layers use. Two details matter:
+- Run size comes from the **measured run width**, not its height: the text is
+  invisible so vertical distortion never shows, while matching the width keeps
+  selection highlights aligned with the glyphs.
+- Noto Sans KR is embedded **subsetted**, and a run whose glyphs the font lacks
+  is skipped rather than failing the whole export.
+
+Verify a change here by reading the exported file back with pdfjs and calling
+`getTextContent()` — that is the same call a reader uses for select/copy/search.
+
+**Other exports** — HTML viewer and Images ZIP work for HWP (and images) too.
+Both go through `ViewerDoc`, so nothing is format-specific; the HTML exporter
+converts to PDF first because the page it generates hands its bytes to the
+browser's PDF viewer.
 
 **Editing scope** — Existing annotation overlays (stamps, signatures, watermarks, pen, rectangle) work on HWP pages. There is no native HWP content editing. Office formats (DOC, PPT, XLS) are out of scope.
 
 **Bundle impact** — `@rhwp/core` is kept in a lazy chunk (`hwpEngine-*.js`) and never included in the entry bundle; it is only fetched when a HWP/HWPX file is opened.
+
+**Engine version** — `@rhwp/core` is pinned to an **exact** version (no caret) so
+an engine change is always a deliberate, tested step. Upgrading is cheap because
+rhwp itself is never patched (see "Never patch a dependency in place"): 0.7.17 →
+0.8.2 needed no code change. When bumping, compare the two `rhwp.d.ts` surfaces
+for removals, then run the same document through both and check page count, ink
+coverage and `getPageTextLayout` output — 0.8.2 kept text layout identical but
+did shift pagination.
+
+**Korean fonts** — rhwp resolves each HWP font through a CSS fallback chain, e.g.
+for 바탕: `"바탕", Batang, 바탕, Nanum Myeongjo, …, Noto Serif KR, …, serif`. On
+Korean Windows the first entries are installed system fonts and win, so nothing
+of ours is used. Elsewhere every named family misses and the browser drops to
+generic serif/sans, changing glyph shapes and metrics.
+
+We therefore ship the **open end of that chain only** — Noto Sans KR + Noto Serif
+KR (SIL OFL; `public/fonts/OFL.txt` is the Source Han text that covers both, Noto
+CJK being Source Han renamed). The fonts HWP documents actually name —
+함초롬바탕/함초롬돋움 (Hancom), 맑은 고딕 / 바탕 / 돋움 (Windows) — are proprietary
+and **must not be bundled**: Hancom's licence forbids commercial redistribution
+and names using their bundled fonts from another program as a violation, and the
+Windows faces may not be redistributed standalone or inside an application.
+
+Two traps, both handled in `src/services/hwpFonts.ts`:
+1. **Canvas never starts `@font-face` downloads.** Declaring the face in CSS is
+   not enough — it must be loaded through the CSS Font Loading API *before*
+   anything is drawn, or the first render silently uses the fallback.
+2. Loading unconditionally would waste ~12 MB on the machines that need it least,
+   so it first checks whether a Korean face already resolves and no-ops if so
+   (measured on Korean Windows: 21 ms, zero bytes fetched).
+
+### Images (jpg / png / bmp / gif / webp)
+
+An image is page-like in the way mail is not — fixed geometry, one page, no
+reflow — so `src/services/imageDocAdapter.ts` presents it as a **one-page
+ViewerDoc** instead of adding a separate viewer. Zoom, rotation, fit,
+annotations, print, OCR and every export then work through the paths they
+already use, with no branching downstream.
+
+Decoding uses `createImageBitmap` (Promise-based, so it resolves even when the
+window isn't painting), falling back to `<img>` only on engines without it.
+
+### Email (.eml)
+
+The one format that does NOT become a `ViewerDoc`: a message is reflowing HTML
+with no page geometry, so rendering it to a canvas would cost text fidelity and
+selection for nothing. `usePdfDocument` returns a parsed message and `App`
+renders `components/email/EmailView.tsx`.
+
+**Parsing** (`src/services/emlParser.ts`) works from a *binary string* (one char
+per byte) rather than decoding the file as text up front — attachments are
+arbitrary bytes and would not survive that. Text is decoded per part using that
+part's own charset, which is what makes real Korean mail work: EUC-KR bodies,
+RFC 2047 encoded-word subjects (including the split-across-lines form) and RFC
+2231 percent-encoded filenames all round-trip. `cid:` images are inlined as
+`data:` URLs so a normal message renders without fetching anything.
+
+**Safety** (`src/services/emailHtml.ts`) — bodies are attacker-controlled.
+DOMPurify does the sanitizing; on top of that we drop `<style>`/`<link>` so a
+message cannot restyle the app around it, and **withhold remote images until the
+reader asks** (loading one silently tells the sender the mail was opened). Links
+get `target=_blank` + `rel=noopener`.
+
+**Attachments** download through `utils/download.ts`, and a PDF/HWP/image
+attachment can be opened straight into the viewer.
 
 ### Coordinate system
 
@@ -101,7 +189,7 @@ All state lives in `App.tsx` (no external store). Key state:
 | `rotation` | Page rotation: `0 \| 90 \| 180 \| 270` degrees |
 | `viewMode` | `'single' \| 'spread' \| 'grid' \| 'fullscreen'` |
 | `fullscreenLayout` | `'single' \| 'spread'` — captured from `viewMode` when entering fullscreen |
-| `appMode` | `'viewer' \| 'editor'` — hides annotation tools in viewer mode |
+| `appMode` | `'viewer' \| 'editor'` — hides annotation tools in viewer mode; entering `editor` also opens the page list |
 | `activeMode` | `'select' \| 'stamp' \| 'signature' \| 'watermark' \| 'pen' \| 'rectangle' \| null` |
 | `pendingStamp / pendingSignature` | Image data URL awaiting placement click |
 | `scrollToPage` | Target page number for programmatic scroll (cleared after use) |
@@ -116,6 +204,13 @@ All state lives in `App.tsx` (no external store). Key state:
 ```
 App
 ├── ActionBar          ← Top bar: view/zoom controls, editor tools, Reset markup button, upload/export
+│                        Chrome-style flat chrome: every control is a rounded-full
+│                        ghost button (no idle background), groups are separated by
+│                        whitespace rather than 1px rules, and editing is one padlock
+│                        `role="switch"` (locked = read-only) instead of a segmented
+│                        viewer/editor control. BTN_ACTIVE is a soft wash for "which
+│                        view am I in"; BTN_ARMED keeps the saturated accent for a
+│                        drawing tool, because that changes what the next click does.
 ├── PagePanel          ← Left sidebar: thumbnail strip, multi-select, drag-reorder, add/delete pages
 │                        readOnly={appMode === 'viewer'} — visible in both viewer and editor modes
 ├── Toast              ← Fixed bottom-center auto-dismissing notification (2500ms)
@@ -153,7 +248,22 @@ The renderer bundle is split so the initial chunk only contains code needed for 
 | `components/modals/SignaturePad` | Editor → Signature | Canvas drawing UI |
 | `components/modals/WatermarkConfig` | Editor → Watermark | Form UI |
 
-`vite.config.ts` declares manual chunks for `react` / `react-dom` (~315 KB) and `konva` / `react-konva` (~181 KB) so they cache independently from app code across releases. Modals load through a `<Suspense fallback={null}>` boundary in `App.tsx`.
+`vite.config.ts` declares a manual chunk for `react` / `react-dom` only. Modals and the viewer subtree load through `<Suspense>` boundaries in `App.tsx`.
+
+**Only list a library in `manualChunks` if the FIRST PAINT genuinely needs it.**
+Forcing a lazily-used library into a manual chunk makes rolldown hoist that chunk
+into the entry's *static* graph (an `import "./vendor-x.js"` at the top of the
+entry plus a modulepreload) — which silently cancels any `React.lazy` /
+dynamic-import work done to keep it off startup. This has bitten twice: the OCR
+runtime (which then evaluated at startup and hit the CSP), and pdfjs + konva
+(~730 KB paid on every cold launch for code an empty viewer never uses).
+
+**`prefetchViewerChunks` (App.tsx)** — deferring the viewer fixed startup but
+moved the cost: the common desktop flow is double-clicking a PDF, so the app
+booted fast and then sat on the Suspense fallback while the viewer downloaded.
+The chunks are now fetched on an idle callback right after mount, so first paint
+still needs only the entry chunk and `<Suspense>` resolves without ever showing
+its fallback. If you add a heavy view, prefetch it the same way.
 
 ### Custom hooks (src/hooks/)
 
@@ -292,6 +402,33 @@ Export pipeline (regardless of source):
 3. On startup, `extractEmbeddedPdf()` checks `PORTABLE_EXECUTABLE_FILE` (the resulting EXE always runs as a portable SFX) for the marker and reads the embedded bytes.
 4. If found, sends them to the renderer via the `open-pdf-bytes` IPC channel.
 
+### Startup cost (measured, not guessed)
+
+Cold launch splits cleanly: window visible ~0.2 s (consistent), then a highly
+variable wait for the entry bundle, then ~0.05 s to a ready document. All the
+variance is in *getting the renderer's JS loaded* — so that is the only part
+worth optimising.
+
+- **`app.html` ships an inline first-paint shell** (48 px gray-900 bar over the
+  window's own background). Until the bundle runs, `#root` is empty, and the
+  window used to sit as a dark void for however long that took. `createRoot()`
+  clears the shell on mount, so there is no flash.
+- **`app.asar` must stay small.** electron-builder ships production
+  `node_modules` by default, but nothing needs them at runtime — Vite bundles
+  every renderer dependency into `dist/`, and the main process imports only
+  `electron` plus Node built-ins. Shipping them anyway put ~237 MB of exact
+  duplicates in the asar (3106 of 3182 entries). Windows opens `app.asar` on
+  every launch, so that file is what an AV scan or a cold page-in must get
+  through first. `electron-builder.json5` therefore excludes `node_modules` and
+  `asarUnpack`s the lazily-read binaries (OCR models, wasm, OCR chunks):
+  **363 MB → 12.7 MB.**
+
+When profiling the packaged app, disable Chromium's background throttling
+(`--disable-background-timer-throttling --disable-renderer-backgrounding
+--disable-backgrounding-occluded-windows`) or an unfocused window will report
+document loads 10× slower than they are — that artefact cost a whole debugging
+session once.
+
 ### Distribution (Windows)
 
 `npm run build:exe` runs **two electron-builder invocations sequentially** —
@@ -325,8 +462,13 @@ Renderer is sandboxed and IPC inputs are validated. Notable measures:
 
 ## Critical gotchas
 
-### pdfjs polyfills (must stay in `src/main.tsx`)
-Both polyfills — `Uint8Array.prototype.toHex` and `Map.prototype.getOrInsertComputed` — must appear in **two places**: the main thread (before pdfjs imports) and inside the blob worker string. Removing either will break PDF rendering in Electron.
+### pdfjs polyfills — both copies are required
+`Uint8Array.prototype.toHex` and `Map.prototype.getOrInsertComputed` must exist in
+**two places**: the main thread (`src/main.tsx`, before anything touches pdfjs)
+and inside the blob worker string (`src/services/pdfjsWorker.ts`). Removing
+either breaks PDF rendering in Electron. The two files are separate on purpose —
+`pdfjsWorker.ts` deliberately does not import pdfjs, so requiring it costs a few
+bytes instead of pulling the ~400 KB chunk into the entry bundle.
 
 ### Annotation coordinates
 Everything stored and exported uses the `effectiveZoom = PDF_RENDER_SCALE * zoom` divisor. If you pass plain `zoom` instead of `effectiveZoom` to `toStoredCoords`, annotations will be placed at the wrong position relative to the PDF.
@@ -334,8 +476,18 @@ Everything stored and exported uses the `effectiveZoom = PDF_RENDER_SCALE * zoom
 ### `page.render()` API (pdfjs 5.x)
 Call as `page.render({ canvas, viewport })` — NOT `{ canvasContext: ctx, viewport }`. The old API was removed in pdfjs 5.x.
 
-### pdfjs `wasmUrl` — required for JBIG2 / CCITT / JPEG2000 images
+### pdfjs runtime assets — wasm, cmaps AND standard_fonts
 pdfjs 5.x decodes JBIG2, CCITT-Fax and JPEG2000 images in WebAssembly and **silently drops any image it can't decode** if `getDocument` isn't given a `wasmUrl`. Korean scanner / MRC PDFs (e.g. 특허증) store their text as CCITT/JBIG2 `ImageMask`s layered over a DCTDecode background — without `wasmUrl` the masks vanish and only the faint background renders. `usePdfDocument.ts` passes `wasmUrl: new URL('wasm/', new URL('./', document.baseURI)).href` (same base-relative pattern as the OCR assets, so it works over http(s) and Electron `app://`). The decoders live at `public/wasm/` — **gitignored**; regenerate with `npm run setup:pdfjs` (runs automatically in `predev`, `predev:vite`, `build`, `build:exe`). Symptom of a missing/404 wasm: console spams `Jbig2Error: JBig2 failed to initialize` and the operator list has zero `paintImageMaskXObject` ops.
+
+`setup:pdfjs` also mirrors **`cmaps/`** (predefined CJK CMaps) and
+**`standard_fonts/`** (substitutes for the 14 non-embedded standard fonts), and
+`getDocument` is given `cMapUrl` + `cMapPacked: true` + `standardFontDataUrl`.
+These matter because `disableFontFace: true` (needed so pdfjs doesn't hang on the
+FontFace path in Electron) *also* disables its system-font fallback: a font the
+PDF references but does not embed then has no glyph source at all and every
+character renders as a `.notdef` box (▯) while the surrounding embedded-font text
+looks fine. All three directories are **gitignored** — regenerate with
+`npm run setup:pdfjs`.
 
 ### Fullscreen two-step exit (ESC priority)
 The two-step ESC behavior ("first press clears markups, second press exits fullscreen") requires:
@@ -374,6 +526,39 @@ The script in `package.json` runs `electron-builder --win portable` *and then* `
 OCR models + onnxruntime-web wasm (~56 MB) live under `public/ocr/` and are **gitignored** — regenerate with `npm run setup:ocr` (`scripts/build-ocr-assets.py`, needs Python + pyyaml) before building. Similarly, the HWP WASM (`public/hwp/`) is **gitignored** — regenerate with `npm run setup:hwp` before building (this runs automatically as part of `build` and `build:exe`). It downloads the PP-OCRv5 detection tar, repackages the community Korean ONNX rec model (`monkt/paddleocr-onnx`) into the SDK's `inference.onnx`+`inference.yml` tar layout (image_shape **[3,48,320]** — the ONNX input height is 48, not the 32 its config.json claims), and copies the ort wasm.
 
 The ort runtime is loaded differently per environment (see `wasmPaths` in `ocrEngine.ts`): **production** uses the bundled `/ocr/wasm/` (fully offline), but **`vite dev` can't serve a `/public` file as a dynamically-imported module** (ort `import()`s its `.mjs` glue → Vite 500s on the `?import` request), so dev loads the runtime from the version-matched jsDelivr CDN instead. Net effect: OCR needs internet in `npm run dev` but the shipped app is offline. Keep `ORT_VERSION` in `ocrEngine.ts` in sync with the `onnxruntime-web` dependency.
+
+### Never patch a dependency in place
+Project rule: do not edit third-party sources (`node_modules`, vendored copies)
+unless there is genuinely no alternative — every dependency must stay upgradable
+at any moment. A local edit is invisible to `npm install` and silently
+disappears, or silently blocks, the next upgrade. Put the workaround in our own
+wrapper/adapter and comment *why*, so it can be deleted without archaeology once
+upstream fixes it. Precedents: `ensureImagePainted` in `hwpDocAdapter.ts` (rhwp's
+async picture decode) and the blob-worker polyfills in `pdfjsWorker.ts`. If a
+patch is ever unavoidable, prefer a documented build-time patch (`patch-package`)
+over an ad-hoc edit, and record it here.
+
+### `npm run dev` fails with `EACCES ... ::1:5173`
+Not a port conflict — Windows *reserves* TCP ranges for Hyper-V/WSL/Docker, and
+`5078-5177` (which contains Vite's 5173) is commonly one of them. Check with:
+
+```bash
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
+
+If 5173 falls inside a listed range, nothing can bind it until the reservation is
+released — `net stop winnat` / `net start winnat` from an **Administrator** shell
+frees the dynamically-claimed ranges. Picking a dev port outside every reserved
+range also works, but that port is referenced in three places (Vite, the
+`wait-on` in `package.json`, and the dev `loadURL` + trusted-origin check in the
+main process), so change all of them together.
+
+### Fit-zoom must measure, not estimate
+`useFitZoom` reads the real viewport (`<main>`'s `clientWidth`/`clientHeight`,
+which already exclude borders and any visible scrollbar) instead of deriving it
+from `window.innerHeight` minus constants. It used to assume a 44 px toolbar; the
+toolbar is 48 px plus a 1 px border, so it over-estimated the free height by 5 px
+and a single-page document opened just tall enough to raise a scrollbar.
 
 ### Claude Code file locks during build
 The `claude.exe` agent process can hold open file handles to `release/win-unpacked/resources/app.asar` from previous Glob/Read tool calls, causing electron-builder to fail with "process cannot access the file because it is being used by another process". Before a `build:exe` run, either restart the Claude Code session or delete `release/` from a separate admin terminal. Also add the project folder to Windows Defender exclusions if real-time scanning is locking newly written asars.
