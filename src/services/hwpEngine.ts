@@ -24,8 +24,14 @@ function ensureInit(): Promise<void> {
   return initPromise
 }
 
-/** Parse HWP/HWPX bytes into a renderable document. */
+/** Parse HWP/HWPX bytes into a renderable document.
+ *
+ *  Korean faces are settled first: rhwp draws straight to a canvas, and canvas
+ *  uses only fonts that are already loaded — so a face fetched afterwards would
+ *  miss the first render. See hwpFonts.ts; it is a no-op on machines that
+ *  already have Korean fonts. */
 export async function loadHwp(bytes: ArrayBuffer): Promise<HwpDocument> {
-  await ensureInit()
+  const { ensureKoreanFonts } = await import('./hwpFonts')
+  await Promise.all([ensureInit(), ensureKoreanFonts()])
   return new HwpDocument(new Uint8Array(bytes))
 }

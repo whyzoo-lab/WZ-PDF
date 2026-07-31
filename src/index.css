@@ -342,3 +342,34 @@ canvas {
   display: inline-block; min-width: 1.5rem; min-height: 1.5rem;
   border: 1px dashed #d1d5db; border-radius: 2px; background: #f9fafb;
 }
+
+/* ── Korean faces for HWP rendering ──────────────────────────────────────────
+   rhwp maps each HWP font onto a CSS fallback chain that ends on these open
+   families (see the mapping table in @rhwp/core's README). Declaring them lets
+   a machine WITHOUT Korean system fonts still render close to the original.
+
+   These are the only Korean faces we may ship: the fonts HWP documents actually
+   name — 함초롬바탕/함초롬돋움 (Hancom), 맑은 고딕 / 바탕 / 돋움 (Windows) — are
+   proprietary and their licences forbid bundling them with an application. When
+   they ARE installed they sit earlier in rhwp's chain and win anyway, so the
+   browser never even requests the files below.
+
+   Noto CJK is Source Han under a different name; public/fonts/OFL.txt is the
+   SIL OFL 1.1 text covering both files.
+
+   NOTE: canvas does not start @font-face downloads on its own — these are
+   loaded explicitly in src/services/hwpFonts.ts before the first render. */
+@font-face {
+  font-family: 'Noto Sans KR';
+  src: url('/fonts/NotoSansKR-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Noto Serif KR';
+  src: url('/fonts/NotoSerifKR-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
