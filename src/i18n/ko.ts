@@ -153,4 +153,9 @@ export const ko = {
   // ── Markdown (.md) ────────────────────────────────────────────────────────
   'md.contents': '목차',
   'md.renderFailed': '이 마크다운 문서를 표시할 수 없습니다.',
+  'md.source': '원본 (Markdown)',
+  'md.save': '저장',
+  'md.saved': '저장 완료 — {name}',
+  'md.unsaved': '수정됨',
+  'md.editHint': '편집 잠금을 풀면 원본을 그대로 수정할 수 있습니다.',
 } as const

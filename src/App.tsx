@@ -603,7 +603,12 @@ export default function App() {
           {markdown !== null && (
             <ErrorBoundary>
               <Suspense fallback={null}>
-                <MarkdownView source={markdown} filename={file?.name ?? 'document.md'} />
+                <MarkdownView
+                  source={markdown}
+                  filename={file?.name ?? 'document.md'}
+                  appMode={appMode}
+                  onSaved={showToast}
+                />
               </Suspense>
             </ErrorBoundary>
           )}

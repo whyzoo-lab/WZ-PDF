@@ -169,6 +169,39 @@ get `target=_blank` + `rel=noopener`.
 **Attachments** download through `utils/download.ts`, and a PDF/HWP/image
 attachment can be opened straight into the viewer.
 
+### Markdown (.md)
+
+The second format that stays off the `ViewerDoc` path, for the same reason as
+mail: Markdown reflows. `usePdfDocument` decodes the bytes (UTF-8 with a *strict*
+decoder, falling back to EUC-KR when it throws — Korean notes are still commonly
+CP949) and `App` renders `components/markdown/MarkdownView.tsx`.
+
+**Rendering** (`src/services/markdownDoc.ts`) — `renderMarkdown(source)` returns
+`{ html, title, outline }` using `marked` (GFM) plus DOMPurify. YAML front matter
+is stripped before parsing, and GFM task-list checkboxes are rewritten into
+`li.wz-md-task` markers **before** sanitizing, since an `<input>` would not
+survive it. Body typography lives in `.wz-md-body` (`src/index.css`).
+
+**Contents rail** — headings down to H3 become a sticky left rail (only when the
+document has ≥3 of them; fewer just looks cluttered). The active section is
+tracked from the scroll container's own `scrollTop` against heading offsets
+measured **once per render**, so scrolling never forces a layout pass. Two things
+this depends on:
+- The scroll container is `position: relative`, which makes it the headings'
+  `offsetParent` — otherwise `offsetTop` and `scrollTop` are in different
+  coordinate spaces and the highlight drifts by the toolbar height.
+- At the bottom of the file nothing can scroll further, so the trailing sections
+  would never light up; that case explicitly selects the last heading.
+
+**Editing** — the padlock switch (`appMode === 'editor'`) swaps the rendered page
+for a monospace textarea holding the **raw** Markdown, tags and all. The buffer is
+keyed to the source it came from (`{ base, text }`) so opening another file
+reseeds it without an effect that would setState during render — the same pattern
+the render result uses. Locking again re-renders from the edited text, so the
+view and the source stay in step. Saving goes through the shared
+`pickSaveTarget`/`saveBlobTo` helpers, and only reports success once the write
+actually completed.
+
 ### Coordinate system
 
 Annotations are stored in **PDF-point space** (independent of zoom/scale).
@@ -454,11 +487,12 @@ picks it up via `process.argv` and sends `open-file` to the renderer.
 Renderer is sandboxed and IPC inputs are validated. Notable measures:
 
 - `BrowserWindow.webPreferences`: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, `webSecurity: true`, `allowRunningInsecureContent: false`, `experimentalFeatures: false`, plus the `*InWorker`/`*InSubFrames` variants.
-- `will-navigate` blocks all URLs except `file://` (production) and `http://localhost:5173` (dev).
+- `will-navigate` blocks all URLs except the exact `app://bundle` origin (production) and `http://localhost:5173` (dev).
 - `setWindowOpenHandler` denies new Electron windows; external `http(s)://` URLs are handed to `shell.openExternal`.
 - `web-contents-created` denies `<webview>` attachments app-wide.
 - **Production-only CSP** is injected via `session.defaultSession.webRequest.onHeadersReceived`. Dev mode skips this (Vite HMR needs `unsafe-eval` and a WebSocket connect, which would weaken the policy).
-- `read-file` IPC validates the path: non-empty string, resolves to a real file, `.pdf` extension, size ≤ 500 MB. Even though the path normally comes from the OS (CLI arg / open-file event), defense-in-depth assumes the renderer could be compromised.
+- Every IPC handler rejects non-renderer senders. `read-file` resolves symlinks, accepts only `.pdf`/`.hwp`/`.hwpx`, verifies the file signature, and reads at most 500 MB through the validated handle.
+- `fetch-url` rejects private/link-local targets (including redirects), applies a timeout and streaming size limit, and verifies the downloaded document signature.
 
 ## Critical gotchas
 

@@ -153,4 +153,9 @@ export const en = {
   // ── Markdown (.md) ────────────────────────────────────────────────────────
   'md.contents': 'Contents',
   'md.renderFailed': 'This Markdown document could not be displayed.',
+  'md.source': 'Source (Markdown)',
+  'md.save': 'Save',
+  'md.saved': 'Saved — {name}',
+  'md.unsaved': 'Edited',
+  'md.editHint': 'Unlock editing to change the source directly.',
 } as const

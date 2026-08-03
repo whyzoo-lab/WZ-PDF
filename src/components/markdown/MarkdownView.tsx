@@ -1,53 +1,137 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { renderMarkdown, type RenderedMarkdown } from '../../services/markdownDoc'
+import { pickSaveTarget, saveBlobTo } from '../../utils/download'
+import type { AppMode } from '../../types/viewModes'
 import { t } from '../../i18n'
 
 interface MarkdownViewProps {
-  /** Raw Markdown source. */
+  /** Raw Markdown source as loaded from the file. */
   source: string
   /** File name, used as a heading when the document has no title of its own. */
   filename: string
+  /** `editor` swaps the rendered page for the source text. */
+  appMode: AppMode
+  /** Reports a completed save so the app can show its toast. */
+  onSaved: (message: string) => void
 }
 
 /** Long documents get a contents rail; short ones would just look cluttered. */
 const OUTLINE_MIN_HEADINGS = 3
+/** How far down the viewport a heading counts as "the section you're reading". */
+const ACTIVE_OFFSET = 96
 
 /**
- * Reads a Markdown file as a document.
+ * Reads — and, unlocked, edits — a Markdown file.
  *
  * Like mail, this sits outside the Konva/page pipeline: Markdown reflows and has
  * no page geometry, so rendering it to a canvas would trade away selectable,
  * searchable text for nothing.
  */
-export function MarkdownView({ source, filename }: MarkdownViewProps) {
-  // The rendered result is stored together with the source it came from, so a
-  // source change reads as "not ready yet" without a synchronous setState in
-  // the effect (which would risk a cascading render).
-  const [result, setResult] = useState<
-    { src: string; doc: RenderedMarkdown | null } | null
-  >(null)
+export function MarkdownView({ source, filename, appMode, onSaved }: MarkdownViewProps) {
+  const editing = appMode === 'editor'
+
+  // The working copy is keyed by the source it came from, so opening a different
+  // file reseeds it without an effect (and without discarding edits on a
+  // re-render). Same trick as `result` below.
+  const [draft, setDraft] = useState<{ base: string; text: string } | null>(null)
+  const text = draft && draft.base === source ? draft.text : source
+  const dirty = text !== source
+  const [saving, setSaving] = useState(false)
+
+  // Rendered output is stored with the text it came from, so a change reads as
+  // "not ready yet" without a synchronous setState in the effect (which would
+  // risk a cascading render).
+  const [result, setResult] = useState<{ src: string; doc: RenderedMarkdown | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    renderMarkdown(source)
-      .then(r => { if (!cancelled) setResult({ src: source, doc: r }) })
+    renderMarkdown(text)
+      .then(r => { if (!cancelled) setResult({ src: text, doc: r }) })
       .catch(err => {
         console.error('Markdown render failed:', err)
-        if (!cancelled) setResult({ src: source, doc: null })
+        if (!cancelled) setResult({ src: text, doc: null })
       })
     return () => { cancelled = true }
-  }, [source])
+  }, [text])
 
-  const current = result && result.src === source ? result : null
+  const current = result && result.src === text ? result : null
   const doc = current?.doc ?? null
   const failed = current !== null && current.doc === null
 
-  // Only show headings deep enough to be useful; H4+ makes the rail noisy.
-  const outline = useMemo(
-    () => (doc?.outline ?? []).filter(o => o.level <= 3),
-    [doc],
-  )
-  const showOutline = outline.length >= OUTLINE_MIN_HEADINGS
+  // Only headings shallow enough to be useful; H4+ makes the rail noisy.
+  const outline = useMemo(() => (doc?.outline ?? []).filter(o => o.level <= 3), [doc])
+  const showOutline = !editing && outline.length >= OUTLINE_MIN_HEADINGS
+
+  // ── Which section am I in ────────────────────────────────────────────────
+  // Heading offsets are measured once per render and reused on scroll, so
+  // scrolling never forces a layout pass.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const offsetsRef = useRef<Array<{ id: string; top: number }>>([])
+  // Tagged with the outline it belongs to, so a new document falls back to its
+  // own first heading instead of keeping the previous file's highlight — and
+  // without an effect that would setState during render.
+  const [active, setActive] = useState<{ key: string; id: string } | null>(null)
+  const outlineKey = useMemo(() => outline.map(o => o.id).join('|'), [outline])
+  const outlineKeyRef = useRef(outlineKey)
+  const activeId = active?.key === outlineKey ? active.id : outline[0]?.id ?? null
+
+  const measure = useCallback(() => {
+    const root = scrollRef.current
+    if (!root) return
+    offsetsRef.current = outline
+      .map(o => {
+        const el = root.querySelector<HTMLElement>(`[id="${CSS.escape(o.id)}"]`)
+        return el ? { id: o.id, top: el.offsetTop } : null
+      })
+      .filter((x): x is { id: string; top: number } => x !== null)
+  }, [outline])
+
+  useLayoutEffect(() => {
+    measure()
+    outlineKeyRef.current = outlineKey
+  }, [measure, outlineKey])
+
+  const handleScroll = useCallback(() => {
+    const root = scrollRef.current
+    if (!root) return
+    const offsets = offsetsRef.current
+    let id: string | null
+    if (root.scrollTop + root.clientHeight >= root.scrollHeight - 2) {
+      // At the bottom nothing can scroll further, so the trailing sections would
+      // never light up on their own — the last heading owns the end of the file.
+      id = offsets[offsets.length - 1]?.id ?? null
+    } else {
+      const y = root.scrollTop + ACTIVE_OFFSET
+      id = offsets[0]?.id ?? null
+      for (const o of offsets) {
+        if (o.top <= y) id = o.id
+        else break
+      }
+    }
+    if (!id) return
+    const next = { key: outlineKeyRef.current, id }
+    setActive(prev => (prev?.id === id && prev.key === next.key ? prev : next))
+  }, [])
+
+  const handleSave = useCallback(async () => {
+    const target = await pickSaveTarget(filename, {
+      description: 'Markdown document', accept: { 'text/markdown': ['.md', '.markdown'] },
+    })
+    if (target.kind === 'canceled') return
+    setSaving(true)
+    try {
+      const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
+      if (await saveBlobTo(target, blob, filename)) {
+        // The buffer now matches what is on disk, so the "edited" flag clears.
+        setDraft({ base: text, text })
+        onSaved(t('md.saved', { name: filename }))
+      }
+    } catch (err) {
+      console.error('Markdown save failed:', err)
+    } finally {
+      setSaving(false)
+    }
+  }, [filename, text, onSaved])
 
   if (failed) {
     return (
@@ -56,6 +140,40 @@ export function MarkdownView({ source, filename }: MarkdownViewProps) {
       </div>
     )
   }
+
+  // ── Edit mode: the source, exactly as written ────────────────────────────
+  if (editing) {
+    return (
+      <div className="flex h-full flex-col bg-gray-300">
+        <div className="flex items-center gap-3 border-b border-gray-400/50 bg-gray-200 px-4 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+            {t('md.source')}
+          </span>
+          {dirty && (
+            <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+              {t('md.unsaved')}
+            </span>
+          )}
+          <span className="flex-1" />
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="rounded-full bg-blue-600 px-3.5 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+          >
+            {t('md.save')}
+          </button>
+        </div>
+        <textarea
+          value={text}
+          onChange={e => setDraft({ base: source, text: e.target.value })}
+          spellCheck={false}
+          aria-label={t('md.source')}
+          className="min-h-0 flex-1 resize-none bg-white px-6 py-5 font-mono text-[13px] leading-6 text-gray-900 outline-none"
+        />
+      </div>
+    )
+  }
+
   if (!doc) {
     return (
       <div className="flex h-full items-center justify-center gap-2 text-gray-400 text-sm select-none">
@@ -66,32 +184,54 @@ export function MarkdownView({ source, filename }: MarkdownViewProps) {
   }
 
   return (
-    <div className="h-full overflow-auto bg-gray-300 py-6 px-4">
-      <div className="mx-auto flex max-w-5xl items-start gap-6">
+    // `relative` makes this element the headings' offsetParent, so the offsets
+    // measured above are in the same coordinate space as its own scrollTop.
+    <div ref={scrollRef} onScroll={handleScroll} className="relative h-full overflow-auto bg-gray-300 py-6 px-4">
+      <div className="mx-auto flex max-w-5xl items-start gap-7">
         {showOutline && (
-          // Sticky so it stays with you on a long file; hidden on narrow
-          // screens, where the body needs the whole width.
-          <nav className="hidden lg:block sticky top-0 w-56 shrink-0 py-2" aria-label={t('md.contents')}>
-            <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+          // Sticky so it stays with you on a long file; hidden on narrow screens,
+          // where the body needs the whole width.
+          <nav
+            className="sticky top-0 hidden w-60 shrink-0 py-1 lg:block"
+            aria-label={t('md.contents')}
+          >
+            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">
               {t('md.contents')}
             </p>
-            <ul className="space-y-0.5 text-sm">
-              {outline.map(o => (
-                <li key={o.id} style={{ paddingLeft: (o.level - 1) * 10 }}>
-                  <a
-                    href={`#${o.id}`}
-                    className="block truncate rounded px-2 py-1 text-gray-700 hover:bg-white/60 hover:text-gray-900"
-                    title={o.text}
-                  >
-                    {o.text}
-                  </a>
-                </li>
-              ))}
+            {/* One continuous hairline the items sit against, so the list reads
+                as a single rail instead of scattered rows. */}
+            <ul className="border-l border-gray-400/50">
+              {outline.map(o => {
+                const active = o.id === activeId
+                return (
+                  <li key={o.id}>
+                    <a
+                      href={`#${o.id}`}
+                      title={o.text}
+                      aria-current={active ? 'location' : undefined}
+                      style={{ paddingLeft: 12 + (o.level - 1) * 12 }}
+                      className={[
+                        'block truncate py-[5px] pr-2 transition-colors',
+                        // The active item owns the rail segment next to it.
+                        '-ml-px border-l-2',
+                        active
+                          ? 'border-blue-600 font-medium text-blue-700'
+                          : 'border-transparent hover:border-gray-500 hover:text-gray-900',
+                        // Depth reads through weight and size, not indentation alone.
+                        o.level === 1 ? 'text-[13.5px] font-medium' : 'text-[13px]',
+                        active ? '' : o.level >= 3 ? 'text-gray-500' : 'text-gray-700',
+                      ].join(' ')}
+                    >
+                      {o.text}
+                    </a>
+                  </li>
+                )
+              })}
             </ul>
           </nav>
         )}
 
-        <article className="min-w-0 flex-1 bg-white shadow-xl rounded-sm">
+        <article className="min-w-0 flex-1 rounded-sm bg-white shadow-xl">
           {/* The file name is only worth showing when it isn't already the
               document's own H1 — otherwise it reads as a duplicate title. */}
           {!doc.title && (
