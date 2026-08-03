@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { renderMarkdown, type RenderedMarkdown } from '../../services/markdownDoc'
 import { pickSaveTarget, saveBlobTo } from '../../utils/download'
+import { FLOW_PRINT_ATTR } from '../../services/htmlPrint'
+import { ReaderFullscreen } from '../reader/ReaderFullscreen'
 import type { AppMode } from '../../types/viewModes'
 import { t } from '../../i18n'
 
@@ -11,6 +13,12 @@ interface MarkdownViewProps {
   filename: string
   /** `editor` swaps the rendered page for the source text. */
   appMode: AppMode
+  /** Display zoom — scales the type, since there is no page to scale. */
+  zoom: number
+  /** Present the document fullscreen instead of inside the app shell. */
+  fullscreen: boolean
+  /** Called when the browser leaves fullscreen, however that happened. */
+  onExitFullscreen: () => void
   /** Reports a completed save so the app can show its toast. */
   onSaved: (message: string) => void
 }
@@ -19,6 +27,8 @@ interface MarkdownViewProps {
 const OUTLINE_MIN_HEADINGS = 3
 /** How far down the viewport a heading counts as "the section you're reading". */
 const ACTIVE_OFFSET = 96
+/** Body size at zoom 1; everything else in `.wz-md-body` is relative to it. */
+const BASE_FONT_PX = 15
 
 /**
  * Reads — and, unlocked, edits — a Markdown file.
@@ -27,7 +37,9 @@ const ACTIVE_OFFSET = 96
  * no page geometry, so rendering it to a canvas would trade away selectable,
  * searchable text for nothing.
  */
-export function MarkdownView({ source, filename, appMode, onSaved }: MarkdownViewProps) {
+export function MarkdownView({
+  source, filename, appMode, zoom, fullscreen, onExitFullscreen, onSaved,
+}: MarkdownViewProps) {
   const editing = appMode === 'editor'
 
   // The working copy is keyed by the source it came from, so opening a different
@@ -133,16 +145,10 @@ export function MarkdownView({ source, filename, appMode, onSaved }: MarkdownVie
     }
   }, [filename, text, onSaved])
 
-  if (failed) {
-    return (
-      <div className="flex h-full items-center justify-center px-6 text-sm text-red-400">
-        {t('md.renderFailed')}
-      </div>
-    )
-  }
-
   // ── Edit mode: the source, exactly as written ────────────────────────────
-  if (editing) {
+  // Checked before `failed` so a document the renderer chokes on can still be
+  // opened and fixed, and before `fullscreen` so unlocking wins over presenting.
+  if (editing && !fullscreen) {
     return (
       <div className="flex h-full flex-col bg-gray-300">
         <div className="flex items-center gap-3 border-b border-gray-400/50 bg-gray-200 px-4 py-2">
@@ -174,12 +180,38 @@ export function MarkdownView({ source, filename, appMode, onSaved }: MarkdownVie
     )
   }
 
+  if (failed) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-sm text-red-400">
+        {t('md.renderFailed')}
+      </div>
+    )
+  }
+
   if (!doc) {
     return (
       <div className="flex h-full items-center justify-center gap-2 text-gray-400 text-sm select-none">
         <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent" />
         {t('url.loading')}
       </div>
+    )
+  }
+
+  const body = (
+    <div
+      className="wz-md-body leading-7 text-gray-900"
+      // Sanitized in services/markdownDoc.ts — see that module for what is
+      // stripped and why images are allowed here but not in mail.
+      dangerouslySetInnerHTML={{ __html: doc.html }}
+    />
+  )
+
+  // ── Presenting: one continuous document, scrolled, with the presenter tools ─
+  if (fullscreen) {
+    return (
+      <ReaderFullscreen onExit={onExitFullscreen}>
+        <div {...{ [FLOW_PRINT_ATTR]: '' }}>{body}</div>
+      </ReaderFullscreen>
     )
   }
 
@@ -231,20 +263,22 @@ export function MarkdownView({ source, filename, appMode, onSaved }: MarkdownVie
           </nav>
         )}
 
-        <article className="min-w-0 flex-1 rounded-sm bg-white shadow-xl">
+        <article
+          className="min-w-0 flex-1 rounded-sm bg-white px-8 py-7 shadow-xl"
+          // Zoom has no page to scale here, so it scales the type instead. The
+          // body's own sizes are all em-based, so one declaration moves the
+          // whole hierarchy together.
+          style={{ fontSize: `${BASE_FONT_PX * zoom}px` }}
+          {...{ [FLOW_PRINT_ATTR]: '' }}
+        >
           {/* The file name is only worth showing when it isn't already the
               document's own H1 — otherwise it reads as a duplicate title. */}
           {!doc.title && (
-            <header className="border-b border-gray-200 px-8 pt-7 pb-4">
+            <header className="mb-5 border-b border-gray-200 pb-4">
               <h1 className="text-xl font-semibold text-gray-900 break-words">{filename}</h1>
             </header>
           )}
-          <div
-            className="wz-md-body px-8 py-7 text-[15px] leading-7 text-gray-900"
-            // Sanitized in services/markdownDoc.ts — see that module for what is
-            // stripped and why images are allowed here but not in mail.
-            dangerouslySetInnerHTML={{ __html: doc.html }}
-          />
+          {body}
         </article>
       </div>
     </div>

@@ -169,6 +169,47 @@ get `target=_blank` + `rel=noopener`.
 **Attachments** download through `utils/download.ts`, and a PDF/HWP/image
 attachment can be opened straight into the viewer.
 
+### What the reflowing formats share (mail, Markdown)
+
+Neither becomes a `ViewerDoc`, and the whole toolbar used to hang off
+`hasPdf = !!pdfDoc` — so opening a `.md` or `.eml` silently hid print, zoom and
+fullscreen along with the page controls that genuinely don't apply. `isFlowKind`
+(`types/viewerDoc.ts`) is now the single predicate for "reflows instead of
+paginating", and `ActionBar` takes a `flowDoc` prop beside `hasPdf`. Rotation,
+spread/grid, OCR, page CRUD and annotation tools stay page-only; zoom, print and
+fullscreen work for everything.
+
+- **Zoom** scales the *type*, not a page. Both views set `fontSize` on their
+  article from `BASE_FONT_PX * zoom` and size everything inside in `em` — a
+  Tailwind `text-sm` is rem-based and would stubbornly stay put while the rest
+  of the document grew. `App` resets zoom to 1 when the doc kind changes,
+  because `useFitZoom` never runs for these and they would otherwise inherit
+  whatever the last PDF was fitted to (often ~0.5 — microscopic).
+- **Print** (`services/htmlPrint.ts`) prints the DOM rather than page images.
+  This is the better output, not just the easier one: the browser already knows
+  how to break text across sheets, and text printed as text stays vector-sharp
+  and selectable in a "print to PDF". It reuses `usePrint`'s `#wz-print-root` /
+  `data-wz-printing` mechanism and clones the element marked `FLOW_PRINT_ATTR`.
+  Two things it must get right: the global `@page { margin: 0 }` (which exists
+  so a rasterised page fills the sheet edge to edge) is overridden by a `<style>`
+  injected for the duration of the print, since `@page` cannot be scoped by a
+  selector; and **every wait on the way to the dialog has a deadline**, because
+  `requestAnimationFrame` and `HTMLImageElement.decode()` are compositor-driven
+  and never settle while the window is occluded — by that point the app shell is
+  already hidden, so an unbounded await strands the user on a blank window.
+- **Fullscreen** is `components/reader/ReaderFullscreen.tsx`, deliberately not
+  shared with `FullscreenView`: that one advances through pages, this one
+  scrolls one continuous document, so the keymap differs (PageDown/Space/arrows
+  scroll by a screenful; `+`/`-`/`0` size the text). Everything that *isn't*
+  about pages is reused as-is — `PresentationOverlay` and `PresentationHud` are
+  page-agnostic, so pen/highlighter/arrow/laser/spotlight and the ESC two-step
+  behave identically to a PDF presentation.
+
+Still page-only, and deliberately: **export**. A Markdown or mail → PDF that is
+worth shipping needs real text layout (the HWP exporter's problem, minus the
+engine that already knows the geometry), so the export menu stays hidden here
+rather than offering a rasterised downgrade.
+
 ### Markdown (.md)
 
 The second format that stays off the `ViewerDoc` path, for the same reason as

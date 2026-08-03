@@ -2,6 +2,17 @@
  *  is reflowing HTML, not pages, so it renders outside the page pipeline. */
 export type DocKind = 'pdf' | 'hwp' | 'eml' | 'image' | 'md'
 
+/**
+ * True for the kinds that reflow instead of paginating (mail, Markdown).
+ *
+ * These have no `ViewerDoc`, so anything keyed to page geometry — rotation,
+ * spread/grid, OCR, stamps — is meaningless for them, while zoom, print and
+ * fullscreen still are. One predicate so the two lists never drift apart.
+ */
+export function isFlowKind(kind: DocKind): boolean {
+  return kind === 'eml' || kind === 'md'
+}
+
 export interface ViewerViewport { width: number; height: number; scale: number }
 
 /** A positioned native text run (HWP), in page-point coordinates (scale-1 px). */

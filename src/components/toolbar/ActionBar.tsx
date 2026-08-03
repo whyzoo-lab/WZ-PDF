@@ -16,7 +16,11 @@ import { ZoomControl } from './ZoomControl'
 import { useToolbarCollapse } from '../../hooks/useToolbarCollapse'
 
 export interface ActionBarProps {
+  /** A page-based document is open (PDF / HWP / image) — the ViewerDoc pipeline. */
   hasPdf: boolean
+  /** A reflowing document is open (Markdown / mail). It has no pages, so only
+   *  the controls that mean something without page geometry are shown. */
+  flowDoc: boolean
   /** Embed mode (?embed): hide file-open, export and the viewer/editor toggle
    *  so the toolbar is a clean read-only viewer for website embedding. */
   embed?: boolean
@@ -68,6 +72,7 @@ export interface ActionBarProps {
 
 export function ActionBar({
   hasPdf,
+  flowDoc,
   embed = false,
   appMode,
   viewMode,
@@ -125,7 +130,7 @@ export function ActionBar({
 
   // Re-measure the toolbar whenever the visible control set changes.
   const contentKey = [
-    hasPdf, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
+    hasPdf, flowDoc, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
   ].join('|')
   const { ref: headerRef, collapsed } = useToolbarCollapse(contentKey)
 
@@ -237,12 +242,18 @@ export function ActionBar({
     </div>
   )
 
+  // Split out because a reflowing document gets this button and nothing else
+  // from the view cluster: single / spread / grid are all page arrangements.
+  const fullscreenButton = (
+    <button className={viewBtn('fullscreen')} onClick={() => onViewModeChange('fullscreen')} title={t('tool.fullscreen')} aria-label={t('tool.fullscreen')}><IconFullscreen /></button>
+  )
+
   const viewCluster = (
     <div className="flex items-center gap-0.5 shrink-0">
       <button className={viewBtn('single')}     onClick={() => onViewModeChange('single')}     title={t('tool.single')}     aria-label={t('tool.single')}><IconSingle /></button>
       <button className={viewBtn('spread')}     onClick={() => onViewModeChange('spread')}     title={t('tool.spread')}     aria-label={t('tool.spread')}><IconSpread /></button>
       <button className={viewBtn('grid')}       onClick={() => onViewModeChange('grid')}       title={t('tool.grid')}       aria-label={t('tool.grid')}><IconGrid /></button>
-      <button className={viewBtn('fullscreen')} onClick={() => onViewModeChange('fullscreen')} title={t('tool.fullscreen')} aria-label={t('tool.fullscreen')}><IconFullscreen /></button>
+      {fullscreenButton}
     </div>
   )
 
@@ -348,7 +359,7 @@ export function ActionBar({
     </button>
   ) : null
 
-  const printButton = hasPdf ? (
+  const printButton = (hasPdf || flowDoc) ? (
     <button
       onClick={onPrint}
       className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
@@ -441,6 +452,7 @@ export function ActionBar({
   const expandedLeft = (
     <div className="flex items-center gap-1 px-3 py-1.5 min-w-0 shrink-0">
       {!hasPdf && brandingCluster}
+      {flowDoc && !isFullscreen && (<><Sep />{fullscreenButton}<Sep />{zoomCluster}</>)}
       {hasPdf && (
         <>
           {viewCluster}
@@ -518,7 +530,7 @@ export function ActionBar({
 
   const collapsedLeft = (
     <div ref={leftMenuRef} className="relative flex items-center px-2 py-1.5">
-      {hasPdf ? (
+      {(hasPdf || flowDoc) ? (
         <>
           <button
             onClick={() => setLeftMenuOpen(v => !v)}
@@ -529,16 +541,17 @@ export function ActionBar({
           ><IconMenu /></button>
           {leftMenuOpen && (
             <div className="absolute left-2 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-2 z-50 flex flex-col gap-2">
-              {viewCluster}
-              {!isFullscreen && viewMode !== 'grid' && zoomCluster}
-              {!isFullscreen && (
+              {flowDoc && !isFullscreen && (<>{fullscreenButton}{zoomCluster}</>)}
+              {hasPdf && viewCluster}
+              {hasPdf && !isFullscreen && viewMode !== 'grid' && zoomCluster}
+              {hasPdf && !isFullscreen && (
                 <div className="flex items-center gap-0.5">
                   {rotateButton}
                   {pagesButton}
                   {eraserButton}
                 </div>
               )}
-              {appMode === 'editor' && !isFullscreen && editorCluster}
+              {hasPdf && appMode === 'editor' && !isFullscreen && editorCluster}
             </div>
           )}
         </>

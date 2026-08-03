@@ -6,6 +6,9 @@ import type { Annotation, ActiveMode } from '../types/annotation'
 
 interface GlobalShortcutsDeps {
   pdfDoc: ViewerDoc | null
+  /** A reflowing document (Markdown / mail) is open — it has no ViewerDoc but
+   *  can still be presented fullscreen. */
+  flowDoc: boolean
   viewMode: ViewMode
   appMode: AppMode
   activeMode: ActiveMode
@@ -32,7 +35,7 @@ interface GlobalShortcutsDeps {
  * fullscreen), 1 pen, 2 rectangle.
  */
 export function useGlobalShortcuts({
-  pdfDoc, viewMode, appMode, activeMode, annotations, selectedId,
+  pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
   setViewMode, setShowSearch, setFullscreenLayout,
   prevViewModeRef, fileInputRef,
   removeAnnotation, clearMarkups, setActiveMode,
@@ -74,7 +77,7 @@ export function useGlobalShortcuts({
         fileInputRef.current?.click()
         return
       }
-      if (e.key === 'F5' && pdfDoc && viewMode !== 'fullscreen') {
+      if (e.key === 'F5' && (pdfDoc || flowDoc) && viewMode !== 'fullscreen') {
         // Inline the fullscreen-entry logic (it's also in handleViewModeChange
         // but that's declared further down — avoid the temporal-dead-zone issue).
         e.preventDefault()
@@ -131,5 +134,5 @@ export function useGlobalShortcuts({
     // Setters/refs are stable; re-run only on the reactive values the handler
     // reads. Exact dep list preserved from the original inline effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, removeAnnotation, appMode, viewMode, pdfDoc, activeMode, annotations, clearMarkups, setActiveMode])
+  }, [selectedId, removeAnnotation, appMode, viewMode, pdfDoc, flowDoc, activeMode, annotations, clearMarkups, setActiveMode])
 }

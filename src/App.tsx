@@ -14,6 +14,7 @@ import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import { SearchBar } from './components/SearchBar'
 import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
+import { isFlowKind } from './types/viewerDoc'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
 import { classifyDocFile } from './utils/detectDocType'
 import { PagePanel } from './components/panel/PagePanel'
@@ -106,6 +107,10 @@ export default function App() {
   const mainRef = useRef<HTMLElement>(null)
 
   const { pdfDoc, numPages, isLoading, error, kind, email, markdown } = usePdfDocument(file)
+  // A reflowing document is loaded and on screen. Guarded on the payload as
+  // well as the kind so it is false during the load, when there is nothing to
+  // zoom, print or present yet.
+  const flowDoc = isFlowKind(kind) && (markdown !== null || email !== null)
   const {
     annotations,
     selectedId,
@@ -189,7 +194,7 @@ export default function App() {
 
   // ── Global keyboard shortcuts ─────────────────────────────────────────────
   useGlobalShortcuts({
-    pdfDoc, viewMode, appMode, activeMode, annotations, selectedId,
+    pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
     setViewMode, setShowSearch, setFullscreenLayout,
     prevViewModeRef, fileInputRef,
     removeAnnotation, clearMarkups, setActiveMode,
@@ -367,6 +372,35 @@ export default function App() {
     setViewMode(prevViewModeRef.current)
   }, [])
 
+  // ── Reflowing documents (Markdown, mail) ──────────────────────────────────
+  // They have no pages, so `useFitZoom` never runs for them and they would
+  // inherit whatever the last PDF was fitted to — often ~0.5, which renders the
+  // text microscopic. Reset when the kind changes; opening a second Markdown
+  // file keeps the size the reader chose.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting display state on a document-kind change
+    if (isFlowKind(kind)) setZoom(1)
+  }, [kind])
+
+  // Ctrl+P / the toolbar print button. The page-based path in `usePrint`
+  // rasterises pages and can't do anything here, so reflowing documents print
+  // their DOM instead — see services/htmlPrint.ts for why that's the better
+  // output, not just the easier one.
+  const handlePrintAny = useCallback(async () => {
+    if (isFlowKind(kind)) {
+      const { printFlowDoc } = await import('./services/htmlPrint')
+      if (await printFlowDoc()) return
+    }
+    handlePrint()
+  }, [kind, handlePrint])
+
+  useEffect(() => {
+    if (!isFlowKind(kind)) return
+    const onPrint = () => { handlePrintAny() }
+    document.addEventListener('wz-print', onPrint)
+    return () => document.removeEventListener('wz-print', onPrint)
+  }, [kind, handlePrintAny])
+
   const handleRotate = useCallback(() => {
     setRotation(r => (r + 90) % 360)
   }, [])
@@ -450,6 +484,7 @@ export default function App() {
 
   const actionBarProps = {
     hasPdf: !!pdfDoc,
+    flowDoc,
     embed,
     appMode,
     viewMode,
@@ -471,7 +506,7 @@ export default function App() {
     //   - Electron: appends PDF bytes onto the running portable exe.
     //   - Web:      redirects to the installer download (see useExporters).
     onExportExe: handleExportExe,
-    onPrint: handlePrint,
+    onPrint: handlePrintAny,
     onAppModeChange: handleAppModeChange,
     onViewModeChange: handleViewModeChange,
     onZoomIn: handleZoomIn,
@@ -607,6 +642,9 @@ export default function App() {
                   source={markdown}
                   filename={file?.name ?? 'document.md'}
                   appMode={appMode}
+                  zoom={zoom}
+                  fullscreen={viewMode === 'fullscreen'}
+                  onExitFullscreen={handleFullscreenExit}
                   onSaved={showToast}
                 />
               </Suspense>
@@ -615,7 +653,13 @@ export default function App() {
           {email && (
             <ErrorBoundary>
               <Suspense fallback={null}>
-                <EmailView email={email} onOpenAttachment={handleUpload} />
+                <EmailView
+                  email={email}
+                  onOpenAttachment={handleUpload}
+                  zoom={zoom}
+                  fullscreen={viewMode === 'fullscreen'}
+                  onExitFullscreen={handleFullscreenExit}
+                />
               </Suspense>
             </ErrorBoundary>
           )}

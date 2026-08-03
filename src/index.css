@@ -310,6 +310,29 @@ canvas {
     break-after: auto;
   }
 
+  /* ── Reflowing documents (Markdown, mail) ────────────────────────────────
+     These print as text, not as page images: the browser breaks them across
+     sheets and the output stays vector-sharp and selectable. See
+     services/htmlPrint.ts — it also injects a real `@page` margin, because the
+     zero-margin rule below exists only for the edge-to-edge page images. */
+  body[data-wz-flow-printing] #wz-print-root > * {
+    max-width: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+    color: #111827 !important;
+  }
+
+  /* A heading stranded at the foot of a sheet, or a split code block / table,
+     is the difference between a printout that reads and one that doesn't. */
+  body[data-wz-flow-printing] #wz-print-root :is(h1, h2, h3, h4, h5, h6) {
+    break-after: avoid-page;
+  }
+  body[data-wz-flow-printing] #wz-print-root :is(pre, blockquote, table, img, li) {
+    break-inside: avoid;
+  }
+
   /* Belt-and-suspenders: anything explicitly marked no-print is gone. */
   .no-print {
     display: none !important;
