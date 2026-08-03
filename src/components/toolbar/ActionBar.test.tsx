@@ -11,6 +11,7 @@ function baseProps(over: Partial<ActionBarProps>): ActionBarProps {
   const noop = () => {}
   return {
     hasPdf: true,
+    flowDoc: false,
     appMode: 'editor', viewMode: 'single', zoom: 1, rotation: 0, activeMode: null,
     selectedId: null, isExporting: false, numPages: 3, currentPage: 1, isPanelOpen: false,
     onTogglePanel: noop, onUpload: noop, onOpenUrl: noop, onExportPdf: noop, onExportHtml: noop,
@@ -25,6 +26,7 @@ function baseProps(over: Partial<ActionBarProps>): ActionBarProps {
 
 const defaultProps = {
   hasPdf: true,
+  flowDoc: false,
   appMode: 'viewer' as AppMode,
   viewMode: 'single' as ViewMode,
   zoom: 1,
