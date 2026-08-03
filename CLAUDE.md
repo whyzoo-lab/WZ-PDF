@@ -654,5 +654,20 @@ from `window.innerHeight` minus constants. It used to assume a 44 px toolbar; th
 toolbar is 48 px plus a 1 px border, so it over-estimated the free height by 5 px
 and a single-page document opened just tall enough to raise a scrollbar.
 
+### Type-check with `tsc -b`, not `tsc -p tsconfig.json`
+
+`tsconfig.json` is a **solution file** — `"files": []` plus references to
+`tsconfig.app.json` and `tsconfig.node.json`. So `tsc --noEmit -p tsconfig.json`
+exits 0 without checking a single source file, which reads exactly like a clean
+type-check. `npm run build` and `npm run build:exe` run `tsc -b`, which does
+build the referenced projects, so errors surface only at build time — after the
+change looks verified.
+
+This has already broken one Windows build: a newly-required `ActionBar` prop was
+missing from the test fixtures, `tsc -b` failed with 30+ errors and
+electron-builder was never reached. Note that the referenced projects include
+`*.test.tsx`, so a prop added to a component's public interface must be added to
+its test fixtures too.
+
 ### Claude Code file locks during build
 The `claude.exe` agent process can hold open file handles to `release/win-unpacked/resources/app.asar` from previous Glob/Read tool calls, causing electron-builder to fail with "process cannot access the file because it is being used by another process". Before a `build:exe` run, either restart the Claude Code session or delete `release/` from a separate admin terminal. Also add the project folder to Windows Defender exclusions if real-time scanning is locking newly written asars.
