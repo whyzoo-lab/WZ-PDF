@@ -2,8 +2,8 @@
 export const en = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'Fast and simple PDF',
-  'empty.desktop': 'Drag a PDF · HWP · EML · image here, or click Open / press F2',
-  'empty.mobile': 'Tap or use the Open button to open a PDF · HWP · EML · image',
+  'empty.desktop': 'Drag a PDF · HWP · EML · image · Markdown here, or click Open / press F2',
+  'empty.mobile': 'Tap or use the Open button to open a PDF · HWP · EML · image · Markdown',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': 'Single page',
@@ -150,4 +150,7 @@ export const en = {
   'email.openHere': 'Open here',
   'email.imagesBlocked': 'Blocked {n} remote image(s) — loading them tells the sender you opened this.',
   'email.loadImages': 'Load images',
+  // ── Markdown (.md) ────────────────────────────────────────────────────────
+  'md.contents': 'Contents',
+  'md.renderFailed': 'This Markdown document could not be displayed.',
 } as const

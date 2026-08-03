@@ -373,3 +373,75 @@ canvas {
   font-style: normal;
   font-display: swap;
 }
+
+/* ── Markdown body (.md) ─────────────────────────────────────────────────────
+   Markdown carries no styling of its own, so unlike the mail body (which only
+   needs containing) this has to supply the whole document look. Sanitizing
+   happens in src/services/markdownDoc.ts; everything here is presentation. */
+.wz-md-body > :first-child { margin-top: 0; }
+.wz-md-body > :last-child { margin-bottom: 0; }
+
+.wz-md-body h1, .wz-md-body h2, .wz-md-body h3,
+.wz-md-body h4, .wz-md-body h5, .wz-md-body h6 {
+  font-weight: 650;
+  line-height: 1.3;
+  margin: 1.8em 0 0.6em;
+  /* Anchor links from the contents rail land under nothing, so no offset. */
+  scroll-margin-top: 1rem;
+}
+.wz-md-body h1 { font-size: 1.9em; margin-top: 0.2em; }
+.wz-md-body h2 {
+  font-size: 1.45em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid #e5e7eb;
+}
+.wz-md-body h3 { font-size: 1.2em; }
+.wz-md-body h4 { font-size: 1.05em; }
+.wz-md-body h5, .wz-md-body h6 { font-size: 1em; color: #4b5563; }
+
+.wz-md-body p { margin: 0.9em 0; }
+.wz-md-body a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px; }
+.wz-md-body strong { font-weight: 650; }
+.wz-md-body hr { margin: 2em 0; border: 0; border-top: 1px solid #e5e7eb; }
+.wz-md-body img { max-width: 100%; height: auto; }
+
+.wz-md-body ul, .wz-md-body ol { margin: 0.9em 0; padding-left: 1.6em; }
+.wz-md-body ul { list-style: disc; }
+.wz-md-body ol { list-style: decimal; }
+.wz-md-body li { margin: 0.3em 0; }
+.wz-md-body li > ul, .wz-md-body li > ol { margin: 0.3em 0; }
+
+/* Task lists: the checkbox input is stripped for safety, so the state is drawn. */
+.wz-md-body li.wz-md-task { list-style: none; margin-left: -1.3em; }
+.wz-md-body li.wz-md-task::before {
+  content: ''; display: inline-block; vertical-align: -0.1em;
+  width: 0.95em; height: 0.95em; margin-right: 0.5em;
+  border: 1.5px solid #9ca3af; border-radius: 3px;
+}
+.wz-md-body li.is-done::before {
+  content: '✓'; color: #fff; background: #2563eb; border-color: #2563eb;
+  font-size: 0.8em; line-height: 0.95em; text-align: center;
+}
+
+.wz-md-body blockquote {
+  margin: 1em 0; padding: 0.1em 1em;
+  border-left: 3px solid #d1d5db; color: #4b5563;
+}
+
+.wz-md-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: #f3f4f6; border-radius: 4px; padding: 0.15em 0.35em;
+}
+.wz-md-body pre {
+  margin: 1em 0; padding: 0.9em 1em;
+  background: #1f2937; color: #e5e7eb; border-radius: 6px;
+  /* Long lines scroll inside the block instead of widening the document. */
+  overflow-x: auto;
+}
+.wz-md-body pre code { background: none; padding: 0; color: inherit; font-size: 0.85em; }
+
+/* Wide tables scroll rather than pushing the page sideways. */
+.wz-md-body table { border-collapse: collapse; margin: 1em 0; display: block; overflow-x: auto; max-width: 100%; }
+.wz-md-body th, .wz-md-body td { border: 1px solid #e5e7eb; padding: 0.45em 0.7em; text-align: left; }
+.wz-md-body th { background: #f9fafb; font-weight: 650; }

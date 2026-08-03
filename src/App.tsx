@@ -41,6 +41,9 @@ const PdfViewer = lazy(() => importPdfViewer().then(m => ({ default: m.PdfViewer
 // Messages render outside the page pipeline; its chunk also carries the HTML
 // sanitizer, so it only loads when a .eml is actually opened.
 const EmailView = lazy(() => import('./components/email/EmailView').then(m => ({ default: m.EmailView })))
+// Markdown also renders as a document rather than pages; its chunk carries the
+// Markdown parser, so it only loads when a .md is opened.
+const MarkdownView = lazy(() => import('./components/markdown/MarkdownView').then(m => ({ default: m.MarkdownView })))
 
 /**
  * Pull the viewer chunks in as soon as the shell has painted.
@@ -102,7 +105,7 @@ export default function App() {
   // The viewer viewport — measured by useFitZoom so auto-fit uses real space.
   const mainRef = useRef<HTMLElement>(null)
 
-  const { pdfDoc, numPages, isLoading, error, kind, email } = usePdfDocument(file)
+  const { pdfDoc, numPages, isLoading, error, kind, email, markdown } = usePdfDocument(file)
   const {
     annotations,
     selectedId,
@@ -500,7 +503,7 @@ export default function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp"
+        accept="application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp,.md,.markdown,text/markdown"
         className="hidden"
         onChange={e => {
           const f = e.target.files?.[0]
@@ -569,7 +572,7 @@ export default function App() {
           )}
           {/* Drag/Open prompt — hidden in embed mode (can't drop into an iframe;
               the PDF auto-loads from ?url). */}
-          {!pdfDoc && !email && !isLoading && !error && !embed && (
+          {!pdfDoc && !email && markdown === null && !isLoading && !error && !embed && (
             <div
               className="flex flex-col items-center justify-center h-full gap-3 text-gray-400 select-none cursor-pointer px-6 text-center"
               onClick={handleMainDoubleClick}
@@ -596,6 +599,13 @@ export default function App() {
                 {t('url.loading')}
               </div>
             )
+          )}
+          {markdown !== null && (
+            <ErrorBoundary>
+              <Suspense fallback={null}>
+                <MarkdownView source={markdown} filename={file?.name ?? 'document.md'} />
+              </Suspense>
+            </ErrorBoundary>
           )}
           {email && (
             <ErrorBoundary>

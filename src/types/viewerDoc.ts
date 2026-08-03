@@ -1,6 +1,6 @@
 /** Which engine produced the document. `eml` has no ViewerDoc — a message
  *  is reflowing HTML, not pages, so it renders outside the page pipeline. */
-export type DocKind = 'pdf' | 'hwp' | 'eml' | 'image'
+export type DocKind = 'pdf' | 'hwp' | 'eml' | 'image' | 'md'
 
 export interface ViewerViewport { width: number; height: number; scale: number }
 

@@ -11,6 +11,8 @@ interface UsePdfDocumentReturn {
   kind: DocKind
   /** Set only when kind === 'eml'; pdfDoc stays null in that case. */
   email: ParsedEmail | null
+  /** Raw Markdown source; set only when kind === 'md' (pdfDoc stays null). */
+  markdown: string | null
 }
 
 export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
@@ -20,37 +22,53 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
   const [error, setError] = useState<string | null>(null)
   const [kind, setKind] = useState<DocKind>('pdf')
   const [email, setEmail] = useState<ParsedEmail | null>(null)
+  const [markdown, setMarkdown] = useState<string | null>(null)
 
   useEffect(() => {
     if (!file) {
       // Clearing document state when the source file is removed — intentional
       // effect-driven reset, not a cascading-render smell.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPdfDoc(null); setNumPages(0); setIsLoading(false); setError(null); setKind('pdf'); setEmail(null)
+      setPdfDoc(null); setNumPages(0); setIsLoading(false); setError(null); setKind('pdf'); setEmail(null); setMarkdown(null)
       return
     }
     let cancelled = false
     let loadedDoc: ViewerDoc | null = null
     setIsLoading(true); setError(null)
 
-    type Loaded = { doc: ViewerDoc | null; kind: DocKind; email: ParsedEmail | null }
+    type Loaded = {
+      doc: ViewerDoc | null; kind: DocKind
+      email: ParsedEmail | null; markdown: string | null
+    }
     file.arrayBuffer().then(async (buffer): Promise<Loaded> => {
       const type = detectDocType(file.name, buffer)
       if (type === 'eml') {
         // Messages skip the page pipeline entirely — see EmailView.
         const { parseEml } = await import('../services/emlParser')
-        return { doc: null, kind: 'eml', email: parseEml(buffer) }
+        return { doc: null, kind: 'eml', email: parseEml(buffer), markdown: null }
+      }
+      if (type === 'md') {
+        // Markdown is text, so it needs decoding rather than parsing. Most files
+        // are UTF-8; a strict decode that throws is how we notice the ones that
+        // aren't (Korean notes are still commonly EUC-KR/CP949).
+        let text: string
+        try {
+          text = new TextDecoder('utf-8', { fatal: true }).decode(buffer)
+        } catch {
+          text = new TextDecoder('euc-kr', { fatal: false }).decode(buffer)
+        }
+        return { doc: null, kind: 'md', email: null, markdown: text }
       }
       if (type === 'image') {
         // Images are page-like, so they become a one-page ViewerDoc and reuse
         // the whole viewer/annotate/export pipeline unchanged.
         const { createImageViewerDoc } = await import('../services/imageDocAdapter')
-        return { doc: await createImageViewerDoc(buffer, file.type), kind: 'image', email: null }
+        return { doc: await createImageViewerDoc(buffer, file.type), kind: 'image', email: null, markdown: null }
       }
       if (type === 'hwp') {
         const { loadHwp } = await import('../services/hwpEngine')
         const { createHwpViewerDoc } = await import('../services/hwpDocAdapter')
-        return { doc: createHwpViewerDoc(await loadHwp(buffer)), kind: 'hwp', email: null }
+        return { doc: createHwpViewerDoc(await loadHwp(buffer)), kind: 'hwp', email: null, markdown: null }
       }
       // PDF (or unknown → try pdfjs, which errors clearly on non-PDF).
       // pdfjs is imported HERE rather than at module scope so its ~400 KB chunk
@@ -90,15 +108,16 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         cMapUrl: new URL('cmaps/', new URL('./', document.baseURI)).href,
         cMapPacked: true, // pdfjs ships .bcmap (packed) CMaps
       }).promise
-      return { doc: doc as unknown as ViewerDoc, kind: 'pdf', email: null }
+      return { doc: doc as unknown as ViewerDoc, kind: 'pdf', email: null, markdown: null }
     })
-      .then(({ doc, kind, email }) => {
+      .then(({ doc, kind, email, markdown }) => {
         loadedDoc = doc
         if (cancelled) { doc?.destroy(); return }
         setPdfDoc(doc)
         setNumPages(doc?.numPages ?? 0)
         setKind(kind)
         setEmail(email)
+        setMarkdown(markdown)
         setIsLoading(false)
       })
       .catch(err => {
@@ -116,5 +135,5 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
     }
   }, [file])
 
-  return { pdfDoc, numPages, isLoading, error, kind, email }
+  return { pdfDoc, numPages, isLoading, error, kind, email, markdown }
 }

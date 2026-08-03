@@ -2,8 +2,8 @@
 export const ko = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'PDF를 쉽고 빠르게',
-  'empty.desktop': 'PDF · HWP · EML · 이미지를 여기에 드래그하거나 Open 버튼 또는 F2를 누르세요',
-  'empty.mobile': '탭하거나 Open 버튼으로 PDF · HWP · EML · 이미지를 여세요',
+  'empty.desktop': 'PDF · HWP · EML · 이미지 · Markdown을 여기에 드래그하거나 Open 버튼 또는 F2를 누르세요',
+  'empty.mobile': '탭하거나 Open 버튼으로 PDF · HWP · EML · 이미지 · Markdown을 여세요',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': '한 장 보기',
@@ -150,4 +150,7 @@ export const ko = {
   'email.openHere': '뷰어에서 열기',
   'email.imagesBlocked': '외부 이미지 {n}개를 차단했습니다. 발신자에게 열람 사실이 알려질 수 있습니다.',
   'email.loadImages': '이미지 표시',
+  // ── Markdown (.md) ────────────────────────────────────────────────────────
+  'md.contents': '목차',
+  'md.renderFailed': '이 마크다운 문서를 표시할 수 없습니다.',
 } as const

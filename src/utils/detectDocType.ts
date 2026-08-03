@@ -21,9 +21,11 @@ function startsWith(bytes: Uint8Array, sig: number[]): boolean {
  * extension) so browser MIME quirks don't reject valid files.
  */
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'avif', 'ico']
+const MARKDOWN_EXTS = ['md', 'markdown', 'mdown', 'mkd']
 
 export function classifyDocFile(file: File): {
-  isPdf: boolean; isHwp: boolean; isEml: boolean; isImage: boolean; supported: boolean
+  isPdf: boolean; isHwp: boolean; isEml: boolean; isImage: boolean; isMarkdown: boolean
+  supported: boolean
 } {
   const name = file.name.toLowerCase()
   const ext = name.split('.').pop() ?? ''
@@ -31,7 +33,11 @@ export function classifyDocFile(file: File): {
   const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
   const isEml = file.type === 'message/rfc822' || name.endsWith('.eml')
   const isImage = file.type.startsWith('image/') || IMAGE_EXTS.includes(ext)
-  return { isPdf, isHwp, isEml, isImage, supported: isPdf || isHwp || isEml || isImage }
+  const isMarkdown = file.type === 'text/markdown' || MARKDOWN_EXTS.includes(ext)
+  return {
+    isPdf, isHwp, isEml, isImage, isMarkdown,
+    supported: isPdf || isHwp || isEml || isImage || isMarkdown,
+  }
 }
 
 /**
@@ -51,7 +57,7 @@ function looksLikeEmail(head: string): boolean {
 export function detectDocType(
   name: string,
   bytes: ArrayBuffer,
-): 'pdf' | 'hwp' | 'eml' | 'image' | 'unknown' {
+): 'pdf' | 'hwp' | 'eml' | 'image' | 'md' | 'unknown' {
   const head = new Uint8Array(bytes.slice(0, 16))
   const ext = name.toLowerCase().split('.').pop() ?? ''
 
@@ -87,5 +93,7 @@ export function detectDocType(
   if (ext === 'hwp' || ext === 'hwpx') return 'hwp'
   if (ext === 'eml') return 'eml'
   if (IMAGE_EXTS.includes(ext)) return 'image'
+  // Markdown is plain text with no signature, so the name is all we have.
+  if (MARKDOWN_EXTS.includes(ext)) return 'md'
   return 'unknown'
 }
