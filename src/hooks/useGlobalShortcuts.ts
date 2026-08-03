@@ -66,7 +66,7 @@ export function useGlobalShortcuts({
       }
       // Ctrl/Cmd+F → open the find bar (replaces the browser's native find).
       // Highlighting is single-view only, so switch out of grid/spread.
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && pdfDoc && viewMode !== 'fullscreen') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && (pdfDoc || flowDoc) && viewMode !== 'fullscreen') {
         e.preventDefault()
         if (viewMode === 'grid' || viewMode === 'spread') setViewMode('single')
         setShowSearch(true)

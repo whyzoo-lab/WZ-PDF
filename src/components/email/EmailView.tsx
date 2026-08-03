@@ -81,6 +81,18 @@ export function EmailView({
 
   const hasBody = body.html.trim().length > 0
 
+  // Memoized so React can bail out of this subtree when nothing about the
+  // message changed. Without it, every re-render — a zoom click, a search
+  // keystroke — re-runs the `dangerouslySetInnerHTML` assignment, which
+  // replaces every node in the body: the reader's text selection disappears
+  // and any Range held over the content (find-in-document) collapses.
+  const renderedBody = useMemo(() => (
+    <div
+      className="wz-email-body px-6 py-5 text-[0.95em] text-gray-900 break-words"
+      dangerouslySetInnerHTML={{ __html: body.html }}
+    />
+  ), [body.html])
+
   const message = (
     // Zoom has no page to scale here, so it scales the type. Everything inside
     // is sized in `em` for that reason — a Tailwind `text-sm` would be rem-based
@@ -127,12 +139,7 @@ export function EmailView({
         )}
 
         {/* Body. Sanitized in emailHtml.ts — see that module for what is stripped. */}
-        {hasBody ? (
-          <div
-            className="wz-email-body px-6 py-5 text-[0.95em] text-gray-900 break-words"
-            dangerouslySetInnerHTML={{ __html: body.html }}
-          />
-        ) : (
+        {hasBody ? renderedBody : (
           <p className="px-6 py-8 text-[0.92em] text-gray-500 text-center">{t('email.noBody')}</p>
         )}
 

@@ -205,6 +205,25 @@ fullscreen work for everything.
   page-agnostic, so pen/highlighter/arrow/laser/spotlight and the ESC two-step
   behave identically to a PDF presentation.
 
+- **Find (`Ctrl+F`)** reuses the same `SearchBar`; only the engine differs
+  (`hooks/useFlowSearch.ts`). It walks the marked element's text nodes and paints
+  matches through the **CSS Custom Highlight API** — mail and Markdown bodies are
+  attacker-controlled HTML that DOMPurify has already vetted, and the usual
+  "wrap matches in `<mark>`" trick would mean rewriting that vetted DOM on every
+  keystroke. Highlights come from `Range` objects instead, so the document is
+  never touched (styled in `index.css` via `::highlight()`; without the API,
+  Chromium <105, it still finds and scrolls, it just can't paint). Text is
+  flattened with a `
+` at every block boundary so a query cannot match across
+  the gap between two paragraphs.
+
+  This is also why **both views memoize their body element**. React re-runs the
+  `dangerouslySetInnerHTML` assignment whenever the subtree re-renders, which
+  replaces every node in it: any `Range` held over the content collapses, and —
+  independently of search — the reader's own text selection vanishes on something
+  as ordinary as a zoom click. `useMemo` on the element lets React bail out of
+  the subtree entirely.
+
 Still page-only, and deliberately: **export**. A Markdown or mail → PDF that is
 worth shipping needs real text layout (the HWP exporter's problem, minus the
 engine that already knows the geometry), so the export menu stays hidden here

@@ -39,7 +39,7 @@ OCR runtime. Ships with an optional
 - ✉️ **Open `.eml` mail** — headers, body and **attachments you can save**, with Korean encodings (EUC-KR bodies, encoded subjects and filenames) handled properly. Remote images are blocked until you ask, so opening a message doesn't report back to the sender.
 - 🖼️ **Images too** — jpg / png / bmp / gif / webp open as documents, so zoom, annotation, OCR and every export just work.
 - 📝 **Markdown as a document — and editable** — `.md` renders as a formatted page (headings, tables, code, task lists) with a contents rail that follows you as you scroll. Flip the padlock and you get the raw source, tags and all, to edit and save back.
-- 🖨️ **Mail and Markdown print, zoom and present too** — they print as *text*, so the output stays sharp and selectable instead of being a picture of a page, and F5 puts them fullscreen with the same presenter tools as a PDF.
+- 🖨️ **Mail and Markdown print, zoom, search and present too** — they print as *text*, so the output stays sharp and selectable instead of being a picture of a page; `Ctrl+F` finds across them, and F5 puts them fullscreen with the same presenter tools as a PDF.
 - 🎯 **Made for presenting** — fullscreen mode with ZoomIt-style presenter tools (pen, highlighter, arrow, laser pointer, spotlight zoom).
 - 🔎 **On-device OCR** — recognize text in scanned pages and images, **fully offline** (Korean + English). Plus **Ctrl-drag any region → OCR → clipboard**.
 - 🧩 **Embed anywhere** — drop the viewer into any website with a single `<iframe>` (see below).

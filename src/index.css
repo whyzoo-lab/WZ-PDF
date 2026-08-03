@@ -344,6 +344,18 @@ canvas {
   margin: 0;
 }
 
+/* ── Find-in-document, reflowing formats (see hooks/useFlowSearch.ts) ─────
+   Painted from Range objects through the CSS Custom Highlight API, so the
+   sanitized mail / Markdown DOM is never rewritten to insert <mark> elements. */
+::highlight(wz-find) {
+  background-color: #fde68a;
+  color: #111827;
+}
+::highlight(wz-find-active) {
+  background-color: #f59e0b;
+  color: #111827;
+}
+
 /* ── Message body (.eml) ─────────────────────────────────────────────────────
    Mail arrives with its own markup and inline styles, written for some other
    client's width. These rules only stop it from breaking the surrounding

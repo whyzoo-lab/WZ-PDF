@@ -70,6 +70,22 @@ export function MarkdownView({
   const doc = current?.doc ?? null
   const failed = current !== null && current.doc === null
 
+  // Memoized so React can bail out of this subtree when nothing about the
+  // document changed. Without it, every re-render — a zoom click, a search
+  // keystroke — re-runs the `dangerouslySetInnerHTML` assignment, which
+  // replaces every node in the body: the reader's text selection disappears
+  // and any Range held over the content (find-in-document) collapses.
+  const renderedBody = useMemo(() => (
+    doc && (
+      <div
+        className="wz-md-body leading-7 text-gray-900"
+        // Sanitized in services/markdownDoc.ts — see that module for what is
+        // stripped and why images are allowed here but not in mail.
+        dangerouslySetInnerHTML={{ __html: doc.html }}
+      />
+    )
+  ), [doc])
+
   // Only headings shallow enough to be useful; H4+ makes the rail noisy.
   const outline = useMemo(() => (doc?.outline ?? []).filter(o => o.level <= 3), [doc])
   const showOutline = !editing && outline.length >= OUTLINE_MIN_HEADINGS
@@ -197,14 +213,7 @@ export function MarkdownView({
     )
   }
 
-  const body = (
-    <div
-      className="wz-md-body leading-7 text-gray-900"
-      // Sanitized in services/markdownDoc.ts — see that module for what is
-      // stripped and why images are allowed here but not in mail.
-      dangerouslySetInnerHTML={{ __html: doc.html }}
-    />
-  )
+  const body = renderedBody
 
   // ── Presenting: one continuous document, scrolled, with the presenter tools ─
   if (fullscreen) {

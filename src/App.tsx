@@ -11,6 +11,7 @@ import { useOcr } from './hooks/useOcr'
 import { useSearch } from './hooks/useSearch'
 import { useOpenUrl } from './hooks/useOpenUrl'
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
+import { useFlowSearch } from './hooks/useFlowSearch'
 import { SearchBar } from './components/SearchBar'
 import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
@@ -132,6 +133,10 @@ export default function App() {
     const r = ocr.ocrResults.get(page)
     return r && r.status === 'done' ? r.words.map(w => w.text) : undefined
   })
+  // Find-in-document comes in two flavours because the documents do: pdfjs text
+  // items for pages, live DOM for the reflowing formats. `findBar` picks the one
+  // that matches what is open, so the SearchBar itself stays format-agnostic.
+  const flowSearch = useFlowSearch(flowDoc)
   const { handlePrint, isPrinting, printProgress, previewPages, confirmPrint, cancelPrint } = usePrint({ pdfDoc, numPages, annotations })
   const {
     isExporting,
@@ -283,7 +288,8 @@ export default function App() {
     setViewMode('single')
     setShowSearch(false)
     search.clear()
-  }, [setActiveMode, search])
+    flowSearch.clear()
+  }, [setActiveMode, search, flowSearch])
 
   /** Main upload handler — accepts PDF and HWP/HWPX files. */
   const handleUpload = useCallback((f: File) => {
@@ -481,6 +487,20 @@ export default function App() {
       () => showToast(t('region.copyFailed')),
     )
   }, [showToast])
+
+  // One shape for the find bar, whichever engine is behind it. The DOM search
+  // is synchronous, so it has no "searching" state to report.
+  const findBar = flowDoc
+    ? { ...flowSearch, isSearching: false }
+    : {
+        total: search.matches.length,
+        activeIndex: search.activeIndex,
+        isSearching: search.isSearching,
+        run: search.run,
+        next: search.next,
+        prev: search.prev,
+        clear: search.clear,
+      }
 
   const actionBarProps = {
     hasPdf: !!pdfDoc,
@@ -704,15 +724,15 @@ export default function App() {
       </div>
 
       {/* Find bar (Ctrl+F) */}
-      {showSearch && pdfDoc && (
+      {showSearch && (pdfDoc || flowDoc) && (
         <SearchBar
-          total={search.matches.length}
-          activeIndex={search.activeIndex}
-          isSearching={search.isSearching}
-          onChange={q => search.run(q)}
-          onNext={search.next}
-          onPrev={search.prev}
-          onClose={() => { setShowSearch(false); search.clear() }}
+          total={findBar.total}
+          activeIndex={findBar.activeIndex}
+          isSearching={findBar.isSearching}
+          onChange={findBar.run}
+          onNext={findBar.next}
+          onPrev={findBar.prev}
+          onClose={() => { setShowSearch(false); findBar.clear() }}
         />
       )}
 
