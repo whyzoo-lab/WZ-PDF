@@ -11,5 +11,5 @@
     "esModuleInterop": true
   },
   "include": ["electron/**/*"],
-  "exclude": ["electron/**/*.js"]
+  "exclude": ["electron/**/*.js", "electron/**/*.test.ts"]
 }

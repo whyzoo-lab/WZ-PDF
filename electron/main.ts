@@ -1,12 +1,32 @@
 import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session, protocol, net } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
+import { Readable } from 'node:stream'
+import { pathToFileURL } from 'node:url'
 import path from 'path'
 import fs from 'fs'
+import {
+  FETCH_TIMEOUT_MS,
+  MAX_DOCUMENT_BYTES,
+  MAX_REDIRECTS,
+  assertPublicHttpUrl,
+  hasSupportedDocumentSignature,
+  isTrustedRendererUrl,
+  isTrustedUpdateUrl,
+  parseHttpUrl,
+  resolveAppAssetPath,
+} from './security'
 
 let win: BrowserWindow | null = null
 let pendingFile: string | null = null
 
 // ── Security limits ────────────────────────────────────────────────────────
-const MAX_FILE_SIZE = 500 * 1024 * 1024  // 500 MB — defensive cap on read-file IPC
+const MAX_FILE_SIZE = MAX_DOCUMENT_BYTES
+
+function assertTrustedIpcSender(event: IpcMainInvokeEvent): void {
+  if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url)) {
+    throw new Error('Untrusted IPC sender')
+  }
+}
 
 // ── Production-only Content Security Policy ────────────────────────────────
 // Dev mode (Vite + HMR) needs `unsafe-eval`/WebSocket which would weaken CSP.
@@ -75,18 +95,26 @@ const APP_MIME: Record<string, string> = {
 function serveAppProtocol() {
   const dist = path.join(__dirname, '..', 'dist')
   protocol.handle('app', async (request) => {
-    const url = new URL(request.url)
-    let pathname = decodeURIComponent(url.pathname)
-    if (pathname === '/' || pathname === '') pathname = '/index.html'
-    const filePath = path.normalize(path.join(dist, pathname))
-    // Never serve outside the dist directory.
-    if (!filePath.startsWith(dist)) return new Response('forbidden', { status: 403 })
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return new Response('method not allowed', { status: 405 })
+    }
+    const filePath = resolveAppAssetPath(dist, request.url)
+    if (!filePath) return new Response('forbidden', { status: 403 })
     try {
-      const data = await fs.promises.readFile(filePath)
+      const stat = await fs.promises.stat(filePath)
+      if (!stat.isFile()) return new Response('not found', { status: 404 })
       const type = APP_MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
-      return new Response(data, {
+      const body = request.method === 'HEAD'
+        ? null
+        : Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream<Uint8Array>
+      return new Response(body, {
         status: 200,
-        headers: { 'Content-Type': type, 'Content-Security-Policy': PROD_CSP },
+        headers: {
+          'Content-Type': type,
+          'Content-Length': String(stat.size),
+          'Content-Security-Policy': PROD_CSP,
+          'X-Content-Type-Options': 'nosniff',
+        },
       })
     } catch {
       return new Response('not found', { status: 404 })
@@ -135,10 +163,7 @@ function createWindow() {
   // Block in-app navigation to any URL except the renderer's own origin.
   // PDF content shouldn't be able to navigate the host window.
   win.webContents.on('will-navigate', (event, navUrl) => {
-    const allowed =
-      navUrl.startsWith('app://') ||
-      navUrl.startsWith('http://localhost:5173')
-    if (!allowed) {
+    if (!isTrustedRendererUrl(navUrl)) {
       event.preventDefault()
     }
   })
@@ -146,9 +171,9 @@ function createWindow() {
   // External links (http/https) open in the user's default browser; everything
   // else is blocked. We never open a new Electron window.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      shell.openExternal(url).catch(() => { /* ignore */ })
-    }
+    try {
+      shell.openExternal(parseHttpUrl(url).href).catch(() => { /* ignore */ })
+    } catch { /* unsupported or malformed URL */ }
     return { action: 'deny' }
   })
 
@@ -177,6 +202,19 @@ function createWindow() {
 
 const EMBED_MARKER = Buffer.from('WZPDF_VIEWER_V01')  // 16 bytes
 const EMBED_FOOTER  = 4 + EMBED_MARKER.length          // UInt32LE length + marker = 20 bytes
+
+async function readExactly(
+  handle: Awaited<ReturnType<typeof fs.promises.open>>,
+  buffer: Buffer,
+  position: number,
+): Promise<void> {
+  let offset = 0
+  while (offset < buffer.length) {
+    const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, position + offset)
+    if (bytesRead === 0) throw new Error('Unexpected end of file')
+    offset += bytesRead
+  }
+}
 
 /**
  * Find the portable-SFX template to use as the viewer EXE base.
@@ -230,16 +268,17 @@ async function extractEmbeddedPdf(): Promise<Buffer | null> {
 
     // Footer layout (last 20 bytes): [pdfSize UInt32LE (4)] [EMBED_MARKER (16)]
     const footer = Buffer.allocUnsafe(EMBED_FOOTER)
-    await handle.read(footer, 0, EMBED_FOOTER, stat.size - EMBED_FOOTER)
+    await readExactly(handle, footer, stat.size - EMBED_FOOTER)
     if (!footer.subarray(4).equals(EMBED_MARKER)) return null
 
     const pdfSize = footer.readUInt32LE(0)
-    if (pdfSize === 0) return null
+    if (pdfSize === 0 || pdfSize > MAX_FILE_SIZE) return null
     const pdfOffset = stat.size - EMBED_FOOTER - pdfSize
     if (pdfOffset < 0) return null
 
     const pdf = Buffer.alloc(pdfSize)   // dedicated ArrayBuffer (exact size for IPC transfer)
-    await handle.read(pdf, 0, pdfSize, pdfOffset)
+    await readExactly(handle, pdf, pdfOffset)
+    if (!hasSupportedDocumentSignature(pdf) || pdf.subarray(0, 4).toString('ascii') !== '%PDF') return null
     console.log('[WZ PDF] Embedded PDF detected — size:', pdfSize, 'bytes')
     return pdf
   } catch (err) {
@@ -251,7 +290,19 @@ async function extractEmbeddedPdf(): Promise<Buffer | null> {
 }
 
 // ── IPC: export-exe ─────────────────────────────────────────────────────────
-ipcMain.handle('export-exe', async (_event, pdfData: ArrayBuffer) => {
+ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
+  assertTrustedIpcSender(event)
+  if (!(pdfData instanceof ArrayBuffer)) {
+    throw new Error('Invalid PDF data')
+  }
+  const pdfBytes = new Uint8Array(pdfData)
+  if (pdfBytes.byteLength === 0 || pdfBytes.byteLength > MAX_FILE_SIZE) {
+    throw new Error(`PDF must be between 1 byte and ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`)
+  }
+  if (pdfBytes[0] !== 0x25 || pdfBytes[1] !== 0x50 || pdfBytes[2] !== 0x44 || pdfBytes[3] !== 0x46) {
+    throw new Error('Invalid PDF signature')
+  }
+
   const baseExe = findViewerTemplate()
   if (!baseExe) {
     return {
@@ -271,15 +322,23 @@ ipcMain.handle('export-exe', async (_event, pdfData: ArrayBuffer) => {
   if (canceled || !filePath) return { success: false, canceled: true }
 
   try {
-    const exeBytes  = fs.readFileSync(baseExe)
-    const pdfBytes  = Buffer.from(pdfData)
     const sizeBytes = Buffer.allocUnsafe(4)
-    sizeBytes.writeUInt32LE(pdfBytes.length)
+    sizeBytes.writeUInt32LE(pdfBytes.byteLength)
 
-    const output = Buffer.concat([exeBytes, pdfBytes, sizeBytes, EMBED_MARKER])
-    fs.writeFileSync(filePath, output)
+    if (path.resolve(filePath) === path.resolve(baseExe)) {
+      throw new Error('The viewer template cannot overwrite itself')
+    }
 
-    console.log('[WZ PDF] Viewer EXE exported to:', filePath, '— total size:', output.length)
+    // Copy and append asynchronously. The old implementation synchronously
+    // read the whole 140MB+ template and then Buffer.concat duplicated it,
+    // blocking Electron's main loop and temporarily consuming hundreds of MB.
+    await fs.promises.copyFile(baseExe, filePath)
+    await fs.promises.appendFile(filePath, pdfBytes)
+    await fs.promises.appendFile(filePath, sizeBytes)
+    await fs.promises.appendFile(filePath, EMBED_MARKER)
+
+    const outputSize = (await fs.promises.stat(filePath)).size
+    console.log('[WZ PDF] Viewer EXE exported to:', filePath, '— total size:', outputSize)
     return { success: true, outputPath: filePath }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -299,49 +358,73 @@ ipcMain.handle('export-exe', async (_event, pdfData: ArrayBuffer) => {
 //   - path resolves to a real, regular file
 //   - size is below MAX_FILE_SIZE
 // ── IPC: fetch-url ───────────────────────────────────────────────────────
-// Download a PDF from an http(s) URL in the main process. Unlike the renderer,
-// the main process isn't bound by CORS, so this works for any reachable host.
-// Hardened: only http/https, follows the same MAX_FILE_SIZE cap, and verifies
-// the response looks like a PDF.
-ipcMain.handle('fetch-url', async (_event, rawUrl: unknown): Promise<ArrayBuffer> => {
-  if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
-    throw new Error('Invalid URL')
-  }
-  let url: URL
-  try {
-    url = new URL(rawUrl)
-  } catch {
-    throw new Error('Malformed URL')
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error('Only http(s) URLs are allowed')
-  }
-  const res = await fetch(url.href, { redirect: 'follow' })
-  if (!res.ok) throw new Error(`Download failed (HTTP ${res.status})`)
+// Download a document from a public http(s) URL in the main process. Redirects
+// are validated individually, response time/size are bounded, and the file
+// signature is checked before bytes cross the IPC boundary.
+async function fetchRemoteDocument(rawUrl: unknown): Promise<ArrayBuffer> {
+  let url = await assertPublicHttpUrl(rawUrl)
+  const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  let response: Response | null = null
 
-  const len = Number(res.headers.get('content-length') ?? '0')
-  if (len > MAX_FILE_SIZE) {
-    throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
+  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+    response = await fetch(url.href, { redirect: 'manual', signal })
+    if (![301, 302, 303, 307, 308].includes(response.status)) break
+
+    const location = response.headers.get('location')
+    await response.body?.cancel()
+    if (!location || redirects === MAX_REDIRECTS) throw new Error('Too many redirects')
+    url = await assertPublicHttpUrl(new URL(location, url).href)
   }
-  const buf = await res.arrayBuffer()
-  if (buf.byteLength > MAX_FILE_SIZE) {
-    throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
+
+  if (!response || !response.ok) {
+    throw new Error(`Download failed (HTTP ${response?.status ?? 0})`)
   }
-  // Sanity-check magic bytes for supported document types:
-  //   PDF  → starts with '%PDF' (0x25 0x50 0x44 0x46)
-  //   HWP  → OLE2 compound-doc header (D0 CF 11 E0 A1 B1 1A E1)
-  //   HWPX → ZIP archive (50 4B 03 04) — HWPX is a zipped XML format
-  // Renderer-side detectDocType still does the authoritative routing; this
-  // check just prevents the IPC from rejecting valid HWP/HWPX bytes.
-  const head = new Uint8Array(buf.slice(0, 8))
-  const isPdf  = head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46
-  const isHwp  = head[0] === 0xD0 && head[1] === 0xCF && head[2] === 0x11 && head[3] === 0xE0 &&
-                 head[4] === 0xA1 && head[5] === 0xB1 && head[6] === 0x1A && head[7] === 0xE1
-  const isHwpx = head[0] === 0x50 && head[1] === 0x4B && head[2] === 0x03 && head[3] === 0x04
-  if (!isPdf && !isHwp && !isHwpx) {
+
+  const contentLength = response.headers.get('content-length')
+  if (contentLength) {
+    const declaredBytes = Number(contentLength)
+    if (!Number.isSafeInteger(declaredBytes) || declaredBytes < 0 || declaredBytes > MAX_FILE_SIZE) {
+      await response.body?.cancel()
+      throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
+    }
+  }
+  if (!response.body) throw new Error('Download returned an empty response')
+
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+  const reader = response.body.getReader()
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      totalBytes += value.byteLength
+      if (totalBytes > MAX_FILE_SIZE) {
+        throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
+      }
+      chunks.push(value)
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => { /* ignore cancellation failure */ })
+    throw error
+  } finally {
+    reader.releaseLock()
+  }
+
+  const bytes = new Uint8Array(totalBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  if (!hasSupportedDocumentSignature(bytes)) {
     throw new Error('The URL did not return a PDF, HWP, or HWPX file')
   }
-  return buf
+  return bytes.buffer
+}
+
+ipcMain.handle('fetch-url', async (event, rawUrl: unknown): Promise<ArrayBuffer> => {
+  assertTrustedIpcSender(event)
+  return fetchRemoteDocument(rawUrl)
 })
 
 /** Returns true if the lower-cased path ends with one of the allowed document extensions. */
@@ -349,7 +432,8 @@ function isAllowedDocExtension(lowerPath: string): boolean {
   return lowerPath.endsWith('.pdf') || lowerPath.endsWith('.hwp') || lowerPath.endsWith('.hwpx')
 }
 
-ipcMain.handle('read-file', async (_event, filePath: unknown): Promise<ArrayBuffer> => {
+ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffer> => {
+  assertTrustedIpcSender(event)
   if (typeof filePath !== 'string' || filePath.length === 0) {
     throw new Error('Invalid file path')
   }
@@ -364,22 +448,32 @@ ipcMain.handle('read-file', async (_event, filePath: unknown): Promise<ArrayBuff
   if (!isAllowedDocExtension(real.toLowerCase())) {
     throw new Error('Resolved path is not a .pdf, .hwp, or .hwpx file')
   }
-  const stat = await fs.promises.lstat(real)
-  if (!stat.isFile()) {
-    throw new Error('Path is not a regular file')
+  const handle = await fs.promises.open(real, 'r')
+  try {
+    // Stat and read through the same handle. Reading exactly the validated
+    // size prevents a file that grows concurrently from bypassing the cap.
+    const stat = await handle.stat()
+    if (!stat.isFile()) throw new Error('Path is not a regular file')
+    if (stat.size === 0 || stat.size > MAX_FILE_SIZE) {
+      throw new Error(`File must be between 1 byte and ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`)
+    }
+    const data = Buffer.allocUnsafe(stat.size)
+    await readExactly(handle, data, 0)
+    if (!hasSupportedDocumentSignature(data)) {
+      throw new Error('File content is not a PDF, HWP, or HWPX document')
+    }
+    // Return a fresh ArrayBuffer slice (Buffer view → standalone ArrayBuffer)
+    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+  } finally {
+    await handle.close()
   }
-  if (stat.size > MAX_FILE_SIZE) {
-    throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
-  }
-  const data = await fs.promises.readFile(real)
-  // Return a fresh ArrayBuffer slice (Buffer view → standalone ArrayBuffer)
-  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
 })
 
 // ── IPC: open-help ─────────────────────────────────────────────────────────
 // Opens `help.html` (shipped alongside the renderer build) in the user's
 // default browser via shell.openExternal. Reachable from F1 in the renderer.
-ipcMain.handle('open-help', async (_event, lang?: unknown) => {
+ipcMain.handle('open-help', async (event, lang?: unknown) => {
+  assertTrustedIpcSender(event)
   try {
     // Korean → help.html, anything else → help.en.html. Validate the arg so a
     // compromised renderer can't smuggle an arbitrary filename into the path.
@@ -388,8 +482,7 @@ ipcMain.handle('open-help', async (_event, lang?: unknown) => {
     if (app.isPackaged) {
       // dist/<helpFile> is copied from public/ during vite build
       const helpPath = path.join(__dirname, '..', 'dist', helpFile)
-      // file:// URL with forward slashes works on all platforms
-      url = 'file:///' + helpPath.replace(/\\/g, '/')
+      url = pathToFileURL(helpPath).href
     } else {
       url = `http://localhost:5173/${helpFile}`
     }
@@ -409,7 +502,8 @@ ipcMain.handle('open-help', async (_event, lang?: unknown) => {
 const UPDATE_MANIFEST_URL = 'https://whyzoo.com/WzPDF/version.php'
 const UPDATE_HOST_PREFIX = 'https://whyzoo.com/'
 
-ipcMain.handle('check-update', async () => {
+ipcMain.handle('check-update', async (event) => {
+  assertTrustedIpcSender(event)
   try {
     const res = await net.fetch(UPDATE_MANIFEST_URL, { cache: 'no-store' })
     if (!res.ok) return null
@@ -420,12 +514,12 @@ ipcMain.handle('check-update', async () => {
   }
 })
 
-ipcMain.handle('open-download', async (_event, rawUrl?: unknown) => {
-  // Only ever open the trusted update host — never an arbitrary renderer-supplied URL.
-  const target =
-    typeof rawUrl === 'string' && rawUrl.startsWith(UPDATE_HOST_PREFIX)
-      ? rawUrl
-      : 'https://whyzoo.com/WzPDF/download.php'
+ipcMain.handle('open-download', async (event, rawUrl?: unknown) => {
+  assertTrustedIpcSender(event)
+  // Compare the parsed origin exactly; string prefixes are easy to get subtly wrong.
+  const target = isTrustedUpdateUrl(rawUrl, new URL(UPDATE_HOST_PREFIX).origin)
+    ? String(rawUrl)
+    : 'https://whyzoo.com/WzPDF/download.php'
   await shell.openExternal(target)
   return { success: true }
 })
