@@ -10,7 +10,8 @@
  * Claude to relay to the user.
  */
 
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile, realpath, stat } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { resolve, basename, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
@@ -29,21 +30,62 @@ const require = createRequire(import.meta.url)
 // Set MCP_SANDBOX_DIR to enable enforcement. When unset (local stdio mode)
 // paths are honoured as-is — matching the original single-user behaviour.
 const SANDBOX_DIR = process.env.MCP_SANDBOX_DIR
-  ? resolve(process.env.MCP_SANDBOX_DIR)
+  ? realpathSync(resolve(process.env.MCP_SANDBOX_DIR))
   : null
 
 /** Resolve a caller-supplied path, clamped to the sandbox when configured. */
-function safePath(p: string): string {
+function lexicalSafePath(p: string): string {
   if (!p || typeof p !== 'string') throw new Error('invalid path')
   if (!SANDBOX_DIR) return resolve(p)
   // Treat caller paths as relative TO the sandbox so they can't escape via
   // absolute paths or `..`. After resolve, verify containment.
   const cleaned = p.replace(/^[A-Za-z]:[/\\]+/, '').replace(/^[/\\]+/, '')
   const abs = resolve(SANDBOX_DIR, cleaned)
-  if (abs !== SANDBOX_DIR && !abs.startsWith(SANDBOX_DIR + (process.platform === 'win32' ? '\\' : '/'))) {
+  if (
+    abs !== SANDBOX_DIR &&
+    !abs.startsWith(SANDBOX_DIR + (process.platform === 'win32' ? '\\' : '/'))
+  ) {
     throw new Error(`path escapes sandbox: ${p}`)
   }
   return abs
+}
+
+const MAX_DOCUMENT_BYTES = 500 * 1024 * 1024
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+function assertInsideSandbox(abs: string, original: string): void {
+  if (!SANDBOX_DIR) return
+  const separator = process.platform === 'win32' ? '\\' : '/'
+  if (abs !== SANDBOX_DIR && !abs.startsWith(SANDBOX_DIR + separator)) {
+    throw new Error(`path escapes sandbox: ${original}`)
+  }
+}
+
+/** Resolve symlinks and bound file size before loading caller-controlled data. */
+async function readInputFile(p: string, maxBytes = MAX_DOCUMENT_BYTES): Promise<Buffer> {
+  const canonical = await realpath(lexicalSafePath(p))
+  assertInsideSandbox(canonical, p)
+  const info = await stat(canonical)
+  if (!info.isFile()) throw new Error(`not a regular file: ${p}`)
+  if (info.size > maxBytes) {
+    throw new Error(`file exceeds ${Math.round(maxBytes / 1024 / 1024)}MB limit`)
+  }
+  return readFile(canonical)
+}
+
+/** Validate an output and its real parent to prevent sandbox symlink escapes. */
+async function resolveOutputPath(p: string): Promise<string> {
+  const candidate = lexicalSafePath(p)
+  try {
+    const canonical = await realpath(candidate)
+    assertInsideSandbox(canonical, p)
+    return canonical
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    const parent = await realpath(dirname(candidate))
+    assertInsideSandbox(parent, p)
+    return resolve(parent, basename(candidate))
+  }
 }
 
 // pdfjs needs `workerSrc` pointed at the legacy worker file. In Node it's not
@@ -51,9 +93,11 @@ function safePath(p: string): string {
 // on the main thread by dynamic-import()ing the worker module. That import
 // requires a file:// URL on Windows (a bare `D:\…` path is rejected by the
 // ESM loader), so we resolve to a path and convert via pathToFileURL.
-;(pdfjs as unknown as { GlobalWorkerOptions: { workerSrc: string } })
-  .GlobalWorkerOptions.workerSrc =
-  pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')).href
+;(
+  pdfjs as unknown as { GlobalWorkerOptions: { workerSrc: string } }
+).GlobalWorkerOptions.workerSrc = pathToFileURL(
+  require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
+).href
 
 // ── Common helpers ──────────────────────────────────────────────────────────
 
@@ -72,19 +116,19 @@ async function getKoreanFontBytes(): Promise<Buffer> {
 }
 
 function hasNonLatin(s: string): boolean {
-  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) > 0xFF) return true
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) > 0xff) return true
   return false
 }
 
 async function loadPdf(file: string): Promise<{ doc: PDFDocument; bytes: Uint8Array }> {
-  const bytes = await readFile(safePath(file))
+  const bytes = await readInputFile(file)
   const doc = await PDFDocument.load(bytes)
   return { doc, bytes }
 }
 
 async function savePdf(doc: PDFDocument, out: string): Promise<string> {
   const bytes = await doc.save()
-  const abs = safePath(out)
+  const abs = await resolveOutputPath(out)
   await writeFile(abs, bytes)
   return abs
 }
@@ -135,59 +179,73 @@ async function pdfInfo(args: { file: string }): Promise<string> {
 // ── Tool: pdf_get_text ──────────────────────────────────────────────────────
 
 async function pdfGetText(args: { file: string; pages?: number[] }): Promise<string> {
-  const bytes = await readFile(safePath(args.file))
+  const bytes = await readInputFile(args.file)
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(bytes),
     useWorkerFetch: false,
     useSystemFonts: true,
   })
   const pdf = await loadingTask.promise
-  const targetPages = args.pages ?? Array.from({ length: pdf.numPages }, (_, i) => i + 1)
+  try {
+    const targetPages = args.pages ?? Array.from({ length: pdf.numPages }, (_, i) => i + 1)
 
-  const sections: string[] = []
-  for (const pageNum of targetPages) {
-    if (pageNum < 1 || pageNum > pdf.numPages) continue
-    const page = await pdf.getPage(pageNum)
-    const content = await page.getTextContent()
-    const text = content.items
-      .map(item => ('str' in item ? item.str : ''))
-      .join(' ')
-      .trim()
-    sections.push(`── Page ${pageNum} ──\n${text}`)
+    const sections: string[] = []
+    for (const pageNum of targetPages) {
+      if (pageNum < 1 || pageNum > pdf.numPages) continue
+      const page = await pdf.getPage(pageNum)
+      const content = await page.getTextContent()
+      const text = content.items
+        .map(item => ('str' in item ? item.str : ''))
+        .join(' ')
+        .trim()
+      sections.push(`── Page ${pageNum} ──\n${text}`)
+    }
+    return sections.join('\n\n')
+  } finally {
+    await pdf.destroy()
   }
-  return sections.join('\n\n')
 }
 
 // ── Tool: pdf_search ────────────────────────────────────────────────────────
 
-async function pdfSearch(args: { file: string; query: string; caseSensitive?: boolean }): Promise<string> {
-  const bytes = await readFile(safePath(args.file))
+async function pdfSearch(args: {
+  file: string
+  query: string
+  caseSensitive?: boolean
+}): Promise<string> {
+  const query = typeof args.query === 'string' ? args.query.trim() : ''
+  if (!query) throw new Error('query must not be empty')
+  const bytes = await readInputFile(args.file)
   const pdf = await pdfjs.getDocument({
     data: new Uint8Array(bytes),
     useWorkerFetch: false,
     useSystemFonts: true,
   }).promise
 
-  const needle = args.caseSensitive ? args.query : args.query.toLowerCase()
-  const hits: string[] = []
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const page = await pdf.getPage(p)
-    const content = await page.getTextContent()
-    const text = content.items.map(it => ('str' in it ? it.str : '')).join(' ')
-    const haystack = args.caseSensitive ? text : text.toLowerCase()
-    let from = 0
-    while (true) {
-      const idx = haystack.indexOf(needle, from)
-      if (idx < 0) break
-      const ctxStart = Math.max(0, idx - 40)
-      const ctxEnd = Math.min(text.length, idx + needle.length + 40)
-      const snippet = text.slice(ctxStart, ctxEnd).replace(/\s+/g, ' ').trim()
-      hits.push(`p.${p}: …${snippet}…`)
-      from = idx + needle.length
+  try {
+    const needle = args.caseSensitive ? query : query.toLowerCase()
+    const hits: string[] = []
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p)
+      const content = await page.getTextContent()
+      const text = content.items.map(it => ('str' in it ? it.str : '')).join(' ')
+      const haystack = args.caseSensitive ? text : text.toLowerCase()
+      let from = 0
+      while (true) {
+        const idx = haystack.indexOf(needle, from)
+        if (idx < 0) break
+        const ctxStart = Math.max(0, idx - 40)
+        const ctxEnd = Math.min(text.length, idx + needle.length + 40)
+        const snippet = text.slice(ctxStart, ctxEnd).replace(/\s+/g, ' ').trim()
+        hits.push(`p.${p}: …${snippet}…`)
+        from = idx + needle.length
+      }
     }
+    if (hits.length === 0) return `No matches for "${query}".`
+    return `${hits.length} match(es) for "${query}":\n${hits.join('\n')}`
+  } finally {
+    await pdf.destroy()
   }
-  if (hits.length === 0) return `No matches for "${args.query}".`
-  return `${hits.length} match(es) for "${args.query}":\n${hits.join('\n')}`
 }
 
 // ── Tool: pdf_add_watermark ─────────────────────────────────────────────────
@@ -231,26 +289,22 @@ async function pdfAddWatermark(args: {
 async function pdfAddStamp(args: {
   file: string
   output: string
-  image: string         // path to PNG/JPG
+  image: string // path to PNG/JPG
   page: number
-  x: number             // PDF points from left
-  y: number             // PDF points from BOTTOM (pdf-lib convention)
+  x: number // PDF points from left
+  y: number // PDF points from BOTTOM (pdf-lib convention)
   width: number
   height: number
   rotation?: number
 }): Promise<string> {
   const { doc } = await loadPdf(args.file)
-  const imgBytes = await readFile(safePath(args.image))
+  const imgBytes = await readInputFile(args.image, MAX_IMAGE_BYTES)
 
   // Validate by magic bytes, not just the filename extension — prevents
   // embedding a renamed non-image (or hostile payload) and gives a clear
   // error instead of pdf-lib throwing an opaque parse failure.
-  const MAX_IMAGE_BYTES = 20 * 1024 * 1024
-  if (imgBytes.length > MAX_IMAGE_BYTES) {
-    throw new Error(`image exceeds ${MAX_IMAGE_BYTES / 1024 / 1024}MB limit`)
-  }
-  const isPng = imgBytes[0] === 0x89 && imgBytes[1] === 0x50 &&
-                imgBytes[2] === 0x4e && imgBytes[3] === 0x47
+  const isPng =
+    imgBytes[0] === 0x89 && imgBytes[1] === 0x50 && imgBytes[2] === 0x4e && imgBytes[3] === 0x47
   const isJpg = imgBytes[0] === 0xff && imgBytes[1] === 0xd8 && imgBytes[2] === 0xff
   if (!isPng && !isJpg) {
     throw new Error('image must be a PNG or JPEG (validated by file signature)')
@@ -275,13 +329,13 @@ async function pdfAddTextOverlay(args: {
   output: string
   page: number
   x: number
-  y: number             // pdf-lib bottom-up origin
+  y: number // pdf-lib bottom-up origin
   width: number
   height: number
   text: string
   fontSize?: number
-  color?: string        // text color, default #000000
-  background?: string   // hidden underlying text, default #FFFFFF
+  color?: string // text color, default #000000
+  background?: string // hidden underlying text, default #FFFFFF
 }): Promise<string> {
   const { doc } = await loadPdf(args.file)
   const pickFont = await dualFont(doc)
@@ -314,7 +368,7 @@ async function pdfAddTextOverlay(args: {
 async function pdfSplit(args: {
   file: string
   outputDir: string
-  ranges?: string  // "1-3,5,10-12" — if omitted, splits each page into its own file
+  ranges?: string // "1-3,5,10-12" — if omitted, splits each page into its own file
 }): Promise<string> {
   const { doc } = await loadPdf(args.file)
   const total = doc.getPageCount()
@@ -328,13 +382,17 @@ async function pdfSplit(args: {
       ranges.push({ name: `${base}_p${p}.pdf`, pages: [p] })
     }
   } else {
-    const parts = args.ranges.split(',').map(s => s.trim()).filter(Boolean)
+    const parts = args.ranges
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
     for (const part of parts) {
       const m = /^(\d+)(?:-(\d+))?$/.exec(part)
       if (!m) throw new Error(`invalid range: ${part}`)
       const a = Number(m[1])
       const b = m[2] ? Number(m[2]) : a
-      const lo = Math.min(a, b), hi = Math.max(a, b)
+      const lo = Math.min(a, b),
+        hi = Math.max(a, b)
       const pages: number[] = []
       for (let p = lo; p <= hi; p++) {
         if (p >= 1 && p <= total) pages.push(p)
@@ -346,10 +404,13 @@ async function pdfSplit(args: {
   const written: string[] = []
   for (const r of ranges) {
     const out = await PDFDocument.create()
-    const copied = await out.copyPages(doc, r.pages.map(p => p - 1))
+    const copied = await out.copyPages(
+      doc,
+      r.pages.map(p => p - 1),
+    )
     copied.forEach(p => out.addPage(p))
     const bytes = await out.save()
-    const path = safePath(`${args.outputDir}/${r.name}`)
+    const path = await resolveOutputPath(`${args.outputDir}/${r.name}`)
     await writeFile(path, bytes)
     written.push(path)
   }
@@ -362,7 +423,7 @@ async function pdfMerge(args: { files: string[]; output: string }): Promise<stri
   if (!args.files?.length) throw new Error('files[] is empty')
   const out = await PDFDocument.create()
   for (const f of args.files) {
-    const bytes = await readFile(safePath(f))
+    const bytes = await readInputFile(f)
     const src = await PDFDocument.load(bytes)
     const copied = await out.copyPages(src, src.getPageIndices())
     copied.forEach(p => out.addPage(p))
@@ -373,7 +434,11 @@ async function pdfMerge(args: { files: string[]; output: string }): Promise<stri
 
 // ── Tool: pdf_delete_pages ──────────────────────────────────────────────────
 
-async function pdfDeletePages(args: { file: string; output: string; pages: number[] }): Promise<string> {
+async function pdfDeletePages(args: {
+  file: string
+  output: string
+  pages: number[]
+}): Promise<string> {
   const { doc } = await loadPdf(args.file)
   // Remove in descending order so indices stay valid.
   const sorted = [...args.pages].sort((a, b) => b - a)
@@ -386,14 +451,21 @@ async function pdfDeletePages(args: { file: string; output: string; pages: numbe
 
 // ── Tool: pdf_reorder_pages ─────────────────────────────────────────────────
 
-async function pdfReorderPages(args: { file: string; output: string; newOrder: number[] }): Promise<string> {
+async function pdfReorderPages(args: {
+  file: string
+  output: string
+  newOrder: number[]
+}): Promise<string> {
   const { doc } = await loadPdf(args.file)
   const total = doc.getPageCount()
   if (args.newOrder.length !== total) {
     throw new Error(`newOrder must have ${total} entries, got ${args.newOrder.length}`)
   }
   const fresh = await PDFDocument.create()
-  const copied = await fresh.copyPages(doc, args.newOrder.map(p => p - 1))
+  const copied = await fresh.copyPages(
+    doc,
+    args.newOrder.map(p => p - 1),
+  )
   copied.forEach(p => fresh.addPage(p))
   const path = await savePdf(fresh, args.output)
   return `Reordered ${total} pages → ${path}`
@@ -404,8 +476,8 @@ async function pdfReorderPages(args: { file: string; output: string; newOrder: n
 async function pdfInsertBlank(args: {
   file: string
   output: string
-  afterPage: number   // 0 to prepend
-  width?: number      // PDF points; defaults to A4
+  afterPage: number // 0 to prepend
+  width?: number // PDF points; defaults to A4
   height?: number
 }): Promise<string> {
   const { doc } = await loadPdf(args.file)
@@ -435,14 +507,19 @@ export const tools = [
       type: 'object',
       properties: {
         file: { type: 'string', description: 'Absolute path to the PDF.' },
-        pages: { type: 'array', items: { type: 'number' }, description: 'Page numbers (1-based). Omit for all.' },
+        pages: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Page numbers (1-based). Omit for all.',
+        },
       },
       required: ['file'],
     },
   },
   {
     name: 'pdf_search',
-    description: 'Search for a query string across all pages; returns matches with surrounding context.',
+    description:
+      'Search for a query string across all pages; returns matches with surrounding context.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -491,7 +568,8 @@ export const tools = [
   },
   {
     name: 'pdf_add_text_overlay',
-    description: 'Cover an area with a filled rectangle and draw new text on top (WZ PDF textEdit). Korean supported.',
+    description:
+      'Cover an area with a filled rectangle and draw new text on top (WZ PDF textEdit). Korean supported.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -518,7 +596,10 @@ export const tools = [
       properties: {
         file: { type: 'string' },
         outputDir: { type: 'string', description: 'Existing directory to write output PDFs to.' },
-        ranges: { type: 'string', description: 'Comma-separated ranges, e.g. "1-3,5,10-12". Omit to split per page.' },
+        ranges: {
+          type: 'string',
+          description: 'Comma-separated ranges, e.g. "1-3,5,10-12". Omit to split per page.',
+        },
       },
       required: ['file', 'outputDir'],
     },
@@ -529,7 +610,11 @@ export const tools = [
     inputSchema: {
       type: 'object',
       properties: {
-        files: { type: 'array', items: { type: 'string' }, description: 'PDF paths in merge order.' },
+        files: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'PDF paths in merge order.',
+        },
         output: { type: 'string' },
       },
       required: ['files', 'output'],
@@ -556,7 +641,11 @@ export const tools = [
       properties: {
         file: { type: 'string' },
         output: { type: 'string' },
-        newOrder: { type: 'array', items: { type: 'number' }, description: '1-based permutation of all pages.' },
+        newOrder: {
+          type: 'array',
+          items: { type: 'number' },
+          description: '1-based permutation of all pages.',
+        },
       },
       required: ['file', 'output', 'newOrder'],
     },

@@ -81,6 +81,24 @@ npm start      # 컴파일된 서버 실행
 
 서버 로그는 stderr로 출력 (stdout은 JSON-RPC 전용).
 
+## HTTP 서버 보안 설정
+
+HTTP 전송은 기본적으로 `127.0.0.1`에만 바인딩됩니다.
+
+```bash
+MCP_SANDBOX_DIR=/trusted/workspace npm run start:http
+```
+
+외부 인터페이스에 공개하려면 호스트와 충분히 긴 인증 토큰을 함께 지정해야 합니다.
+토큰 없이 비루프백 주소에 바인딩하려 하면 서버가 시작되지 않습니다.
+
+```bash
+MCP_HOST=0.0.0.0 MCP_SANDBOX_DIR=/trusted/workspace MCP_AUTH_TOKEN=replace-with-a-long-random-token npm run start:http
+```
+
+클라이언트는 `Authorization: Bearer <token>` 헤더를 전송해야 합니다. 샌드박스
+내부의 심볼릭 링크가 외부 경로를 가리키는 경우에도 파일 접근은 거부됩니다.
+
 ## 한글 폰트
 
 워터마크/텍스트 오버레이에 한글이 포함되면 자동으로 Noto Sans KR을 임베드합니다. 영문만 있으면 Helvetica 사용 (출력 PDF 크기 절약). 폰트 파일은 `../public/fonts/NotoSansKR-Regular.otf`에서 읽어요.

@@ -13,6 +13,7 @@
  */
 
 import express, { type Request, type Response } from 'express'
+import { timingSafeEqual } from 'node:crypto'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
@@ -24,9 +25,10 @@ import {
 import { tools, callTool } from './tools.js'
 
 const PORT = Number(process.env.PORT ?? 5051)
+const HOST = process.env.MCP_HOST ?? '127.0.0.1'
 const SANDBOX = process.env.MCP_SANDBOX_DIR
-// Optional shared-secret. When set, every /mcp request must carry
-// `Authorization: Bearer <token>`. Unset = open (LAN-only deployments).
+// Optional on loopback, required on any externally reachable bind address.
+// When set, every /mcp request must carry `Authorization: Bearer <token>`.
 const AUTH_TOKEN = process.env.MCP_AUTH_TOKEN
 
 if (!SANDBOX) {
@@ -35,6 +37,17 @@ if (!SANDBOX) {
     '             Set it to a directory you trust the public to read/write,\n' +
     '             e.g. MCP_SANDBOX_DIR=/opt/wz-pdf-mcp/workspace',
   )
+  process.exit(1)
+}
+
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  console.error('[wz-pdf-mcp] REFUSING TO START — PORT must be an integer from 1 to 65535')
+  process.exit(1)
+}
+
+const isLoopbackHost = HOST === '127.0.0.1' || HOST === '::1' || HOST === 'localhost'
+if (!isLoopbackHost && !AUTH_TOKEN) {
+  console.error('[wz-pdf-mcp] REFUSING TO START — MCP_AUTH_TOKEN is required for non-loopback MCP_HOST')
   process.exit(1)
 }
 
@@ -67,11 +80,14 @@ function buildServer(): Server {
 }
 
 const app = express()
-app.use(express.json({ limit: '50mb' }))  // PDFs can be sizeable when base64'd
+app.disable('x-powered-by')
+// Tool arguments contain paths and settings, not PDF bytes. Keep the JSON
+// boundary small so unauthenticated parsing cannot consume excessive memory.
+app.use(express.json({ limit: '1mb' }))
 
 // Health check for nginx / uptime monitoring (never requires auth).
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, name: 'wz-pdf-mcp', sandbox: SANDBOX, auth: !!AUTH_TOKEN })
+  res.json({ ok: true, name: 'wz-pdf-mcp', sandboxConfigured: true, auth: !!AUTH_TOKEN })
 })
 
 // Bearer-token gate on /mcp when MCP_AUTH_TOKEN is configured. Uses a
@@ -81,12 +97,9 @@ function authorized(req: Request): boolean {
   const header = req.headers['authorization']
   if (typeof header !== 'string' || !header.startsWith('Bearer ')) return false
   const presented = header.slice('Bearer '.length)
-  if (presented.length !== AUTH_TOKEN.length) return false
-  let diff = 0
-  for (let i = 0; i < presented.length; i++) {
-    diff |= presented.charCodeAt(i) ^ AUTH_TOKEN.charCodeAt(i)
-  }
-  return diff === 0
+  const expected = Buffer.from(AUTH_TOKEN)
+  const actual = Buffer.from(presented)
+  return actual.length === expected.length && timingSafeEqual(actual, expected)
 }
 
 // Streamable HTTP transport: a fresh transport+server per request, stateless.
@@ -128,7 +141,7 @@ app.post('/mcp', mcpHandler)
 app.get('/mcp', mcpHandler)
 app.delete('/mcp', mcpHandler)
 
-app.listen(PORT, () => {
-  console.error(`[wz-pdf-mcp] HTTP listening on :${PORT}`)
-  console.error(`[wz-pdf-mcp] sandbox: ${SANDBOX}`)
+app.listen(PORT, HOST, () => {
+  console.error(`[wz-pdf-mcp] HTTP listening on ${HOST}:${PORT}`)
+  console.error('[wz-pdf-mcp] sandbox configured')
 })
