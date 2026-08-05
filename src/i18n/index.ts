@@ -19,6 +19,32 @@ export type MessageKey = keyof typeof en
 const DICTS: Record<Lang, Record<string, string>> = { en, ko }
 const STORAGE_KEY = 'wz-pdf-lang'
 
+/**
+ * Is `localStorage` safe to touch on this origin?
+ *
+ * On the packaged app's custom `app://` origin the **first** `localStorage`
+ * access blocks the renderer's main thread for ~6 seconds while Chromium
+ * initialises DOM Storage for a non-http scheme. Measured on the packaged
+ * build: first `getItem` 5940 ms, every later call 0 ms — and it is specific to
+ * localStorage, since `sessionStorage` (15 ms) and `indexedDB.open` (37 ms) are
+ * fine on the same origin.
+ *
+ * `LANG` is computed while this module is evaluated, so that freeze landed
+ * *before the first paint*: the window sat empty for six seconds on every
+ * launch, showing neither the app nor even app.html's own boot shell. Deferring
+ * the read would not have helped — the cost is in the first access whenever it
+ * happens, so it would just move the freeze somewhere the user is already
+ * interacting.
+ *
+ * The override is a browser affordance anyway: it is set by `?lang=`, and the
+ * desktop app loads `app://bundle/app.html` with no query string, so nothing
+ * can ever write it there. Skipping storage off-http therefore costs the
+ * desktop build nothing and keeps the web build's behaviour identical.
+ */
+export function canPersistOverride(protocol: string | undefined): boolean {
+  return protocol === 'http:' || protocol === 'https:'
+}
+
 function normalize(value: string | null | undefined): Lang | null {
   if (!value) return null
   const v = value.toLowerCase()
@@ -29,19 +55,26 @@ function normalize(value: string | null | undefined): Lang | null {
 
 function detectLang(): Lang {
   if (typeof window !== 'undefined') {
-    // 1) URL ?lang= override — persist it so it survives navigation/reload.
-    try {
-      const param = new URLSearchParams(window.location.search).get('lang')
-      const fromUrl = normalize(param)
-      if (fromUrl) {
-        localStorage.setItem(STORAGE_KEY, fromUrl)
-        return fromUrl
+    const persist = canPersistOverride(window.location.protocol)
+
+    // 1) URL ?lang= override. Read first, and without touching storage, so the
+    //    startup path carries no synchronous I/O at all.
+    const fromUrl = normalize(new URLSearchParams(window.location.search).get('lang'))
+    if (fromUrl) {
+      // Persist it so it survives navigation/reload. Kept in its own try: a
+      // storage failure must not discard the language the user just asked for.
+      if (persist) {
+        try { localStorage.setItem(STORAGE_KEY, fromUrl) } catch { /* private mode */ }
       }
-      // 2) Previously-persisted override.
-      const fromStore = normalize(localStorage.getItem(STORAGE_KEY))
-      if (fromStore) return fromStore
-    } catch {
-      // localStorage can throw in private mode / sandboxed iframes — ignore.
+      return fromUrl
+    }
+
+    // 2) Previously-persisted override.
+    if (persist) {
+      try {
+        const fromStore = normalize(localStorage.getItem(STORAGE_KEY))
+        if (fromStore) return fromStore
+      } catch { /* private mode / sandboxed iframe */ }
     }
   }
   // 3) OS / browser locale.

@@ -497,10 +497,15 @@ Export pipeline (regardless of source):
 
 ### Startup cost (measured, not guessed)
 
-Cold launch splits cleanly: window visible ~0.2 s (consistent), then a highly
-variable wait for the entry bundle, then ~0.05 s to a ready document. All the
-variance is in *getting the renderer's JS loaded* — so that is the only part
-worth optimising.
+Measured end to end on the packaged build over CDP (spawn → the app on screen):
+Chromium up ~0.16 s, `loadURL` issued at ~0.15 s, every critical asset fetched
+by ~0.19 s, React mounted ~0.23 s. There is no meaningful download cost — the
+whole critical path is 271 KB read from a local asar.
+
+**Do not profile this by staring at the window.** The two facts that matter were
+both invisible from the outside and only showed up in a CDP trace: the bytes
+arrive in 190 ms, and the blank window afterwards is main-thread blocking, not
+loading.
 
 - **`app.html` ships an inline first-paint shell** (48 px gray-900 bar over the
   window's own background). Until the bundle runs, `#root` is empty, and the
@@ -515,6 +520,34 @@ worth optimising.
   through first. `electron-builder.json5` therefore excludes `node_modules` and
   `asarUnpack`s the lazily-read binaries (OCR models, wasm, OCR chunks):
   **363 MB → 12.7 MB.**
+
+- **Never touch `localStorage` on the startup path.** On the packaged app's
+  custom `app://` origin the **first** `localStorage` access blocks the
+  renderer's main thread for **~6 seconds** while Chromium initialises DOM
+  Storage for a non-http scheme. Every later access is 0 ms, and it is specific
+  to that one API: on the same origin `sessionStorage` costs 15 ms and
+  `indexedDB.open` 37 ms. The landmine is still there — `localStorage.getItem`
+  in the shipped app still measures ~5.9 s — our code simply no longer steps
+  on it.
+
+  This shipped for a long time. `src/i18n/index.ts` computed `LANG` during
+  module evaluation, and that read `localStorage`, so the freeze landed *before
+  the first paint*: the window sat empty for six seconds on every launch,
+  showing neither the app nor app.html's own boot shell. Deferring the read
+  would not have helped — the cost is in the first access whenever it happens,
+  so it would only have moved the freeze into a moment the user is interacting.
+  `canPersistOverride()` now keeps non-http origins off storage entirely.
+
+  Symptom to recognise: a fixed, suspiciously round delay that is identical
+  across runs and unaffected by `--no-sandbox`, `--disable-gpu`, Electron
+  version or a warm file cache, with all sub-resources already `loadingFinished`
+  long before `DOMContentLoaded`. That shape means blocking work on the main
+  thread, and `Profiler.start`/`stop` across the gap names the function.
+
+- **The portable exe pays ~5.2 s before any of our code runs**, self-extracting
+  its ~114 MB SFX payload to `%TEMP%` on every launch. Nothing in the app can
+  shorten or paint during that window — no process exists yet. The NSIS-installed
+  build does not pay it, which is why the installer is the recommended download.
 
 When profiling the packaged app, disable Chromium's background throttling
 (`--disable-background-timer-throttling --disable-renderer-backgrounding
