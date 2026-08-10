@@ -132,10 +132,60 @@ export function isTrustedUpdateUrl(rawUrl: unknown, trustedOrigin: string): bool
   }
 }
 
+// ── What the desktop app may open from disk ────────────────────────────────
+//
+// One list, because three places used to carry their own copy and drifted: the
+// installer's file associations, the argv scan that handles a double-clicked
+// file, and the read-file IPC. Markdown was in none of them, so associating
+// .md by hand opened the app to an empty window.
+
+/** Formats whose first bytes identify them, so a renamed file can be caught. */
+const BINARY_DOCUMENT_EXTENSIONS = [
+  'pdf', 'hwp', 'hwpx', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp',
+] as const
+
+/**
+ * Formats that are plain text and therefore have no signature to check.
+ *
+ * Accepting these on the extension alone is not a hole in the signature check.
+ * `read-file`'s threat model is a compromised renderer asking the main process
+ * to read an arbitrary path, and that stays bounded by the extension allowlist,
+ * the symlink-resolved path and the size cap. The signature exists to stop a
+ * renamed binary being handed back as a document, which can only be enforced
+ * for formats that have one.
+ */
+const TEXT_DOCUMENT_EXTENSIONS = ['eml', 'md', 'markdown', 'mdown', 'mkd'] as const
+
+export const DOCUMENT_EXTENSIONS: readonly string[] = [
+  ...BINARY_DOCUMENT_EXTENSIONS, ...TEXT_DOCUMENT_EXTENSIONS,
+]
+
+function extensionOf(lowerPath: string): string {
+  const dot = lowerPath.lastIndexOf('.')
+  return dot === -1 ? '' : lowerPath.slice(dot + 1)
+}
+
+/** True when the path names a format the app can open. Expects a lower-cased path. */
+export function isAllowedDocumentPath(lowerPath: string): boolean {
+  return DOCUMENT_EXTENSIONS.includes(extensionOf(lowerPath))
+}
+
+/** True for the text formats, which are exempt from the signature check. */
+export function isTextDocumentPath(lowerPath: string): boolean {
+  return (TEXT_DOCUMENT_EXTENSIONS as readonly string[]).includes(extensionOf(lowerPath))
+}
+
 export function hasSupportedDocumentSignature(bytes: Uint8Array): boolean {
-  const isPdf = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46
-  const isHwp = bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0 &&
-    bytes[4] === 0xa1 && bytes[5] === 0xb1 && bytes[6] === 0x1a && bytes[7] === 0xe1
-  const isHwpx = bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04
-  return isPdf || isHwp || isHwpx
+  const at = (i: number, ...expected: number[]) => expected.every((b, n) => bytes[i + n] === b)
+  return (
+    at(0, 0x25, 0x50, 0x44, 0x46) ||                                // %PDF
+    at(0, 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1) ||        // OLE2 (.hwp)
+    at(0, 0x50, 0x4b, 0x03, 0x04) ||                                // ZIP (.hwpx)
+    at(0, 0x89, 0x50, 0x4e, 0x47) ||                                // PNG
+    at(0, 0xff, 0xd8, 0xff) ||                                      // JPEG
+    at(0, 0x47, 0x49, 0x46, 0x38) ||                                // GIF8
+    at(0, 0x42, 0x4d) ||                                            // BM
+    // RIFF….WEBP — RIFF alone is also .wav/.avi, so the tag at byte 8 matters.
+    (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50))
+  )
 }

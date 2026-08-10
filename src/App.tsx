@@ -309,7 +309,10 @@ export default function App() {
       try {
         const data = await window.electronAPI!.readFile(filePath)
         const name = filePath.split(/[/\\]/).pop() ?? 'document.pdf'
-        const f = new File([data], name, { type: 'application/pdf' })
+        // No MIME type: the name carries the extension and detectDocType reads
+        // the bytes anyway. Hard-coding application/pdf mislabelled every
+        // non-PDF the OS handed us.
+        const f = new File([data], name)
         loadPdfFile(f)
       } catch (err) {
         console.error('Failed to open file from Electron:', err)

@@ -1,7 +1,11 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  DOCUMENT_EXTENSIONS,
   hasSupportedDocumentSignature,
+  isAllowedDocumentPath,
+  isTextDocumentPath,
   isNonPublicIp,
   isTrustedRendererUrl,
   isTrustedUpdateUrl,
@@ -47,6 +51,45 @@ describe('Electron security helpers', () => {
   it('recognizes only supported document signatures', () => {
     expect(hasSupportedDocumentSignature(Uint8Array.from([0x25, 0x50, 0x44, 0x46]))).toBe(true)
     expect(hasSupportedDocumentSignature(Uint8Array.from([0x50, 0x4b, 0x03, 0x04]))).toBe(true)
+    expect(hasSupportedDocumentSignature(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]))).toBe(true)
+    expect(hasSupportedDocumentSignature(Uint8Array.from([0xff, 0xd8, 0xff]))).toBe(true)
     expect(hasSupportedDocumentSignature(Uint8Array.from([0x3c, 0x68, 0x74, 0x6d, 0x6c]))).toBe(false)
+    // RIFF alone is also .wav/.avi — the WEBP tag at byte 8 is what decides.
+    const riff = (tag: string) => Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, ...[...tag].map(c => c.charCodeAt(0))])
+    expect(hasSupportedDocumentSignature(riff('WEBP'))).toBe(true)
+    expect(hasSupportedDocumentSignature(riff('WAVE'))).toBe(false)
+  })
+
+  it('accepts every format the app can open, and nothing else', () => {
+    for (const ext of ['pdf', 'hwp', 'hwpx', 'eml', 'md', 'markdown', 'png', 'jpg', 'webp']) {
+      expect(isAllowedDocumentPath(`c:/docs/file.${ext}`), ext).toBe(true)
+    }
+    expect(isAllowedDocumentPath('c:/docs/file.exe')).toBe(false)
+    expect(isAllowedDocumentPath('c:/docs/noextension')).toBe(false)
+    // A double extension must be judged by the last one.
+    expect(isAllowedDocumentPath('c:/docs/payload.pdf.exe')).toBe(false)
+  })
+
+  it('exempts only the text formats from the signature check', () => {
+    expect(isTextDocumentPath('a.md')).toBe(true)
+    expect(isTextDocumentPath('a.eml')).toBe(true)
+    // Binary formats must still prove themselves by signature.
+    expect(isTextDocumentPath('a.pdf')).toBe(false)
+    expect(isTextDocumentPath('a.png')).toBe(false)
+  })
+
+  /**
+   * The installer's associations and the runtime allowlist are two lists that
+   * must agree. When they drifted, associating .md by hand opened the app to an
+   * empty window — the OS launched it, and the runtime then ignored the path.
+   */
+  it('registers only extensions the runtime will actually open', () => {
+    const config = fs.readFileSync(path.resolve('electron-builder.json5'), 'utf8')
+    const associations = [...config.matchAll(/"ext":\s*"([^"]+)"/g)].map(m => m[1])
+
+    expect(associations.length).toBeGreaterThan(0)
+    for (const ext of associations) {
+      expect(DOCUMENT_EXTENSIONS, `installer registers .${ext}`).toContain(ext)
+    }
   })
 })

@@ -71,14 +71,41 @@
   // Register WZ PDF as a handler for .pdf files. The OS will pass the file
   // path as a CLI argument; main.ts picks it up via process.argv.
   // `icon` controls the icon shown for associated .pdf files in Explorer.
+  // Every format the app can open is registered at install time, so a
+  // double-clicked file reaches the app without the user wiring it up by hand.
+  // Keep this list in step with DOCUMENT_EXTENSIONS in electron/security.ts —
+  // registering an extension the runtime then refuses is worse than not
+  // registering it, because the file opens the app to an empty window. The
+  // security.test.ts case "registers only extensions the runtime will actually
+  // open" fails the build if they drift.
+  //
+  // `name` becomes the Windows ProgID, not a label — verified in the registry,
+  // where HKLM\Software\Classes\.pdf resolves to this file's "PDF Document".
+  // New entries are therefore namespaced, so we cannot clobber (or be clobbered
+  // by) another application that picks an obvious name like "PNG Image".
+  // `.pdf` deliberately keeps its unprefixed ProgID: it is already registered on
+  // every existing install and re-pointing a working association to fix a purely
+  // theoretical collision is not worth the risk. `description` is the text
+  // Explorer actually shows.
+  //
+  // This makes WZ PDF *available* for these types and gives them its icon;
+  // Windows 10/11 still asks before changing an existing default, and no
+  // installer can bypass that.
   "fileAssociations": [
-    {
-      "ext": "pdf",
-      "name": "PDF Document",
-      "description": "PDF Document",
-      "role": "Viewer",
-      "icon": "build/icon.ico"
-    }
+    { "ext": "pdf",      "name": "PDF Document",  "description": "PDF Document",               "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "hwp",      "name": "WZPDF.hwp",     "description": "Hancom Office HWP Document", "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "hwpx",     "name": "WZPDF.hwpx",    "description": "Hancom Office HWPX Document","role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "eml",      "name": "WZPDF.eml",     "description": "E-mail Message",             "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "md",       "name": "WZPDF.md",      "description": "Markdown Document",          "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "markdown", "name": "WZPDF.markdown","description": "Markdown Document",          "role": "Viewer", "icon": "build/icon.ico" },
+    // Images open as one-page documents, so they belong here too. If owning
+    // picture files ever feels intrusive, these six lines are the whole change.
+    { "ext": "png",      "name": "WZPDF.png",     "description": "PNG Image",                  "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "jpg",      "name": "WZPDF.jpg",     "description": "JPEG Image",                 "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "jpeg",     "name": "WZPDF.jpeg",    "description": "JPEG Image",                 "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "gif",      "name": "WZPDF.gif",     "description": "GIF Image",                  "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "bmp",      "name": "WZPDF.bmp",     "description": "Bitmap Image",               "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "webp",     "name": "WZPDF.webp",    "description": "WebP Image",                 "role": "Viewer", "icon": "build/icon.ico" }
   ],
 
   // `build:exe` runs `electron-builder --win portable` then `--win nsis`

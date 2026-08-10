@@ -575,6 +575,41 @@ needs the portable artifact already on disk to embed.
 The OS passes the double-clicked PDF path as a CLI argument; `electron/main.ts`
 picks it up via `process.argv` and sends `open-file` to the renderer.
 
+### File associations — three lists that must agree
+
+Opening a document by double-click crosses three gates, and each used to carry
+its own copy of "which formats do we support":
+
+1. `fileAssociations` in `electron-builder.json5` — what the installer registers.
+2. The argv scan in `electron/main.ts` — what the running app accepts as the
+   file to open (`findFileArgument`).
+3. The `read-file` IPC — what the main process will actually read.
+
+They drifted: only `pdf` was ever registered, and (2) and (3) allowed only
+pdf/hwp/hwpx. Associating `.md` by hand therefore *launched* the app and then
+showed an empty window, because the path was silently dropped at gate (2).
+
+`DOCUMENT_EXTENSIONS` in `electron/security.ts` is now the single list, and
+`security.test.ts` fails if the installer registers an extension the runtime
+would refuse. Two details worth knowing:
+
+- **Markdown and mail have no signature.** `hasSupportedDocumentSignature`
+  cannot vet them, so `isTextDocumentPath` exempts them and they are accepted on
+  extension alone. That is sound here: `read-file`'s threat model is a
+  compromised renderer asking for an arbitrary path, which stays bounded by the
+  extension allowlist, the symlink-resolved real path and the size cap. The
+  signature check exists to catch a *renamed binary*, which is only enforceable
+  where the format has a signature.
+- **electron-builder uses `name` as the Windows ProgID**, not as a label —
+  confirmed in the registry, where `HKLM\Software\Classes\.pdf` resolves to the
+  literal string `PDF Document` from that config. Generic names are therefore a
+  collision risk with other applications, so every entry except the pre-existing
+  `pdf` one uses a `WZPDF.<ext>` ProgID. `description` is the text Explorer shows.
+
+Registering a type makes the app *available* for it and gives it the app icon.
+Windows 10/11 still asks the user before changing an established default, and no
+installer can bypass that.
+
 ### Security hardening (electron/main.ts)
 
 Renderer is sandboxed and IPC inputs are validated. Notable measures:

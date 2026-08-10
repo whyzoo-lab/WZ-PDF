@@ -10,6 +10,8 @@ import {
   MAX_REDIRECTS,
   assertPublicHttpUrl,
   hasSupportedDocumentSignature,
+  isAllowedDocumentPath,
+  isTextDocumentPath,
   isTrustedRendererUrl,
   isTrustedUpdateUrl,
   parseHttpUrl,
@@ -21,6 +23,19 @@ let pendingFile: string | null = null
 
 // ── Security limits ────────────────────────────────────────────────────────
 const MAX_FILE_SIZE = MAX_DOCUMENT_BYTES
+
+/**
+ * The document path Windows/macOS passes when the user double-clicks a file.
+ *
+ * Skips argv[0] (our own .exe) and anything that looks like a switch, so a
+ * Chromium flag such as `--log-file=out.pdf` can't be mistaken for the document
+ * to open. Everything the app can display is eligible — the previous version
+ * matched only pdf/hwp/hwpx, which is why associating .md by hand launched the
+ * app to an empty window instead of showing the file.
+ */
+function findFileArgument(argv: readonly string[]): string | undefined {
+  return argv.slice(1).find(arg => !arg.startsWith('-') && isAllowedDocumentPath(arg.toLowerCase()))
+}
 
 function assertTrustedIpcSender(event: IpcMainInvokeEvent): void {
   if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url)) {
@@ -427,26 +442,22 @@ ipcMain.handle('fetch-url', async (event, rawUrl: unknown): Promise<ArrayBuffer>
   return fetchRemoteDocument(rawUrl)
 })
 
-/** Returns true if the lower-cased path ends with one of the allowed document extensions. */
-function isAllowedDocExtension(lowerPath: string): boolean {
-  return lowerPath.endsWith('.pdf') || lowerPath.endsWith('.hwp') || lowerPath.endsWith('.hwpx')
-}
-
 ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffer> => {
   assertTrustedIpcSender(event)
   if (typeof filePath !== 'string' || filePath.length === 0) {
     throw new Error('Invalid file path')
   }
   const resolved = path.resolve(filePath)
-  if (!isAllowedDocExtension(resolved.toLowerCase())) {
-    throw new Error('Only .pdf, .hwp, and .hwpx files are allowed')
+  if (!isAllowedDocumentPath(resolved.toLowerCase())) {
+    throw new Error('Unsupported file type')
   }
   // Resolve symlinks before any check: a `foo.pdf` symlink pointing at
   // /etc/shadow would otherwise pass the extension test and leak the target.
   // We validate the REAL path's extension + that it's a regular file.
   const real = await fs.promises.realpath(resolved)
-  if (!isAllowedDocExtension(real.toLowerCase())) {
-    throw new Error('Resolved path is not a .pdf, .hwp, or .hwpx file')
+  const lowerReal = real.toLowerCase()
+  if (!isAllowedDocumentPath(lowerReal)) {
+    throw new Error('Resolved path is not a supported document')
   }
   const handle = await fs.promises.open(real, 'r')
   try {
@@ -459,8 +470,10 @@ ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffe
     }
     const data = Buffer.allocUnsafe(stat.size)
     await readExactly(handle, data, 0)
-    if (!hasSupportedDocumentSignature(data)) {
-      throw new Error('File content is not a PDF, HWP, or HWPX document')
+    // Markdown and mail are plain text and have no signature to verify —
+    // see TEXT_DOCUMENT_EXTENSIONS in security.ts for why that is sound here.
+    if (!isTextDocumentPath(lowerReal) && !hasSupportedDocumentSignature(data)) {
+      throw new Error('File content does not match a supported document format')
     }
     // Return a fresh ArrayBuffer slice (Buffer view → standalone ArrayBuffer)
     return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
@@ -540,7 +553,7 @@ app.whenReady().then(() => {
   // Determine what to open on startup (priority: CLI arg > open-file event > embedded PDF)
   // CLI arg covers both manual launches (`WZ_PDF.exe foo.pdf`) and the OS
   // file-association entry point (double-click a .pdf in Explorer).
-  const argFile = process.argv.find(arg => /\.(pdf|hwp|hwpx)$/i.test(arg))
+  const argFile = findFileArgument(process.argv)
 
   if (argFile && win) {
     win.webContents.once('did-finish-load', () => {
