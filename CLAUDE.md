@@ -575,6 +575,42 @@ needs the portable artifact already on disk to embed.
 The OS passes the double-clicked PDF path as a CLI argument; `electron/main.ts`
 picks it up via `process.argv` and sends `open-file` to the renderer.
 
+### `hwp2pdf` console tool
+
+A batch HWP/HWPX → PDF converter installed beside the app. Three pieces:
+
+- `cli/hwp2pdf.cs` → `build/hwp2pdf.exe` (~5 KB), built by `scripts/build-cli.cjs`
+  with the **csc.exe that ships with Windows**, so the project still needs
+  nothing but Node to build. It exists only because `WZ PDF.exe` is a
+  GUI-subsystem binary: started from cmd it has no console and its output goes
+  nowhere. A console-subsystem parent has one, and a child launched with
+  inherited handles writes to it — so the launcher's whole job is to lend the
+  app a console and pass the exit code back.
+- `electron/cli.ts` — argument parsing, wildcard matching, output paths. Pure
+  and unit-tested; Windows hands `*.hwp` to a program **unexpanded**, so
+  expanding it is the tool's job. The matcher is written directly rather than
+  translated into a RegExp, because every character of a real file name would
+  otherwise need escaping (`report(final).hwp`) and a star-heavy pattern can
+  backtrack exponentially.
+- `electron/cliRunner.ts` + `src/services/cliBridge.ts` — the conversion runs in
+  a **hidden window loading the ordinary app page**, because `@rhwp/core` renders
+  into a canvas and `exportHwpToPdf` composites those canvases. That is not a
+  workaround, it is what makes the output identical to the GUI's Export → PDF,
+  selectable text layer and bundled Korean fonts included.
+
+Two things that cost real time to learn:
+
+- **Every wait must be bounded.** `loadURL`, the poll for `window.__wzCli` and
+  each conversion all have deadlines. Without them the process sits with no
+  window and no output and has to be killed from Task Manager. One-time startup
+  (engine + the ~12 MB Korean fonts) is a separate `warmup()` step, or the first
+  document gets billed for it and is reported as a timeout.
+- **Never hand-patch `release/win-unpacked/resources/app.asar` to test a
+  change.** electron-builder stamps an integrity hash into the exe (`updating
+  asar integrity executable resource` in the build log); a repacked asar fails
+  that check and the app starts but never loads its code — no window, no output,
+  no error. It looks exactly like a hang in your own code. Run `build:exe`.
+
 ### File associations — three lists that must agree
 
 Opening a document by double-click crosses three gates, and each used to carry

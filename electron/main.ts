@@ -4,6 +4,7 @@ import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import path from 'path'
 import fs from 'fs'
+import { hasCliFlag, runCli } from './cliRunner'
 import {
   FETCH_TIMEOUT_MS,
   MAX_DOCUMENT_BYTES,
@@ -544,10 +545,30 @@ ipcMain.handle('open-download', async (event, rawUrl?: unknown) => {
 
 // ── App lifecycle ───────────────────────────────────────────────────────────
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   installCsp()
   if (app.isPackaged) serveAppProtocol()
   Menu.setApplicationMenu(null)
+
+  // ── hwp2pdf console mode ────────────────────────────────────────────────
+  // Started by the hwp2pdf launcher, never by a user double-click. Runs the
+  // conversion in a window that is never shown and exits with a status code,
+  // so no visible app is created at all on this path.
+  if (hasCliFlag(process.argv)) {
+    const page = app.isPackaged
+      ? 'app://bundle/app.html?cli=1'
+      : 'http://localhost:5173/app.html?cli=1'
+    let code = 1
+    try {
+      code = await runCli(process.argv, page)
+    } catch (err) {
+      process.stderr.write(`hwp2pdf failed: ${err instanceof Error ? err.message : String(err)}
+`)
+    }
+    app.exit(code)
+    return
+  }
+
   createWindow()
 
   // Determine what to open on startup (priority: CLI arg > open-file event > embedded PDF)

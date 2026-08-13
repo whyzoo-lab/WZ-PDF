@@ -35,6 +35,13 @@ if (!Map.prototype.getOrInsertComputed) {
 // here needs pdfjs until the user actually opens a file.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// `?cli=1` — the hidden window the hwp2pdf console tool drives. The page still
+// renders normally (the converter needs this document's canvas and fonts); this
+// only publishes the entry point the main process calls into.
+if (new URLSearchParams(window.location.search).has('cli')) {
+  void import('./services/cliBridge').then(m => m.installCliBridge())
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

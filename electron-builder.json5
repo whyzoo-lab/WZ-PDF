@@ -112,6 +112,12 @@
   // sequentially, so both targets are declared here but each invocation picks
   // exactly one. Sequencing matters: NSIS's afterPack hook needs the portable
   // artifact already on disk to bundle it as viewer-template.exe.
+  // The hwp2pdf console launcher sits beside WZ PDF.exe (it locates the app
+  // relative to itself). Built by scripts/build-cli.cjs; ~5 KB.
+  "extraFiles": [
+    { "from": "build/hwp2pdf.exe", "to": "hwp2pdf.exe" }
+  ],
+
   "win": {
     // build/icon.ico is generated from public/icon.svg by scripts/build-icon.cjs
     // (multi-resolution: 16/24/32/48/64/128/256). Used as the exe icon, taskbar
@@ -124,6 +130,9 @@
   },
 
   "nsis": {
+    // build/installer.nsh adds the install directory to the user's PATH, so
+    // `hwp2pdf` runs from any terminal, and removes it again on uninstall.
+    "include": "build/installer.nsh",
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
