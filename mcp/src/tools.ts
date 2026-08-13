@@ -12,12 +12,14 @@
 
 import { readFile, writeFile, realpath, stat } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
-import { resolve, basename, dirname } from 'node:path'
+import { resolve, basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { PDFDocument, PDFFont, StandardFonts, rgb, degrees } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { pdfjs, pdfWorkerSrc } from './pdfjs.js'
+
+import { convertHwpToPdf, pdfNameFor } from './hwp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -95,9 +97,7 @@ async function resolveOutputPath(p: string): Promise<string> {
 // ESM loader), so we resolve to a path and convert via pathToFileURL.
 ;(
   pdfjs as unknown as { GlobalWorkerOptions: { workerSrc: string } }
-).GlobalWorkerOptions.workerSrc = pathToFileURL(
-  require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
-).href
+).GlobalWorkerOptions.workerSrc = pdfWorkerSrc
 
 // ── Common helpers ──────────────────────────────────────────────────────────
 
@@ -665,11 +665,55 @@ export const tools = [
       required: ['file', 'output', 'afterPage'],
     },
   },
-] as const
+  {
+    name: 'hwp_to_pdf',
+    description:
+      'Convert a Korean HWP or HWPX document to PDF. The result carries a real selectable text layer, '
+      + 'so pdf_get_text and pdf_search work on it afterwards. Requires the WZ PDF desktop app.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Absolute path to the .hwp or .hwpx document.' },
+        output: { type: 'string', description: 'Where to write the PDF. Defaults to the same name beside the input.' },
+      },
+      required: ['file'],
+    },
+  },
+]
 
-// Registry of tool name → handler. Each handler declares its own precise
-// arg type and validates internally; callTool casts the incoming JSON-RPC
-// params to that handler's expected shape at the boundary.
+/**
+ * Convert a Korean HWP/HWPX document to PDF.
+ *
+ * Delegates to the desktop app (see hwp.ts) because the conversion needs a
+ * browser canvas. The resulting PDF carries a selectable text layer, so
+ * `pdf_get_text` and `pdf_search` work on the output directly.
+ */
+async function hwpToPdf(args: Record<string, unknown>): Promise<string> {
+  const file = String(args.file ?? '')
+  if (!file) throw new Error('file is required')
+
+  // Validated exactly like every other input: real path, inside the sandbox,
+  // a regular file, and bounded in size.
+  const input = await realpath(lexicalSafePath(file))
+  assertInsideSandbox(input, file)
+  const info = await stat(input)
+  if (!info.isFile()) throw new Error(`not a regular file: ${file}`)
+  if (info.size > MAX_DOCUMENT_BYTES) {
+    throw new Error(`file exceeds ${Math.round(MAX_DOCUMENT_BYTES / 1024 / 1024)}MB limit`)
+  }
+  const ext = extname(input).toLowerCase()
+  if (ext !== '.hwp' && ext !== '.hwpx') throw new Error(`not a HWP/HWPX document: ${file}`)
+
+  const requested = args.output
+    ? String(args.output)
+    : join(dirname(input), pdfNameFor(input))
+  const output = await resolveOutputPath(requested)
+
+  const result = await convertHwpToPdf(input, output)
+  return `Converted ${basename(input)} -> ${result.outputPath} `
+    + `(${Math.round(result.bytes / 1024)} KB, selectable text)`
+}
+
 type ToolHandler = (args: Record<string, unknown>) => Promise<string>
 
 const handlers = {
@@ -684,6 +728,7 @@ const handlers = {
   pdf_delete_pages: pdfDeletePages,
   pdf_reorder_pages: pdfReorderPages,
   pdf_insert_blank: pdfInsertBlank,
+  hwp_to_pdf: hwpToPdf,
 }
 
 export async function callTool(name: string, args: Record<string, unknown>): Promise<string> {

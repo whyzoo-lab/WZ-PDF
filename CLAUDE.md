@@ -611,6 +611,35 @@ Two things that cost real time to learn:
   that check and the app starts but never loads its code — no window, no output,
   no error. It looks exactly like a hang in your own code. Run `build:exe`.
 
+### MCP server (`mcp/`)
+
+Twelve tools; eleven are pure Node over pdf-lib/pdfjs, and `hwp_to_pdf` is not —
+converting HWP needs a browser canvas, so it shells out to the app's headless
+mode exactly as the `hwp2pdf` console tool does. That is why an agent gets the
+same PDF the GUI exports, text layer included.
+
+**Shipping it.** `scripts/build-mcp.cjs` bundles the server with esbuild into
+`build/mcp/`, which electron-builder copies to `<install>/resources/mcp/`. Two
+things about that bundle:
+
+- **pdfjs is deliberately external.** `pdfjs-dist/legacy/build/pdf.mjs` evaluates
+  `new DOMMatrix()` at module scope and depends on its own Node startup order to
+  have a polyfill ready; bundling reorders that and the server dies on import
+  with `DOMMatrix is not defined`. Left external and loaded by Node normally it
+  works, so only the two files it needs are copied beside the bundle. Total
+  ~6.3 MB instead of the 157 MB of `mcp/node_modules`.
+- **The server runs on the app's own binary** via `ELECTRON_RUN_AS_NODE=1`, so
+  users need no Node install. That is also a trap: the variable is inherited by
+  child processes, so `hwp_to_pdf` must delete it before spawning the app, or the
+  app boots as plain Node and rejects `--hwp2pdf` as a bad option.
+
+`hwp_to_pdf` finds the app two levels up from the server file, which is what ties
+the `extraResources` destination to the code. `WZPDF_APP` overrides it.
+
+The installer does **not** write any client's MCP config. That file belongs to
+another application and may already hold the user's own servers; the registration
+snippet is documented in `mcp/README.md` instead.
+
 ### File associations — three lists that must agree
 
 Opening a document by double-click crosses three gates, and each used to carry

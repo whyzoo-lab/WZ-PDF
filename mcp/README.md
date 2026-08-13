@@ -102,3 +102,46 @@ MCP_HOST=0.0.0.0 MCP_SANDBOX_DIR=/trusted/workspace MCP_AUTH_TOKEN=replace-with-
 ## 한글 폰트
 
 워터마크/텍스트 오버레이에 한글이 포함되면 자동으로 Noto Sans KR을 임베드합니다. 영문만 있으면 Helvetica 사용 (출력 PDF 크기 절약). 폰트 파일은 `../public/fonts/NotoSansKR-Regular.otf`에서 읽어요.
+
+## Using the server that ships with the desktop app
+
+Installing WZ PDF puts a ready-to-run server at:
+
+```
+<install folder>esources\mcp\wz-pdf-mcp.mjs
+```
+
+**No Node.js install is required.** The app's own binary doubles as the Node
+runtime through `ELECTRON_RUN_AS_NODE`, so the server runs on machines that have
+nothing but WZ PDF.
+
+Register it by adding this to your client's MCP configuration — for Claude
+Desktop that is `%APPDATA%\Claude\claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "wz-pdf": {
+      "command": "C:\Program Files\WZ PDF\WZ PDF.exe",
+      "args": ["C:\Program Files\WZ PDF\resources\mcp\wz-pdf-mcp.mjs"],
+      "env": { "ELECTRON_RUN_AS_NODE": "1" }
+    }
+  }
+}
+```
+
+Adjust both paths if you installed elsewhere. The installer deliberately does
+**not** write this file for you: it belongs to another application, may already
+hold servers you configured yourself, and its location and format are outside
+our control.
+
+### `hwp_to_pdf`
+
+The one tool that is not pure Node. Converting HWP needs a browser canvas, so it
+delegates to the desktop app in the same headless mode the `hwp2pdf` console tool
+uses — meaning the PDF an agent gets is the same file the GUI's Export → PDF
+produces, with a selectable text layer. `pdf_get_text` and `pdf_search` therefore
+work on the result immediately.
+
+Set `WZPDF_APP` to the full path of `WZ PDF.exe` if the server cannot find it
+(running from a source checkout, or an unusual install layout).

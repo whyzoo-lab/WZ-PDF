@@ -118,6 +118,17 @@
     { "from": "build/hwp2pdf.exe", "to": "hwp2pdf.exe" }
   ],
 
+  // The MCP server ships as one bundled file plus the two pdfjs files it needs
+  // (~6 MB). It runs on the app's own Electron binary via ELECTRON_RUN_AS_NODE,
+  // so users need no Node install; hwp_to_pdf finds "WZ PDF.exe" two levels up
+  // from here, which is why the destination path matters.
+  // The explicit filter matters: without it electron-builder skips the nested
+  // node_modules/ directory, and the server ships without the pdfjs files it
+  // imports — it then dies on startup with "DOMMatrix is not defined".
+  "extraResources": [
+    { "from": "build/mcp", "to": "mcp", "filter": ["**/*"] }
+  ],
+
   "win": {
     // build/icon.ico is generated from public/icon.svg by scripts/build-icon.cjs
     // (multi-resolution: 16/24/32/48/64/128/256). Used as the exe icon, taskbar

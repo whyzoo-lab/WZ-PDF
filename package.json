@@ -1,7 +1,7 @@
 {
   "name": "wz-pdf",
   "private": true,
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "Lightweight PDF viewer / editor with annotation, page management, multi-format export, and an MCP server. Built with React, Konva, pdfjs, pdf-lib, and Electron.",
   "license": "MIT",
   "author": "WhyZOO",
@@ -33,13 +33,14 @@
     "setup:ocr": "python scripts/build-ocr-assets.py",
     "setup:hwp": "node scripts/copy-hwp-wasm.cjs",
     "setup:pdfjs": "node scripts/copy-pdfjs-wasm.cjs",
-    "build:exe": "npm run build:cli && npm run setup:pdfjs && npm run setup:hwp && npm run build:icon && tsc -p tsconfig.electron.json && tsc -b && vite build && electron-builder --win portable --publish never && electron-builder --win nsis --publish never",
+    "build:exe": "npm run build:cli && npm run build:mcp && npm run setup:pdfjs && npm run setup:hwp && npm run build:icon && tsc -p tsconfig.electron.json && tsc -b && vite build && electron-builder --win portable --publish never && electron-builder --win nsis --publish never",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
     "electron:compile": "tsc -p tsconfig.electron.json",
-    "build:cli": "node scripts/build-cli.cjs"
+    "build:cli": "node scripts/build-cli.cjs",
+    "build:mcp": "node scripts/build-mcp.cjs"
   },
   "dependencies": {
     "@paddleocr/paddleocr-js": "^0.3.2",
