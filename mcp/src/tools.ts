@@ -13,8 +13,7 @@
 import { readFile, writeFile, realpath, stat } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { resolve, basename, dirname, extname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { PDFDocument, PDFFont, StandardFonts, rgb, degrees } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
 import { pdfjs, pdfWorkerSrc } from './pdfjs.js'
@@ -22,7 +21,6 @@ import { pdfjs, pdfWorkerSrc } from './pdfjs.js'
 import { convertHwpToPdf, pdfNameFor } from './hwp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const require = createRequire(import.meta.url)
 
 // ── Sandbox ─────────────────────────────────────────────────────────────────
 // When the MCP server is deployed remotely (HTTP transport), all file paths
