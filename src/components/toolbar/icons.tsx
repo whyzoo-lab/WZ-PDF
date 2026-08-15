@@ -205,3 +205,11 @@ export const IconMore = () => (
     <circle cx="12" cy="19" r="1.7" fill="currentColor" stroke="none" />
   </Icon>
 )
+
+/** Fit the page width — arrows pushing out to both edges of a page. */
+export const IconFitWidth = () => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
+    <rect x="4" y="3" width="12" height="14" rx="1" />
+    <path d="M7 10h6M7 10l2-2M7 10l2 2M13 10l-2-2M13 10l-2 2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)

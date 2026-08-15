@@ -126,7 +126,7 @@ export default function App() {
   } = useAnnotations()
 
   // ── Hooks: feature bundles ────────────────────────────────────────────────
-  useFitZoom({ pdfDoc, viewMode, rotation, setZoom, viewportRef: mainRef })
+  const { fitWidth } = useFitZoom({ pdfDoc, viewMode, rotation, setZoom, viewportRef: mainRef })
   const update = useUpdateCheck()
   const ocr = useOcr(pdfDoc, numPages)
   const search = useSearch(pdfDoc, numPages, (page) => {
@@ -536,6 +536,7 @@ export default function App() {
     onZoomOut: handleZoomOut,
     onZoomReset: handleZoomReset,
     onZoomSet: handleZoomSet,
+    onFitWidth: fitWidth,
     onRotate: handleRotate,
     onModeChange: setActiveMode,
     onStampSelect: handleStampSelect,

@@ -66,6 +66,9 @@ async function renderPage(pdfDoc: ViewerDoc, pageNumber: number, renderScale: nu
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error(`canvas.getContext('2d') returned null for page ${pageNumber}`)
   await page.render({ canvas, viewport: raster }).promise
+  // Timing mark only; no-ops after the first page of each document.
+  const { markOpen } = await import('../services/openPerf')
+  markOpen('first-page')
   return { canvas, width: logical.width, height: logical.height, renderScale }
 }
 

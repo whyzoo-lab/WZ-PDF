@@ -11,6 +11,7 @@ export const ko = {
   'tool.grid': '전체 보기',
   'tool.fullscreen': '전체화면 (F5)',
   'tool.zoomOut': '축소',
+  'tool.fitWidth': '너비 맞춤 — 글자가 선명해지고 세로 스크롤이 생깁니다',
   'tool.zoomReset': '배율 초기화',
   'tool.zoomIn': '확대',
   'tool.rotate': '90° 회전 (현재: {deg}°)',

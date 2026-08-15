@@ -495,6 +495,44 @@ Export pipeline (regardless of source):
 3. On startup, `extractEmbeddedPdf()` checks `PORTABLE_EXECUTABLE_FILE` (the resulting EXE always runs as a portable SFX) for the marker and reads the embedded bytes.
 4. If found, sends them to the renderer via the `open-pdf-bytes` IPC channel.
 
+### Why pages look softer than a browser's PDF viewer
+
+Almost all of the gap is **display size, not rendering**. `useFitZoom` fits the
+whole page so a one-page document does not open with a scrollbar (an explicit
+product decision); a browser's PDF viewer fits the *width*. In a default window
+that is an A4 at ~74 DPI versus ~150 — and at 74 DPI a Korean glyph stroke is
+thinner than a pixel, so it can never rasterise as solid black no matter which
+engine draws it. Measured on the packaged build, same document and window:
+
+| | page width | pixels reaching near-black |
+|---|---|---|
+| fit page (default) | 609 px | 0.045 % |
+| fit width (toolbar button) | 1561 px | 0.103 % |
+
+Hence the fit-width button rather than a changed default.
+
+Two things that are **not** the cause, both checked rather than assumed:
+- The composite is already dpr-correct (canvas 609×862 for a 488×690 CSS box at
+  dpr 1.25).
+- The raster is quantised up to 1/4 (`Math.ceil(scale * 4) / 4`), so it is drawn
+  ~1.2x larger than the screen box and downscaled. Removing that overshoot — the
+  obvious "stop resampling" fix — made text measurably **worse** (near-black
+  pixels 0.05 % → 0.03 %): the mild supersample is helping, not hurting. Do not
+  "fix" it again without measuring first.
+
+### Diagnosing the intermittent slow open
+
+`src/services/openPerf.ts` marks four points of the document-open path —
+`bytes`, `engine`, `document`, `first-page` — always, at negligible cost. They
+exist because of a stall seen once in twenty launches where the shell painted on
+time (FCP 667 ms, indistinguishable from a fast run) and the first page took
+4441 ms instead of ~720 ms. It is therefore in the open path, not startup, and
+it has not been reproducible on demand (25 profiled launches, max 992 ms).
+
+Read them with `performance.getEntriesByType('mark')`, or run with `?perf` for a
+one-line console summary. Whatever the cause turns out to be, the marks say
+which of the four stages to look at instead of starting from a wall-clock total.
+
 ### Startup cost (measured, not guessed)
 
 Measured end to end on the packaged build over CDP (spawn → the app on screen):

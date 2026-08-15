@@ -11,6 +11,7 @@ export const en = {
   'tool.grid': 'Grid view',
   'tool.fullscreen': 'Fullscreen (F5)',
   'tool.zoomOut': 'Zoom out',
+  'tool.fitWidth': 'Fit width — sharper text, but the page scrolls',
   'tool.zoomReset': 'Reset zoom',
   'tool.zoomIn': 'Zoom in',
   'tool.rotate': 'Rotate 90° (current: {deg}°)',

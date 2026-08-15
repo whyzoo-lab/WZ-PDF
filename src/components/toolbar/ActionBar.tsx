@@ -9,7 +9,7 @@ import {
   IconSingle, IconSpread, IconGrid, IconFullscreen, IconRotate, IconSelect,
   IconStamp, IconSignature, IconWatermark, IconDelete, IconUpload, IconLink,
   IconDownload, IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
-  IconExe, IconLock, IconLockOpen, IconMenu, IconMore,
+  IconExe, IconLock, IconLockOpen, IconMenu, IconMore, IconFitWidth,
 } from './icons'
 import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED } from './toolbarStyles'
 import { ZoomControl } from './ZoomControl'
@@ -47,6 +47,8 @@ export interface ActionBarProps {
   onZoomReset: () => void
   /** Set an exact zoom (fraction, e.g. 1.25) — from the editable zoom field. */
   onZoomSet: (zoom: number) => void
+  /** Zoom so the page fills the width, the way a browser PDF viewer opens one. */
+  onFitWidth: () => void
   onRotate: () => void
   onModeChange: (mode: ActiveMode) => void
   onStampSelect: (src: string, presetId?: string) => void
@@ -94,6 +96,7 @@ export function ActionBar({
   onZoomOut,
   onZoomReset,
   onZoomSet,
+  onFitWidth,
   onRotate,
   onModeChange,
   onStampSelect,
@@ -264,7 +267,15 @@ export function ActionBar({
   )
 
   const zoomCluster = (
-    <ZoomControl zoom={zoom} onZoomIn={onZoomIn} onZoomOut={onZoomOut} onZoomSet={onZoomSet} onZoomReset={onZoomReset} />
+    <div className="flex items-center gap-0.5 shrink-0">
+      <ZoomControl zoom={zoom} onZoomIn={onZoomIn} onZoomOut={onZoomOut} onZoomSet={onZoomSet} onZoomReset={onZoomReset} />
+      <button
+        onClick={onFitWidth}
+        className={iconBtn()}
+        title={t('tool.fitWidth')}
+        aria-label={t('tool.fitWidth')}
+      ><IconFitWidth /></button>
+    </div>
   )
 
   const rotateButton = (

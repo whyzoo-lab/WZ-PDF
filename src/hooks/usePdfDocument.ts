@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { ViewerDoc, DocKind } from '../types/viewerDoc'
 import type { ParsedEmail } from '../services/emlParser'
 import { detectDocType } from '../utils/detectDocType'
+import { markOpen, resetOpenMarks } from '../services/openPerf'
 
 interface UsePdfDocumentReturn {
   pdfDoc: ViewerDoc | null
@@ -35,12 +36,14 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
     let cancelled = false
     let loadedDoc: ViewerDoc | null = null
     setIsLoading(true); setError(null)
+    resetOpenMarks()
 
     type Loaded = {
       doc: ViewerDoc | null; kind: DocKind
       email: ParsedEmail | null; markdown: string | null
     }
     file.arrayBuffer().then(async (buffer): Promise<Loaded> => {
+      markOpen('bytes')
       const type = detectDocType(file.name, buffer)
       if (type === 'eml') {
         // Messages skip the page pipeline entirely — see EmailView.
@@ -77,6 +80,7 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         import('pdfjs-dist'),
         import('../services/pdfjsWorker'),
       ])
+      markOpen('engine')
       if (!pdfjs.GlobalWorkerOptions.workerSrc) {
         pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl()
       }
@@ -108,6 +112,7 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         cMapUrl: new URL('cmaps/', new URL('./', document.baseURI)).href,
         cMapPacked: true, // pdfjs ships .bcmap (packed) CMaps
       }).promise
+      markOpen('document')
       return { doc: doc as unknown as ViewerDoc, kind: 'pdf', email: null, markdown: null }
     })
       .then(({ doc, kind, email, markdown }) => {

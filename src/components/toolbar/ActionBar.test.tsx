@@ -16,7 +16,7 @@ function baseProps(over: Partial<ActionBarProps>): ActionBarProps {
     selectedId: null, isExporting: false, numPages: 3, currentPage: 1, isPanelOpen: false,
     onTogglePanel: noop, onUpload: noop, onOpenUrl: noop, onExportPdf: noop, onExportHtml: noop,
     onExportImages: noop, onExportExe: noop, onPrint: noop, onAppModeChange: noop,
-    onViewModeChange: noop, onZoomIn: noop, onZoomOut: noop, onZoomReset: noop, onZoomSet: noop, onRotate: noop,
+    onViewModeChange: noop, onZoomIn: noop, onZoomOut: noop, onZoomReset: noop, onZoomSet: noop, onFitWidth: noop, onRotate: noop,
     onModeChange: noop, onStampSelect: noop, onSignatureClick: noop, onWatermarkClick: noop,
     onDeleteSelected: noop, onResetMarkups: noop, hasMarkups: false,
     onRunOcr: noop, onRunOcrAll: noop, onCancelOcr: noop, isOcrRunning: false, ocrProgress: null,
@@ -47,6 +47,7 @@ const defaultProps = {
   onZoomOut: vi.fn(),
   onZoomReset: vi.fn(),
   onZoomSet: vi.fn(),
+  onFitWidth: vi.fn(),
   onRotate: vi.fn(),
   onModeChange: vi.fn(),
   onStampSelect: vi.fn(),
@@ -193,6 +194,16 @@ describe('ActionBar', () => {
   it('displays the current zoom in the editable field', () => {
     render(<ActionBar {...defaultProps} zoom={1.5} />)
     expect(screen.getByRole('textbox', { name: /zoom level/i })).toHaveValue('150')
+  })
+
+  it('offers fit-width beside the zoom controls', () => {
+    // Chrome's PDF viewer opens at fit-width; this app deliberately fits the
+    // whole page so a one-page document does not open with a scrollbar, so the
+    // sharper view has to be reachable in one click.
+    const onFitWidth = vi.fn()
+    render(<ActionBar {...defaultProps} onFitWidth={onFitWidth} />)
+    fireEvent.click(screen.getByLabelText(/너비 맞춤|Fit width/))
+    expect(onFitWidth).toHaveBeenCalled()
   })
 
   it('commits a typed zoom via onZoomSet on Enter', () => {
