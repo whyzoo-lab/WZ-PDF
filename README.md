@@ -40,7 +40,7 @@ OCR runtime. Ships with an optional
 - 🖼️ **Images too** — jpg / png / bmp / gif / webp open as documents, so zoom, annotation, OCR and every export just work.
 - 📝 **Markdown as a document — and editable** — `.md` renders as a formatted page (headings, tables, code, task lists) with a contents rail that follows you as you scroll. Flip the padlock and you get the raw source, tags and all, to edit and save back.
 - 🖨️ **Mail and Markdown print, zoom, search and present too** — they print as *text*, so the output stays sharp and selectable instead of being a picture of a page; `Ctrl+F` finds across them, and F5 puts them fullscreen with the same presenter tools as a PDF.
-- ⌨️ **`hwp2pdf` on your PATH** — batch-convert HWP/HWPX to PDF from any terminal: `hwp2pdf *.hwp`. Wildcards are expanded by the tool (Windows doesn't do it for you), and the PDFs carry the same selectable text layer as the GUI export.
+- ⌨️ **Batch converters on your PATH** — `hwp2pdf`, `hwp2hwpx` and `hwpx2hwp` run from any terminal. Point them at files, wildcards or whole folders: `hwp2hwpx C:\docs\2026` walks the tree, and `-o` rebuilds that tree in the output folder instead of flattening it. Wildcards are expanded by the tools (Windows doesn't do it for you), and converted PDFs carry the same selectable text layer as the GUI export.
 - 🔍 **Fit width in one click** — the viewer opens fitting the whole page, so a one-page document never starts with a scrollbar. When you want browser-level sharpness instead, the fit-width button more than doubles the pixels a glyph gets.
 - 🎯 **Made for presenting** — fullscreen mode with ZoomIt-style presenter tools (pen, highlighter, arrow, laser pointer, spotlight zoom).
 - 🔎 **On-device OCR** — recognize text in scanned pages and images, **fully offline** (Korean + English). Plus **Ctrl-drag any region → OCR → clipboard**.
@@ -95,6 +95,9 @@ Show a PDF inline on any page — no download, no plugin:
   PDF** — annotations, OCR, print, and export all work unchanged.
 - **HWP → PDF** — Export → PDF composites the rendered pages, doubling as a
   converter.
+- **HWP ⇄ HWPX** — `hwp2hwpx` and `hwpx2hwp` convert between the two formats
+  from the command line. A measured round trip keeps the page count and every
+  character of the text layer, and 120 documents convert in about 2 seconds.
 
 ### Annotate, manage & export
 - **Annotate** (Editor mode) — stamps, hand-drawn signatures, and full-page

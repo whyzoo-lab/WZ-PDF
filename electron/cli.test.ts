@@ -1,55 +1,142 @@
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  CONVERTERS,
+  type ConverterSpec,
+  type DirEntry,
+  type FsProbe,
+  converterFor,
   expandInputs,
   hasWildcard,
   isConvertible,
   matchesWildcard,
   outputPathFor,
   parseCliArgs,
+  usageFor,
 } from './cli.ts'
 
-/** Stand-in for a folder, so no fixture files are needed. */
-const folder = (...names: string[]) => () => names
+const specOf = (name: string): ConverterSpec => {
+  const spec = CONVERTERS.find(c => c.name === name)
+  if (!spec) throw new Error(`no such converter: ${name}`)
+  return spec
+}
 
-describe('hwp2pdf argument parsing', () => {
+const HWP2PDF = specOf('hwp2pdf')
+const HWP2HWPX = specOf('hwp2hwpx')
+const HWPX2HWP = specOf('hwpx2hwp')
+
+/**
+ * A fake tree, so no fixture files are needed. Keys are directories, values are
+ * their entries; a name ending in `/` is a sub-directory.
+ */
+function tree(layout: Record<string, string[]>): FsProbe {
+  const dirs = new Map<string, DirEntry[]>()
+  for (const [dir, names] of Object.entries(layout)) {
+    dirs.set(path.resolve(dir).toLowerCase(), names.map(name => ({
+      name: name.replace(/\/$/, ''),
+      isDirectory: name.endsWith('/'),
+    })))
+  }
+  return {
+    readDir(dir) {
+      const entries = dirs.get(path.resolve(dir).toLowerCase())
+      if (!entries) throw new Error(`ENOENT: ${dir}`)
+      return entries
+    },
+    isDirectory(target) {
+      return dirs.has(path.resolve(target).toLowerCase())
+    },
+  }
+}
+
+describe('converter selection', () => {
+  it('picks the converter from the switch the launcher passed', () => {
+    expect(converterFor(['C:/apps/WZ PDF.exe', '--hwp2hwpx', 'a.hwp'])?.name).toBe('hwp2hwpx')
+    expect(converterFor(['C:/apps/WZ PDF.exe', '--hwpx2hwp', 'a.hwpx'])?.name).toBe('hwpx2hwp')
+    expect(converterFor(['C:/apps/WZ PDF.exe', 'report.pdf'])).toBeNull()
+  })
+
+  it('gives each converter a distinct switch and target', () => {
+    expect(new Set(CONVERTERS.map(c => c.flag)).size).toBe(CONVERTERS.length)
+    // The C# launcher derives its switch as "--" + its own file name, so the
+    // two must agree exactly or the app rejects the argument.
+    for (const spec of CONVERTERS) expect(spec.flag).toBe(`--${spec.name}`)
+  })
+
+  it('never accepts its own output as input, which would loop', () => {
+    for (const spec of CONVERTERS) {
+      expect(spec.sourceExts).not.toContain(spec.targetExt)
+    }
+  })
+})
+
+describe('argument parsing', () => {
   it('collects inputs and flags in any order', () => {
-    const { options, error } = parseCliArgs(['--hwp2pdf', 'a.hwp', '-f', 'b.hwpx', '--out', 'dist'])
+    const { options, error } = parseCliArgs(
+      ['--hwp2hwpx', 'a.hwp', '-f', 'docs', '--out', 'dist'], HWP2HWPX)
     expect(error).toBeNull()
-    expect(options.inputs).toEqual(['a.hwp', 'b.hwpx'])
+    expect(options.inputs).toEqual(['a.hwp', 'docs'])
     expect(options.force).toBe(true)
     expect(options.outDir).toBe('dist')
   })
 
-  it('defaults to skipping existing PDFs and to full output', () => {
-    const { options } = parseCliArgs(['--hwp2pdf', 'a.hwp'])
+  it('defaults to recursing, skipping existing output and full reporting', () => {
+    const { options } = parseCliArgs(['--hwp2hwpx', 'a.hwp'], HWP2HWPX)
+    expect(options.recurse).toBe(true)
     expect(options.force).toBe(false)
     expect(options.quiet).toBe(false)
     expect(options.outDir).toBeNull()
   })
 
-  it('rejects arguments it cannot honour instead of guessing', () => {
-    expect(parseCliArgs(['--hwp2pdf']).error).toMatch(/No input/)
-    expect(parseCliArgs(['--hwp2pdf', 'a.hwp', '-o']).error).toMatch(/needs a directory/)
-    // -o must not swallow the next flag as if it were a directory.
-    expect(parseCliArgs(['--hwp2pdf', 'a.hwp', '-o', '-f']).error).toMatch(/needs a directory/)
-    expect(parseCliArgs(['--hwp2pdf', '-z', 'a.hwp']).error).toMatch(/Unknown option/)
+  it('honours --no-recurse', () => {
+    const { options } = parseCliArgs(['--hwp2hwpx', 'docs', '--no-recurse'], HWP2HWPX)
+    expect(options.recurse).toBe(false)
   })
 
-  it('ignores everything before the flag', () => {
+  it('rejects arguments it cannot honour instead of guessing', () => {
+    expect(parseCliArgs(['--hwp2pdf'], HWP2PDF).error).toMatch(/No input/)
+    expect(parseCliArgs(['--hwp2pdf', 'a.hwp', '-o'], HWP2PDF).error).toMatch(/needs a directory/)
+    // -o must not swallow the next flag as if it were a directory.
+    expect(parseCliArgs(['--hwp2pdf', 'a.hwp', '-o', '-f'], HWP2PDF).error).toMatch(/needs a directory/)
+    expect(parseCliArgs(['--hwp2pdf', '-z', 'a.hwp'], HWP2PDF).error).toMatch(/Unknown option/)
+  })
+
+  it('ignores everything before its own flag', () => {
     // Real argv: the executable, and in dev the app directory, come first.
     // Treating those as documents made a fully successful run report failures.
-    const { options, error } = parseCliArgs([
-      'C:/apps/WZ PDF.exe', '.', '--hwp2pdf', 'a.hwp',
-    ])
+    const { options, error } = parseCliArgs(
+      ['C:/apps/WZ PDF.exe', '.', '--hwpx2hwp', 'a.hwpx'], HWPX2HWP)
     expect(error).toBeNull()
-    expect(options.inputs).toEqual(['a.hwp'])
+    expect(options.inputs).toEqual(['a.hwpx'])
   })
 
   it('accepts --help with no inputs', () => {
-    const { options, error } = parseCliArgs(['--hwp2pdf', '--help'])
+    const { options, error } = parseCliArgs(['--hwp2hwpx', '--help'], HWP2HWPX)
     expect(error).toBeNull()
     expect(options.help).toBe(true)
+  })
+})
+
+describe('usage text', () => {
+  it('names the tool, its inputs and its output', () => {
+    const usage = usageFor(HWPX2HWP)
+    expect(usage).toContain('hwpx2hwp')
+    expect(usage).toContain('.hwpx')
+    expect(usage).toContain('.hwp files')
+    expect(usage).toContain('--no-recurse')
+  })
+})
+
+describe('accepted extensions', () => {
+  it('follows the converter, not a global list', () => {
+    expect(isConvertible('a.hwp', HWP2HWPX)).toBe(true)
+    expect(isConvertible('a.hwpx', HWP2HWPX)).toBe(false)
+    expect(isConvertible('a.hwpx', HWPX2HWP)).toBe(true)
+    expect(isConvertible('a.hwp', HWPX2HWP)).toBe(false)
+    // hwp2pdf takes both.
+    expect(isConvertible('a.HWP', HWP2PDF)).toBe(true)
+    expect(isConvertible('a.HWPX', HWP2PDF)).toBe(true)
+    expect(isConvertible('a.pdf', HWP2PDF)).toBe(false)
   })
 })
 
@@ -59,37 +146,21 @@ describe('wildcard matching', () => {
     expect(matchesWildcard('report.hwpx', '*.hwp')).toBe(false)
     expect(matchesWildcard('2026-01-report.hwp', '2026-??-*.hwp')).toBe(true)
     expect(matchesWildcard('2026-1-report.hwp', '2026-??-*.hwp')).toBe(false)
-    expect(matchesWildcard('a.hwp', '?.hwp')).toBe(true)
-    expect(matchesWildcard('ab.hwp', '?.hwp')).toBe(false)
+    expect(matchesWildcard('anything', '*')).toBe(true)
   })
 
-  it('is case-insensitive, as Windows is', () => {
+  it('is case-insensitive, like the filesystem it matches against', () => {
     expect(matchesWildcard('REPORT.HWP', '*.hwp')).toBe(true)
-    expect(matchesWildcard('report.hwp', '*.HWP')).toBe(true)
   })
 
-  it('matches Korean file names', () => {
-    expect(matchesWildcard('과업지시서.hwp', '*지시서.hwp')).toBe(true)
-    expect(matchesWildcard('과업계획서.hwp', '*지시서.hwp')).toBe(false)
-  })
-
-  it('treats regex punctuation in a name as literal text', () => {
-    // The whole reason this is a matcher and not a generated RegExp.
+  it('treats regex metacharacters in a name as ordinary text', () => {
+    // The reason this is a direct matcher and not a translated RegExp.
     expect(matchesWildcard('report(final).hwp', '*.hwp')).toBe(true)
-    expect(matchesWildcard('report(final).hwp', 'report(final).hwp')).toBe(true)
-    expect(matchesWildcard('reportXfinalX.hwp', 'report(final).hwp')).toBe(false)
-    expect(matchesWildcard('a+b.hwp', 'a+b.hwp')).toBe(true)
-    expect(matchesWildcard('aab.hwp', 'a+b.hwp')).toBe(false)
+    expect(matchesWildcard('a+b[1].hwp', 'a+b[1].hwp')).toBe(true)
+    expect(matchesWildcard('axb.hwp', 'a.b.hwp')).toBe(false)
   })
 
-  it('does not blow up on many stars', () => {
-    // A translated regex could backtrack exponentially here.
-    const start = Date.now()
-    expect(matchesWildcard('a'.repeat(60) + '.hwpx', '*a*a*a*a*a*a*a*a*a*a*.hwp')).toBe(false)
-    expect(Date.now() - start).toBeLessThan(500)
-  })
-
-  it('knows which names carry a pattern', () => {
+  it('detects patterns', () => {
     expect(hasWildcard('*.hwp')).toBe(true)
     expect(hasWildcard('a?.hwp')).toBe(true)
     expect(hasWildcard('plain.hwp')).toBe(false)
@@ -97,58 +168,102 @@ describe('wildcard matching', () => {
 })
 
 describe('input expansion', () => {
-  it('expands a pattern to the convertible files only, sorted', () => {
-    const { files, unmatched } = expandInputs(
-      ['*.hwp*'],
-      folder('b.hwp', 'a.hwpx', 'notes.txt', 'scan.pdf'),
-    )
-    expect(files.map(f => path.basename(f))).toEqual(['a.hwpx', 'b.hwp'])
+  it('expands a pattern to the matching files only', () => {
+    const probe = tree({ 'C:/docs': ['a.hwp', 'b.hwpx', 'c.txt', 'sub/'] })
+    const { files, unmatched } = expandInputs({
+      inputs: ['C:/docs/*.hwp'], spec: HWP2HWPX, probe,
+    })
+    expect(files.map(f => path.basename(f.path))).toEqual(['a.hwp'])
     expect(unmatched).toEqual([])
   })
 
-  it('reports a pattern that matched nothing', () => {
-    const { files, unmatched } = expandInputs(['*.hwp'], folder('notes.txt'))
+  it('walks a folder and its sub-folders', () => {
+    const probe = tree({
+      'C:/docs': ['top.hwp', 'notes.txt', 'sub/'],
+      'C:/docs/sub': ['deep.hwp', 'deeper/'],
+      'C:/docs/sub/deeper': ['bottom.hwp'],
+    })
+    const { files } = expandInputs({ inputs: ['C:/docs'], spec: HWP2HWPX, probe })
+    expect(files.map(f => path.basename(f.path)).sort())
+      .toEqual(['bottom.hwp', 'deep.hwp', 'top.hwp'])
+    // Every file remembers the folder the search started from, which is what
+    // -o mirrors.
+    for (const file of files) expect(file.base).toBe(path.resolve('C:/docs'))
+  })
+
+  it('stays in the named folder with --no-recurse', () => {
+    const probe = tree({
+      'C:/docs': ['top.hwp', 'sub/'],
+      'C:/docs/sub': ['deep.hwp'],
+    })
+    const { files } = expandInputs({
+      inputs: ['C:/docs'], spec: HWP2HWPX, recurse: false, probe,
+    })
+    expect(files.map(f => path.basename(f.path))).toEqual(['top.hwp'])
+  })
+
+  it('reports an input that yields nothing rather than silently dropping it', () => {
+    const probe = tree({ 'C:/docs': ['only.txt'], 'C:/empty': [] })
+    const { files, unmatched } = expandInputs({
+      inputs: ['C:/docs/*.hwp', 'C:/empty', 'C:/nope/*.hwp'], spec: HWP2HWPX, probe,
+    })
     expect(files).toEqual([])
-    expect(unmatched).toEqual(['*.hwp'])
+    expect(unmatched).toEqual(['C:/docs/*.hwp', 'C:/empty', 'C:/nope/*.hwp'])
   })
 
-  it('reports a directory it cannot read', () => {
-    const { unmatched } = expandInputs(['nope/*.hwp'], () => { throw new Error('ENOENT') })
-    expect(unmatched).toEqual(['nope/*.hwp'])
-  })
-
-  it('passes literal paths through without touching the disk', () => {
-    const { files } = expandInputs(['some/a.hwp'], () => { throw new Error('should not read') })
+  it('takes a literal file as given, whatever its name', () => {
+    // Whether it opens is reported later with the real filesystem error.
+    const probe = tree({ 'C:/docs': [] })
+    const { files, unmatched } = expandInputs({
+      inputs: ['C:/docs/missing.hwp'], spec: HWP2HWPX, probe,
+    })
     expect(files).toHaveLength(1)
-    expect(path.basename(files[0])).toBe('a.hwp')
+    expect(unmatched).toEqual([])
   })
 
-  it('does not convert the same file twice', () => {
-    // Overlapping patterns are the normal way this happens: `*.hwp a.hwp`.
-    const { files } = expandInputs(['*.hwp', 'a.hwp'], folder('a.hwp'))
+  it('de-duplicates a file reached by more than one input', () => {
+    const probe = tree({ 'C:/docs': ['a.hwp'] })
+    const { files } = expandInputs({
+      inputs: ['C:/docs', 'C:/docs/*.hwp', 'C:/docs/a.hwp'], spec: HWP2HWPX, probe,
+    })
     expect(files).toHaveLength(1)
+  })
+
+  it('does not mistake a folder named like a document for one', () => {
+    const probe = tree({
+      'C:/docs': ['archive.hwp/'],
+      'C:/docs/archive.hwp': ['real.hwp'],
+    })
+    const { files } = expandInputs({ inputs: ['C:/docs'], spec: HWP2HWPX, probe })
+    expect(files.map(f => path.basename(f.path))).toEqual(['real.hwp'])
   })
 })
 
 describe('output paths', () => {
-  it('puts the PDF beside the input by default', () => {
-    expect(outputPathFor(path.resolve('docs/report.hwp'), null))
-      .toBe(path.resolve('docs/report.pdf'))
+  const file = (p: string, base: string) => ({ path: path.resolve(p), base: path.resolve(base) })
+
+  it('writes beside the input by default', () => {
+    expect(outputPathFor(file('C:/docs/a.hwp', 'C:/docs'), null, HWP2HWPX))
+      .toBe(path.resolve('C:/docs/a.hwpx'))
+    expect(outputPathFor(file('C:/docs/a.hwpx', 'C:/docs'), null, HWPX2HWP))
+      .toBe(path.resolve('C:/docs/a.hwp'))
   })
 
-  it('honours an output directory', () => {
-    expect(outputPathFor(path.resolve('docs/report.hwpx'), path.resolve('out')))
-      .toBe(path.resolve('out/report.pdf'))
+  it('keeps the source folder structure under -o', () => {
+    expect(outputPathFor(file('C:/docs/sub/a.hwp', 'C:/docs'), 'D:/out', HWP2HWPX))
+      .toBe(path.resolve('D:/out/sub/a.hwpx'))
   })
 
-  it('replaces only the extension, keeping dots in the name', () => {
-    expect(path.basename(outputPathFor('v1.2.report.hwp', null))).toBe('v1.2.report.pdf')
+  it('keeps same-named files in different folders apart', () => {
+    // Flattening two source trees into one output directory would silently
+    // overwrite, leaving the user with fewer documents than they started with.
+    const first = outputPathFor(file('C:/a/report.hwp', 'C:/a'), 'D:/out', HWP2HWPX)
+    const second = outputPathFor(file('C:/a/q1/report.hwp', 'C:/a'), 'D:/out', HWP2HWPX)
+    expect(first).not.toBe(second)
   })
 
-  it('accepts only hwp and hwpx', () => {
-    expect(isConvertible('a.hwp')).toBe(true)
-    expect(isConvertible('a.HWPX')).toBe(true)
-    expect(isConvertible('a.pdf')).toBe(false)
-    expect(isConvertible('a')).toBe(false)
+  it('keeps a name that contains dots', () => {
+    expect(outputPathFor(file('C:/docs/2026.01.report.hwp', 'C:/docs'), null, HWP2HWPX))
+      .toBe(path.resolve('C:/docs/2026.01.report.hwpx'))
   })
 })

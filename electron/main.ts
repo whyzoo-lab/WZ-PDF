@@ -4,7 +4,7 @@ import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import path from 'path'
 import fs from 'fs'
-import { hasCliFlag, runCli } from './cliRunner'
+import { cliToolName, hasCliFlag, runCli } from './cliRunner'
 import {
   FETCH_TIMEOUT_MS,
   MAX_DOCUMENT_BYTES,
@@ -550,10 +550,11 @@ app.whenReady().then(async () => {
   if (app.isPackaged) serveAppProtocol()
   Menu.setApplicationMenu(null)
 
-  // ── hwp2pdf console mode ────────────────────────────────────────────────
-  // Started by the hwp2pdf launcher, never by a user double-click. Runs the
-  // conversion in a window that is never shown and exits with a status code,
-  // so no visible app is created at all on this path.
+  // ── console converter mode ──────────────────────────────────────────────
+  // Started by one of the hwp2pdf / hwp2hwpx / hwpx2hwp launchers, never by a
+  // user double-click. Exits with a status code, so no visible app is created
+  // on this path — hwp2pdf drives a window that is never shown, and the HWPX
+  // converters need no window at all.
   if (hasCliFlag(process.argv)) {
     const page = app.isPackaged
       ? 'app://bundle/app.html?cli=1'
@@ -562,7 +563,8 @@ app.whenReady().then(async () => {
     try {
       code = await runCli(process.argv, page)
     } catch (err) {
-      process.stderr.write(`hwp2pdf failed: ${err instanceof Error ? err.message : String(err)}
+      const tool = cliToolName(process.argv)
+      process.stderr.write(`${tool} failed: ${err instanceof Error ? err.message : String(err)}
 `)
     }
     app.exit(code)

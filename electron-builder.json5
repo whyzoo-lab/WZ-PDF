@@ -112,10 +112,13 @@
   // sequentially, so both targets are declared here but each invocation picks
   // exactly one. Sequencing matters: NSIS's afterPack hook needs the portable
   // artifact already on disk to bundle it as viewer-template.exe.
-  // The hwp2pdf console launcher sits beside WZ PDF.exe (it locates the app
-  // relative to itself). Built by scripts/build-cli.cjs; ~5 KB.
+  // The console launchers sit beside WZ PDF.exe (each locates the app relative
+  // to itself, and picks its converter from its own file name). All three are
+  // the same ~5 KB program compiled under three names by scripts/build-cli.cjs.
   "extraFiles": [
-    { "from": "build/hwp2pdf.exe", "to": "hwp2pdf.exe" }
+    { "from": "build/hwp2pdf.exe",  "to": "hwp2pdf.exe" },
+    { "from": "build/hwp2hwpx.exe", "to": "hwp2hwpx.exe" },
+    { "from": "build/hwpx2hwp.exe", "to": "hwpx2hwp.exe" }
   ],
 
   // The MCP server ships as one bundled file plus the two pdfjs files it needs
@@ -125,8 +128,16 @@
   // The explicit filter matters: without it electron-builder skips the nested
   // node_modules/ directory, and the server ships without the pdfjs files it
   // imports — it then dies on startup with "DOMMatrix is not defined".
+  // rhwp's JS glue, for the main process's window-less HWP ⇄ HWPX converter
+  // (electron/hwpxCliBackend.ts). Only the ~340 KB glue ships here; the 7 MB
+  // wasm it initialises is the renderer's own asarUnpack'd copy under
+  // dist/hwp/, so the installer carries it once. Staged by
+  // scripts/copy-hwp-wasm.cjs, together with the package.json that marks it as
+  // an ES module — without that Node prints a parse warning onto the console
+  // tool's output.
   "extraResources": [
-    { "from": "build/mcp", "to": "mcp", "filter": ["**/*"] }
+    { "from": "build/mcp", "to": "mcp", "filter": ["**/*"] },
+    { "from": "build/rhwp", "to": "rhwp", "filter": ["**/*"] }
   ],
 
   "win": {
@@ -141,8 +152,8 @@
   },
 
   "nsis": {
-    // build/installer.nsh adds the install directory to the user's PATH, so
-    // `hwp2pdf` runs from any terminal, and removes it again on uninstall.
+    // build/installer.nsh adds the install directory to the user's PATH, so the
+    // console converters run from any terminal, and removes it on uninstall.
     "include": "build/installer.nsh",
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,

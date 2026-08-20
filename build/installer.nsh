@@ -1,7 +1,8 @@
 ; Custom NSIS steps for the WZ PDF installer.
 ;
-; Adds the install directory to the user's PATH so `hwp2pdf` runs from any
-; terminal, and takes it back out on uninstall.
+; Adds the install directory to the user's PATH so the console converters
+; (hwp2pdf, hwp2hwpx, hwpx2hwp) run from any terminal, and takes it back out
+; on uninstall.
 ;
 ; Why PowerShell rather than NSIS string handling: a standard makensis build
 ; truncates strings at NSIS_MAX_STRLEN (1024). Reading a longer PATH and writing
@@ -25,7 +26,7 @@
 !macroend
 
 !macro customInstall
-  DetailPrint "Adding $INSTDIR to PATH so hwp2pdf works from any terminal..."
+  DetailPrint "Adding $INSTDIR to PATH so hwp2pdf / hwp2hwpx / hwpx2hwp work from any terminal..."
   ; Remove-then-append keeps this idempotent across reinstalls and upgrades.
   !insertmacro WzPdfPathScript "$$d=$$env:WZPDF_DIR; $$k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment'); $$c=[string]$$k.GetValue('Path','',[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames); $$p=@($$c -split ';' | Where-Object {$$_ -ne '' -and $$_ -ne $$d}); $$k.SetValue('Path',(($$p + $$d) -join ';'),[Microsoft.Win32.RegistryValueKind]::ExpandString); $$k.Close()"
 !macroend

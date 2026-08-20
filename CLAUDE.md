@@ -613,36 +613,78 @@ needs the portable artifact already on disk to embed.
 The OS passes the double-clicked PDF path as a CLI argument; `electron/main.ts`
 picks it up via `process.argv` and sends `open-file` to the renderer.
 
-### `hwp2pdf` console tool
+### Console converters (`hwp2pdf`, `hwp2hwpx`, `hwpx2hwp`)
 
-A batch HWP/HWPX → PDF converter installed beside the app. Three pieces:
+Three batch converters installed beside the app and put on PATH by the
+installer. They share everything except how the conversion itself runs:
 
-- `cli/hwp2pdf.cs` → `build/hwp2pdf.exe` (~5 KB), built by `scripts/build-cli.cjs`
-  with the **csc.exe that ships with Windows**, so the project still needs
-  nothing but Node to build. It exists only because `WZ PDF.exe` is a
-  GUI-subsystem binary: started from cmd it has no console and its output goes
-  nowhere. A console-subsystem parent has one, and a child launched with
-  inherited handles writes to it — so the launcher's whole job is to lend the
-  app a console and pass the exit code back.
-- `electron/cli.ts` — argument parsing, wildcard matching, output paths. Pure
-  and unit-tested; Windows hands `*.hwp` to a program **unexpanded**, so
-  expanding it is the tool's job. The matcher is written directly rather than
-  translated into a RegExp, because every character of a real file name would
-  otherwise need escaping (`report(final).hwp`) and a star-heavy pattern can
-  backtrack exponentially.
-- `electron/cliRunner.ts` + `src/services/cliBridge.ts` — the conversion runs in
-  a **hidden window loading the ordinary app page**, because `@rhwp/core` renders
-  into a canvas and `exportHwpToPdf` composites those canvases. That is not a
-  workaround, it is what makes the output identical to the GUI's Export → PDF,
-  selectable text layer and bundled Korean fonts included.
+- `cli/wzconvert.cs` → `build/<tool>.exe` (~6 KB each), built by
+  `scripts/build-cli.cjs` with the **csc.exe that ships with Windows**, so the
+  project still needs nothing but Node to build. **One source compiled under
+  three names**: each launcher picks its converter from its own file name
+  (checked against an allowlist, so a renamed copy cannot pass the app an
+  arbitrary switch), which keeps the delicate part — re-quoting the command
+  line — in one place. They exist only because `WZ PDF.exe` is a GUI-subsystem
+  binary: started from cmd it has no console and its output goes nowhere. A
+  console-subsystem parent has one, and a child launched with inherited handles
+  writes to it — so a launcher's whole job is to lend the app a console and pass
+  the exit code back.
+- `electron/cli.ts` — the `CONVERTERS` table plus argument parsing, wildcard
+  matching, folder walking and output paths. Pure and unit-tested; Windows hands
+  `*.hwp` to a program **unexpanded**, so expanding it is the tool's job. The
+  matcher is written directly rather than translated into a RegExp, because
+  every character of a real file name would otherwise need escaping
+  (`report(final).hwp`) and a star-heavy pattern can backtrack exponentially.
+- `electron/convertRunner.ts` — the batch driver: expansion, the skip/overwrite
+  rule, per-file reporting, exit code. Format-agnostic; a converter supplies
+  only a `ConversionBackend` (`warmup` / `convert` / `dispose`).
 
-Two things that cost real time to learn:
+**The two backends, and why they differ.** This is the one thing to understand
+before changing anything here:
 
-- **Every wait must be bounded.** `loadURL`, the poll for `window.__wzCli` and
-  each conversion all have deadlines. Without them the process sits with no
-  window and no output and has to be killed from Task Manager. One-time startup
-  (engine + the ~12 MB Korean fonts) is a separate `warmup()` step, or the first
-  document gets billed for it and is reported as a timeout.
+| | `pdfCliBackend.ts` | `hwpxCliBackend.ts` |
+|---|---|---|
+| needs | the app's Chromium | nothing but WASM |
+| runs in | a hidden `BrowserWindow` | the **main process** |
+| because | pages are composited from rendered canvases | it is a structure transform, not rendering |
+| measured | ~500 ms/file after a long warmup | **120 files in 2.3 s**, cold start included |
+
+The PDF path drives the real renderer (`src/services/cliBridge.ts`) so its
+output is identical to the GUI's Export → PDF, selectable text layer and bundled
+Korean fonts included. HWP ⇄ HWPX calls rhwp's `exportHwpx()` / `exportHwp()`
+directly and never creates a window, so none of that path's startup traps apply
+to it.
+
+**Fidelity, measured rather than assumed.** A full `hwp → hwpx → hwp` round trip
+on real Korean documents preserves the page count and **every character of the
+text layer**; the only drift found was the line height of an *empty* paragraph
+(13.3 → 4). Re-check with `getPageTextLayout(0)` on both ends after an engine
+bump — the text runs are the part that matters.
+
+**Folders.** A directory argument is walked recursively (`--no-recurse` opts
+out), and `-o` **mirrors the source tree** rather than flattening it. Flattening
+would let two same-named files in different sub-folders overwrite each other,
+which loses documents silently — the worst possible failure for a batch tool.
+Each expanded file therefore carries the `base` directory its search started
+from. All three tools share this, so `hwp2pdf` gained folder support too.
+
+Three things that cost real time to learn:
+
+- **Every wait must be bounded.** `loadURL`, the poll for `window.__wzCli`, the
+  engine load and each conversion all have deadlines. Without them the process
+  sits with no window and no output and has to be killed from Task Manager.
+  One-time startup (engine, and for PDF the ~12 MB Korean fonts) is a separate
+  `warmup()` step, or the first document gets billed for it and is reported as a
+  timeout.
+- **The main process is CommonJS, and `rhwp.js` is an ES module.** tsc rewrites a
+  literal `import()` into `require()`, which cannot load it, so
+  `hwpxCliBackend.ts` builds the import through `new Function(...)`. Two related
+  traps: `initSync({ module })` must be used rather than the default async
+  initialiser (that one fetches the wasm by URL, meaningless outside a browser),
+  and the glue must ship with a `package.json` marking it as ESM or Node prints
+  a `MODULE_TYPELESS_PACKAGE_JSON` warning straight into the tool's output.
+  Packaging ships **only the ~340 KB glue** (`extraResources`); the 7 MB wasm is
+  the renderer's own asarUnpack'd copy under `dist/hwp/`.
 - **Never hand-patch `release/win-unpacked/resources/app.asar` to test a
   change.** electron-builder stamps an integrity hash into the exe (`updating
   asar integrity executable resource` in the build log); a repacked asar fails

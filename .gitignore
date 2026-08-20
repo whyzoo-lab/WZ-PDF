@@ -56,9 +56,11 @@ public/standard_fonts/
 
 # Superpowers SDD ledger (dev-only)
 .superpowers/
-build/hwp2pdf.exe
 
-# build/ holds generated artifacts (icon, compiled CLI) EXCEPT the installer
-# script, which is source electron-builder needs at pack time.
+# build/ holds generated artifacts (icon, compiled console launchers, the
+# bundled MCP server, the staged rhwp glue) EXCEPT the installer script, which
+# is source electron-builder needs at pack time.
 !build/installer.nsh
+build/*.exe
 build/mcp/
+build/rhwp/
