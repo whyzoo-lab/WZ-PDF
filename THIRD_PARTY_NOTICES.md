@@ -95,3 +95,36 @@ which enumerates each component license.
 
 Vite, TypeScript, Tailwind CSS, ESLint, Vitest, and related devDependencies
 are MIT-licensed. They do not ship in the user-facing distribution.
+
+---
+
+## Supertonic 3 (text-to-speech) — code MIT, **model weights OpenRAIL-M**
+
+Reading documents aloud uses [Supertonic](https://github.com/supertone-inc/supertonic)
+by Supertone Inc. The two halves carry different licences, and the difference
+matters:
+
+- **Inference code** — MIT. A copy of `nodejs/helper.js` is vendored verbatim at
+  `electron/vendor/supertonic/helper.js`, with its provenance recorded in the
+  README beside it.
+- **Model weights** ([`Supertone/supertonic-3`](https://huggingface.co/Supertone/supertonic-3))
+  — **OpenRAIL-M**. These are **not** included in the installer. They are
+  downloaded once, on request, when the user first turns on reading aloud.
+
+OpenRAIL-M is **not an OSI open-source licence**. It permits commercial use,
+modification and redistribution, but attaches *use-based restrictions* that must
+be passed on: anyone redistributing the weights, or a derivative of them, has to
+include those restrictions as an enforceable term and give notice of them. The
+restrictions cover applications such as generating speech to impersonate a
+person without consent, to deceive, harass or defame, or otherwise to cause
+foreseeable harm.
+
+The full text accompanies the weights in the download and is also published at
+the model page linked above. Using WZ PDF's read-aloud feature means accepting
+those terms for the audio it produces.
+
+## onnxruntime-node — MIT
+
+Speech synthesis runs on [ONNX Runtime](https://github.com/microsoft/onnxruntime)
+(MIT). Only the CPU provider ships; the DirectML provider's libraries are
+excluded from the build.

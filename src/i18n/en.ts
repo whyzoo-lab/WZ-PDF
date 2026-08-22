@@ -113,6 +113,20 @@ export const en = {
   'ocr.noText': 'No text recognized',
   'ocr.engineError': 'OCR engine failed to load',
   'ocr.cancel': 'Cancel OCR',
+
+  // ── Read aloud ───────────────────────────────────────────────────────────
+  'tts.read': 'Read aloud',
+  'tts.stop': 'Stop reading',
+  'tts.preparing': 'Preparing speech...',
+  'tts.reading': 'Reading {done}/{total}',
+  'tts.noText': 'Nothing to read on this page',
+  'tts.needsModel': 'Reading aloud needs a one-time {size} download of the voice model. It then works offline.',
+  'tts.download': 'Download voice model',
+  'tts.downloading': 'Downloading voice model {done}/{total} MB',
+  'tts.cancel': 'Cancel',
+  'tts.voice': 'Voice',
+  'tts.speed': 'Speed',
+  'tts.desktopOnly': 'Reading aloud is available in the desktop app',
   'ocr.recognizing': 'Recognizing…',
 
   // ── Update notice ─────────────────────────────────────────────────────────

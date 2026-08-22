@@ -41,6 +41,7 @@ OCR runtime. Ships with an optional
 - 📝 **Markdown as a document — and editable** — `.md` renders as a formatted page (headings, tables, code, task lists) with a contents rail that follows you as you scroll. Flip the padlock and you get the raw source, tags and all, to edit and save back.
 - 🖨️ **Mail and Markdown print, zoom, search and present too** — they print as *text*, so the output stays sharp and selectable instead of being a picture of a page; `Ctrl+F` finds across them, and F5 puts them fullscreen with the same presenter tools as a PDF.
 - ⌨️ **Batch converters on your PATH** — `hwp2pdf`, `hwp2hwpx` and `hwpx2hwp` run from any terminal. Point them at files, wildcards or whole folders: `hwp2hwpx C:\docs\2026` walks the tree, and `-o` rebuilds that tree in the output folder instead of flattening it. Wildcards are expanded by the tools (Windows doesn't do it for you), and converted PDFs carry the same selectable text layer as the GUI export.
+- 🔊 **Reads documents aloud, on your machine** — press the speaker and the page is read to you in a natural voice, Korean included, with ten voices and a speed control. It runs entirely offline once set up: nothing about what you are reading leaves the computer. (Desktop app; the voice model is a one-time 383 MB download you are asked about first.)
 - 🔍 **Fit width in one click** — the viewer opens fitting the whole page, so a one-page document never starts with a scrollbar. When you want browser-level sharpness instead, the fit-width button more than doubles the pixels a glyph gets.
 - 🎯 **Made for presenting** — fullscreen mode with ZoomIt-style presenter tools (pen, highlighter, arrow, laser pointer, spotlight zoom).
 - 🔎 **On-device OCR** — recognize text in scanned pages and images, **fully offline** (Korean + English). Plus **Ctrl-drag any region → OCR → clipboard**.
@@ -89,6 +90,13 @@ Show a PDF inline on any page — no download, no plugin:
   (Korean + English, PaddleOCR PP-OCRv5). Run per page or whole document.
 - **Region OCR → clipboard** — hold **Ctrl and drag** to highlight any area; on
   release it's OCR'd and the text is copied to your clipboard.
+- **Read aloud** — speaks the document from the page you are on, a sentence at
+  a time, using [Supertonic 3](https://huggingface.co/Supertone/supertonic-3)
+  on-device. Ten voices, adjustable speed, and no audio or text ever sent
+  anywhere. The voice model downloads once (383 MB) after you agree to it;
+  everything after that works offline. Note that the model's weights are under
+  the OpenRAIL-M licence rather than MIT — see
+  [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
 
 ### HWP / HWPX (Korean documents)
 - View `.hwp` (binary) and `.hwpx` (OOXML) files through the **same pipeline as
@@ -185,6 +193,7 @@ installer + portable exe.
 | PDF | pdfjs-dist (render/text), pdf-lib + @pdf-lib/fontkit (export) |
 | HWP / HWPX | @rhwp/core (Rust → WebAssembly) |
 | OCR | onnxruntime-web + PaddleOCR PP-OCRv5 (offline, on-device) |
+| Speech | Supertonic 3 + onnxruntime-node (offline, on-device) |
 | Desktop | Electron + electron-builder |
 | Build/Test | Vite, TypeScript, Vitest, ESLint |
 | Agents | @modelcontextprotocol/sdk |

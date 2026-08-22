@@ -113,6 +113,20 @@ export const ko = {
   'ocr.noText': '인식된 텍스트가 없습니다',
   'ocr.engineError': 'OCR 엔진 로드 실패',
   'ocr.cancel': 'OCR 취소',
+
+  // ── Read aloud ───────────────────────────────────────────────────────────
+  'tts.read': '읽어주기',
+  'tts.stop': '읽기 중지',
+  'tts.preparing': '음성 준비 중...',
+  'tts.reading': '읽는 중 {done}/{total}',
+  'tts.noText': '이 페이지에는 읽을 텍스트가 없습니다',
+  'tts.needsModel': '읽어주기를 쓰려면 음성 모델을 한 번 내려받아야 합니다({size}). 이후에는 오프라인으로 동작합니다.',
+  'tts.download': '음성 모델 내려받기',
+  'tts.downloading': '음성 모델 내려받는 중 {done}/{total} MB',
+  'tts.cancel': '취소',
+  'tts.voice': '목소리',
+  'tts.speed': '속도',
+  'tts.desktopOnly': '읽어주기는 데스크톱 앱에서 사용할 수 있습니다',
   'ocr.recognizing': '인식 중…',
 
   // ── 업데이트 알림 ─────────────────────────────────────────────────────────

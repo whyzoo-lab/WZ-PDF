@@ -49,6 +49,46 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openHelp: (lang?: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('open-help', lang),
 
+  // ── Text to speech ────────────────────────────────────────────────────────
+  /** Whether the speech model is on disk, and how much of it. */
+  ttsStatus: (): Promise<{
+    ready: boolean
+    bytesPresent: number
+    bytesTotal: number
+    dir: string
+  }> => ipcRenderer.invoke('tts:status'),
+
+  /** Download the speech model. Resolves when every file is present. */
+  ttsDownload: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('tts:download'),
+
+  /** Abort a download in progress; the files already finished are kept. */
+  ttsCancelDownload: (): Promise<void> => ipcRenderer.invoke('tts:cancel-download'),
+
+  /** Progress for the download above, roughly once per megabyte. */
+  onTtsDownloadProgress: (
+    callback: (progress: { bytesReceived: number; bytesTotal: number; file: string }) => void,
+  ) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: {
+      bytesReceived: number; bytesTotal: number; file: string
+    }) => callback(progress)
+    ipcRenderer.on('tts:download-progress', handler)
+    return () => ipcRenderer.removeListener('tts:download-progress', handler)
+  },
+
+  /** Synthesize one chunk of text. Returns mono PCM in the given sample rate. */
+  ttsSynthesize: (options: {
+    text: string
+    voice: string
+    lang: string
+    speed: number
+    totalStep: number
+  }): Promise<{ pcm: Float32Array; sampleRate: number }> =>
+    ipcRenderer.invoke('tts:synthesize', options),
+
+  /** Stop the engine and release its memory (~570 MB) right away. */
+  ttsStop: (): Promise<void> => ipcRenderer.invoke('tts:stop'),
+
   // ── Optional update check ─────────────────────────────────────────────────
   /** Fetch the version manifest via the main process (avoids CORS). null on error. */
   checkUpdate: (): Promise<unknown> => ipcRenderer.invoke('check-update'),

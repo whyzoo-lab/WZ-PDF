@@ -613,6 +613,79 @@ needs the portable artifact already on disk to embed.
 The OS passes the double-clicked PDF path as a CLI argument; `electron/main.ts`
 picks it up via `process.argv` and sends `open-file` to the renderer.
 
+### Reading aloud (text-to-speech)
+
+Documents can be read out loud with [Supertonic 3](https://huggingface.co/Supertone/supertonic-3),
+a 31-language on-device TTS model. Korean is a first-class language in it, which
+is why it was chosen over the better-known alternatives — **Kokoro has no Korean
+at all** (checked against its VOICES.md, not the blog posts that claim
+otherwise) and neither does Piper.
+
+**Where it runs, and why that was the whole design question.** Measured on this
+codebase, same sentence, same machine:
+
+| | RTF | needs a GPU? |
+|---|---|---|
+| renderer, WebGPU | 0.29x | yes |
+| renderer, WASM | **0.93x** | no |
+| **main process, onnxruntime-node (CPU)** | **0.29x** | no |
+
+WASM is the outlier, and it was measured on a fast machine (20 cores, RTX
+Blackwell) — 0.93x there means *slower than playback* on an ordinary laptop, so
+speech would stutter. Native CPU matches WebGPU without needing a GPU at all, so
+synthesis runs in the main process and the renderer only plays the audio.
+
+Cross-origin isolation is **not** the explanation for the WASM figure: enabling
+COOP/COEP so `SharedArrayBuffer` (and therefore ORT's threaded WASM) is
+available moved it to 0.95x. Don't re-litigate that one without re-measuring.
+
+**A `utilityProcess`, not the main process itself.** Loading the model takes a
+process from 64 MB to 499 MB, and 631 MB after a few sentences. A document
+viewer must not carry that for a whole session, so `electron/ttsWorker.ts` runs
+in a child that is spawned on first use and killed on stop or after five idle
+minutes — which returns every byte to the OS. It also keeps a native module out
+of the process that owns the window.
+
+**The weights are not in the installer.** They are 383 MB against a 246 MB
+installer, for an opt-in feature, so `electron/ttsModel.ts` downloads them once
+into `userData` after the user agrees to the size. The privacy promise is
+untouched: it is about *documents*, and none is involved. Files are fetched to
+`<name>.part` and renamed only when the byte count matches exactly, so an
+interrupted download leaves nothing behind to fail confusingly later.
+
+**Licence split — read `THIRD_PARTY_NOTICES.md` before touching this.** The
+inference code is MIT and vendored verbatim at `electron/vendor/supertonic/`;
+the **weights are OpenRAIL-M**, which is not an OSI licence and carries
+use-based restrictions that must be passed downstream. That is a second reason
+they are downloaded rather than bundled.
+
+**Splitting the text is what the feature sounds like.** `src/services/ttsText.ts`
+splits into sentences (not pages) so playback starts after the first one, and
+`useTts` keeps two sentences synthesized ahead — at RTF 0.29x that means
+playback never waits. Two traps it handles, both audible when they are missed:
+a naive split on `.` breaks `1.5` and `www.foo.com` mid-number, and Korean text
+must be synthesized with `lang: 'ko'` even when it contains English terms,
+because the Korean reader copes with Latin words while the English one mangles
+Hangul.
+
+**Extraction must supply structure, not just characters** (`ttsSource.ts`).
+`normalizeForSpeech` joins single newlines (a PDF wraps lines at the margin) and
+keeps blank lines (a real block boundary). It has to: `제1조 목적` and
+`이 계약은 갑과 을이` are both short lines with no final punctuation, and nothing
+in the characters distinguishes a heading from a wrapped line. The format knows
+— pdfjs has item coordinates and `hasEOL`, rhwp has positioned runs, Markdown
+has block elements — so each extractor emits blank lines between blocks and the
+splitter can stay dumb.
+
+**Packaging.** `onnxruntime-node` is the first real runtime dependency of the
+main process, so `electron-builder.json5` lists it explicitly instead of
+dropping the blanket `node_modules` exclusion. Only the CPU pieces ship
+(~27 MB); the DirectML trio (36 MB) and every non-win32-x64 binary are excluded,
+and `bin/**` is `asarUnpack`ed because a `.node` and a `.dll` cannot be loaded
+from inside an asar. The vendored helper is an ES module inside a CommonJS
+subtree, so its own `package.json` (`{"type":"module"}`) must ship with it —
+without it Node prints a parse warning or fails outright.
+
 ### Console converters (`hwp2pdf`, `hwp2hwpx`, `hwpx2hwp`)
 
 Three batch converters installed beside the app and put on PATH by the

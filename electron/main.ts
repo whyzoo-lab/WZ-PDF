@@ -5,6 +5,8 @@ import { pathToFileURL } from 'node:url'
 import path from 'path'
 import fs from 'fs'
 import { cliToolName, hasCliFlag, runCli } from './cliRunner'
+import { shutdown as shutdownTts, synthesize as synthesizeSpeech } from './ttsEngine'
+import { downloadModel, isVoiceId, modelStatus } from './ttsModel'
 import {
   FETCH_TIMEOUT_MS,
   MAX_DOCUMENT_BYTES,
@@ -482,6 +484,67 @@ ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffe
     await handle.close()
   }
 })
+
+// ── IPC: text to speech ────────────────────────────────────────────────────
+// The weights are not in the installer (383 MB against a 246 MB installer, for
+// an opt-in feature), so the renderer asks for their status, triggers the
+// one-time download, and then requests audio a chunk at a time. Synthesis runs
+// in a utility process — see ttsWorker.ts for why.
+let ttsDownload: AbortController | null = null
+
+ipcMain.handle('tts:status', async (event) => {
+  assertTrustedIpcSender(event)
+  return modelStatus()
+})
+
+ipcMain.handle('tts:download', async (event) => {
+  assertTrustedIpcSender(event)
+  if (ttsDownload) return { ok: false, error: 'A download is already running' }
+  const controller = new AbortController()
+  ttsDownload = controller
+  try {
+    await downloadModel(controller.signal, progress => {
+      // The window can be gone by the time a chunk lands.
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('tts:download-progress', progress)
+      }
+    })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  } finally {
+    ttsDownload = null
+  }
+})
+
+ipcMain.handle('tts:cancel-download', async (event) => {
+  assertTrustedIpcSender(event)
+  ttsDownload?.abort()
+})
+
+ipcMain.handle('tts:synthesize', async (event, options: unknown) => {
+  assertTrustedIpcSender(event)
+  // The renderer is the threat model for IPC, so none of this is taken on
+  // trust: every field is checked and clamped before it reaches the engine.
+  const opts = options as Record<string, unknown>
+  const text = typeof opts?.text === 'string' ? opts.text : ''
+  if (text.length === 0 || text.length > 2_000) throw new Error('Invalid text')
+  if (!isVoiceId(opts.voice)) throw new Error('Invalid voice')
+  const lang = typeof opts.lang === 'string' && /^[a-z]{2}$/.test(opts.lang) ? opts.lang : 'en'
+  const speed = clamp(Number(opts.speed), 0.5, 2, 1.05)
+  const totalStep = Math.round(clamp(Number(opts.totalStep), 1, 32, 8))
+  return synthesizeSpeech({ text, voice: opts.voice, lang, speed, totalStep })
+})
+
+ipcMain.handle('tts:stop', async (event) => {
+  assertTrustedIpcSender(event)
+  shutdownTts()
+})
+
+function clamp(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
 
 // ── IPC: open-help ─────────────────────────────────────────────────────────
 // Opens `help.html` (shipped alongside the renderer build) in the user's

@@ -38,13 +38,39 @@
   // If the main process ever does need a real runtime dependency, add it here
   // explicitly (e.g. "node_modules/some-pkg/**/*") rather than dropping the
   // exclusion.
+  // Text-to-speech is the exception the note above anticipated: the main
+  // process really does need a runtime dependency now, so it is listed
+  // explicitly rather than by dropping the exclusion.
+  //
+  // Only the CPU pieces ship. The DirectML provider (DirectML.dll +
+  // dxcompiler.dll + dxil.dll, 36 MB) is excluded because we never ask for it —
+  // measured, CPU inference already matches WebGPU at RTF 0.29x — and the
+  // other platforms' binaries are dead weight in a Windows build. What is left
+  // is onnxruntime.dll plus its ~0.3 MB binding: about 27 MB with
+  // onnxruntime-common.
+  //
+  // adm-zip and global-agent are dependencies of onnxruntime-node's *install*
+  // script, not of its runtime (`dist/` requires only onnxruntime-common and
+  // worker_threads), so they stay out.
   "files": [
     "dist/**/*",
     "electron/**/*.js",
     "!electron/**/*.test.js",
     "electron/package.json",
+    // Marks the vendored Supertonic helper as ESM; without it Node inherits
+    // electron/package.json's "commonjs" and cannot parse the file.
+    "electron/vendor/supertonic/package.json",
     "package.json",
-    "!node_modules/**/*"
+    "!node_modules/**/*",
+    "node_modules/fft.js/**/*",
+    "node_modules/onnxruntime-common/**/*",
+    "node_modules/onnxruntime-node/**/*",
+    "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+    "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+    "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**",
+    "!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/DirectML.dll",
+    "!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/dxcompiler.dll",
+    "!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/dxil.dll"
   ],
 
   // Keep the big, lazily-loaded binaries OUT of the asar. They are only read
@@ -59,7 +85,10 @@
     "dist/wasm/**",             // pdfjs image decoders
     "dist/assets/*.wasm",       // onnxruntime + rhwp wasm emitted by Vite
     "dist/assets/ocrEngine-*.js",
-    "dist/assets/worker-entry-*.js"
+    "dist/assets/worker-entry-*.js",
+    // A .node binding and a .dll cannot be loaded from inside an asar — the OS
+    // loader needs a real path on disk.
+    "node_modules/onnxruntime-node/bin/**"
   ],
 
   // Only bundle these Electron locales (drops ~50 unused ones, ~10MB saving)

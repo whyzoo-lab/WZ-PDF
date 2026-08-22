@@ -10,6 +10,7 @@ import {
   IconStamp, IconSignature, IconWatermark, IconDelete, IconUpload, IconLink,
   IconDownload, IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
   IconExe, IconLock, IconLockOpen, IconMenu, IconMore, IconFitWidth,
+  IconSpeak, IconStopSpeak,
 } from './icons'
 import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED } from './toolbarStyles'
 import { ZoomControl } from './ZoomControl'
@@ -70,6 +71,12 @@ export interface ActionBarProps {
   onExportImages: () => void
   /** If undefined, the EXE option is hidden (only available in Electron builds). */
   onExportExe?: () => void
+  // ── Read aloud ─────────────────────────────────────────────────────────────
+  /** Start or stop reading the document. Undefined outside the desktop build,
+   *  where there is no speech engine, which also hides the button. */
+  onToggleSpeech?: () => void
+  /** Reading is under way — the button becomes a stop button. */
+  isSpeaking?: boolean
 }
 
 export function ActionBar({
@@ -114,6 +121,8 @@ export function ActionBar({
   onExportHtml,
   onExportImages,
   onExportExe,
+  onToggleSpeech,
+  isSpeaking = false,
 }: ActionBarProps) {
   const [stampPanelOpen, setStampPanelOpen] = useState(false)
   const [stampMenuRect, setStampMenuRect] = useState<DOMRect | null>(null)
@@ -379,6 +388,17 @@ export function ActionBar({
     ><IconPrint /></button>
   ) : null
 
+  const speakButton = (onToggleSpeech && (hasPdf || flowDoc)) ? (
+    <button
+      type="button"
+      onClick={onToggleSpeech}
+      aria-label={isSpeaking ? t('tts.stop') : t('tts.read')}
+      title={isSpeaking ? t('tts.stop') : t('tts.read')}
+      aria-pressed={isSpeaking}
+      className={`${BTN_BASE} ${isSpeaking ? BTN_ARMED : BTN_IDLE}`}
+    >{isSpeaking ? <IconStopSpeak /> : <IconSpeak />}</button>
+  ) : null
+
   const ocrCluster = hasPdf ? (
     <div className="relative inline-flex items-center">
       <button
@@ -506,6 +526,7 @@ export function ActionBar({
       )}
 
       {printButton}
+      {speakButton}
       {ocrCluster}
 
       {/* Export — split button: main downloads PDF, chevron opens the format menu. */}

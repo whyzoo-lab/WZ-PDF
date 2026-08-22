@@ -12,6 +12,9 @@ import { useSearch } from './hooks/useSearch'
 import { useOpenUrl } from './hooks/useOpenUrl'
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import { useFlowSearch } from './hooks/useFlowSearch'
+import { useTts } from './hooks/useTts'
+import { TtsBar } from './components/TtsBar'
+import { planSpeech } from './services/ttsText'
 import { SearchBar } from './components/SearchBar'
 import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
@@ -505,6 +508,48 @@ export default function App() {
         clear: search.clear,
       }
 
+  // ── Read aloud ───────────────────────────────────────────────────────────
+  const tts = useTts()
+  const [ttsPromptOpen, setTtsPromptOpen] = useState(false)
+
+  /** Read from the page in view to the end — where the reader actually is. */
+  const startReading = useCallback(async () => {
+    let raw = ''
+    if (flowDoc) {
+      // The element the flow printer marks is exactly the readable body.
+      const body = document.querySelector<HTMLElement>('[data-wz-flow-print]')
+      const { textFromElement } = await import('./services/ttsSource')
+      raw = body ? textFromElement(body) : ''
+    } else if (pdfDoc) {
+      const { textFromPages } = await import('./services/ttsSource')
+      raw = await textFromPages(pdfDoc, kind, { from: currentPage, to: numPages })
+    }
+
+    const { chunks } = planSpeech(raw)
+    if (chunks.length === 0) { showToast(t('tts.noText')); return }
+    await tts.speak(chunks)
+  }, [tts, flowDoc, pdfDoc, kind, currentPage, numPages, showToast])
+
+  const handleToggleSpeech = useCallback(async () => {
+    if (tts.status !== 'idle') { tts.stop(); return }
+
+    // Checked here rather than on mount: sixteen stat() calls do not belong on
+    // the startup path for a feature most sessions never touch.
+    const status = await tts.refreshModel()
+    if (!status?.ready) { setTtsPromptOpen(true); return }
+    await startReading()
+  }, [tts, startReading])
+
+  const handleTtsDownload = useCallback(async () => {
+    await tts.download()
+    setTtsPromptOpen(false)
+    // Carry on into what the user actually asked for. Stopping here leaves them
+    // staring at a finished download with nothing happening, having to press
+    // the button a second time to get the thing they already requested.
+    const status = await tts.refreshModel()
+    if (status?.ready) await startReading()
+  }, [tts, startReading])
+
   const actionBarProps = {
     hasPdf: !!pdfDoc,
     flowDoc,
@@ -529,6 +574,10 @@ export default function App() {
     //   - Electron: appends PDF bytes onto the running portable exe.
     //   - Web:      redirects to the installer download (see useExporters).
     onExportExe: handleExportExe,
+    // Undefined on the web build, where there is no speech engine — which is
+    // also what hides the button.
+    onToggleSpeech: window.electronAPI?.ttsSynthesize ? handleToggleSpeech : undefined,
+    isSpeaking: tts.status !== 'idle',
     onPrint: handlePrintAny,
     onAppModeChange: handleAppModeChange,
     onViewModeChange: handleViewModeChange,
@@ -557,6 +606,27 @@ export default function App() {
   return (
     <div className="flex flex-col h-dvh overflow-hidden bg-gray-900">
       <ActionBar {...actionBarProps} />
+
+      <TtsBar
+        status={tts.status}
+        index={tts.index}
+        chunkCount={tts.chunkCount}
+        error={tts.error}
+        model={tts.model}
+        downloading={tts.downloading}
+        downloadProgress={tts.downloadProgress}
+        promptOpen={ttsPromptOpen}
+        voice={tts.voice}
+        speed={tts.speed}
+        onDownload={handleTtsDownload}
+        onCancelDownload={tts.cancelDownload}
+        onDismissPrompt={() => setTtsPromptOpen(false)}
+        onPause={tts.pause}
+        onResume={tts.resume}
+        onStop={tts.stop}
+        onVoiceChange={tts.setVoice}
+        onSpeedChange={tts.setSpeed}
+      />
 
       {/* Hidden file input for F2 / double-click to open */}
       <input

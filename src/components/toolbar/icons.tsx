@@ -213,3 +213,18 @@ export const IconFitWidth = () => (
     <path d="M7 10h6M7 10l2-2M7 10l2 2M13 10l-2-2M13 10l-2 2" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 )
+
+/** Read aloud — a speaker with sound waves. */
+export const IconSpeak = () => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
+    <path d="M4 8v4h2.5L10 15V5L6.5 8H4z" strokeLinejoin="round" />
+    <path d="M13 7.5a3.5 3.5 0 010 5M15.2 5.3a6.5 6.5 0 010 9.4" strokeLinecap="round" />
+  </svg>
+)
+
+/** Stop reading — a filled square, the universal stop. */
+export const IconStopSpeak = () => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
+    <rect x="5.5" y="5.5" width="9" height="9" rx="1.2" fill="currentColor" stroke="none" />
+  </svg>
+)
