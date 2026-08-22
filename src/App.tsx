@@ -14,6 +14,7 @@ import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import { useFlowSearch } from './hooks/useFlowSearch'
 import { useTts } from './hooks/useTts'
 import { useSpeechHighlight } from './hooks/useSpeechHighlight'
+import { SpeechHighlight } from './components/SpeechHighlight'
 import { TtsBar } from './components/TtsBar'
 import { planSpeech } from './services/ttsText'
 import { SearchBar } from './components/SearchBar'
@@ -512,8 +513,8 @@ export default function App() {
   // ── Read aloud ───────────────────────────────────────────────────────────
   const tts = useTts()
   const [ttsPromptOpen, setTtsPromptOpen] = useState(false)
-  // Paints the sentence being spoken and keeps it on screen.
-  useSpeechHighlight({ text: tts.currentText, index: tts.index })
+  // Where the sentence being spoken is, as screen rectangles.
+  const speechRects = useSpeechHighlight({ text: tts.currentText, index: tts.index })
 
   /** Read from the page in view to the end — where the reader actually is. */
   const startReading = useCallback(async () => {
@@ -622,6 +623,8 @@ export default function App() {
   return (
     <div className="flex flex-col h-dvh overflow-hidden bg-gray-900">
       <ActionBar {...actionBarProps} />
+
+      <SpeechHighlight rects={speechRects} />
 
       <TtsBar
         status={tts.status}

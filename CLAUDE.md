@@ -689,11 +689,26 @@ to run OCR rather than just "nothing to read".
 By the time a sentence is spoken its offsets mean nothing: wrapped lines were
 joined and spaces collapsed. Its characters still match, so it is found by
 scanning forward from the previous sentence — linear over the document, and a
-repeated sentence lands in the right place. Both targets are DOM
-(`[data-wz-flow-print]` for mail/Markdown, `.pdf-text-layer` for pages — which
-`OcrTextLayer` also uses, so scans highlight with no extra code), painted with
-the CSS Custom Highlight API so neither the sanitized body nor pdfjs's
-carefully positioned spans are rewritten.
+repeated sentence lands in the right place.
+
+**It is painted as an overlay, and must be.** The obvious tool is the CSS Custom
+Highlight API, and for a reflowing document it would be right. For a page
+document it is not: the glyphs on screen are painted on a canvas, and the text
+layer over them is an *invisible stand-in* whose metrics only approximate them.
+OCR spans are the worst case — `OcrTextLayer` sets `font-size` to the whole
+detected box height with no width correction — so highlighting their text drew a
+band visibly wider and taller than the words, spilling off the page. (An earlier
+attempt also set `color`, which overrode the layer's deliberate
+`color: transparent` and rendered the stand-in text on top of the canvas glyphs;
+`::selection` above it avoids the same trap the same way.) The spans' **boxes**
+are the real geometry, so rectangles come from the boxes for pages and from the
+range for reflowing text, and `SpeechHighlight` paints them. Nothing in the
+document is modified either way.
+
+Two things that keeps honest: rectangles are viewport coordinates, so they are
+re-measured on scroll and resize behind a `requestAnimationFrame`; and the first
+measurement is taken a frame after the sentence changes, because a page that has
+only just mounted has not been laid out and every box would read as zero.
 
 `services/domText.ts` holds the shared DOM-to-text machinery, used by find as
 well. One trap encoded there: a block boundary is marked with `\u001f`, not a

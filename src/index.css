@@ -356,15 +356,6 @@ canvas {
   color: #111827;
 }
 
-/* The sentence being read aloud. A distinct hue from find (amber) so the two
-   never read as the same thing when both are on screen, and deliberately
-   softer: this one moves by itself every few seconds, and a saturated colour
-   pulsing down the page is exhausting to sit with. */
-::highlight(wz-speak) {
-  background-color: #bfdbfe;
-  color: #111827;
-}
-
 /* ── Message body (.eml) ─────────────────────────────────────────────────────
    Mail arrives with its own markup and inline styles, written for some other
    client's width. These rules only stop it from breaking the surrounding
