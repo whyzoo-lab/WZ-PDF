@@ -13,6 +13,7 @@ import { useOpenUrl } from './hooks/useOpenUrl'
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import { useFlowSearch } from './hooks/useFlowSearch'
 import { useTts } from './hooks/useTts'
+import { useSpeechHighlight } from './hooks/useSpeechHighlight'
 import { TtsBar } from './components/TtsBar'
 import { planSpeech } from './services/ttsText'
 import { SearchBar } from './components/SearchBar'
@@ -511,6 +512,8 @@ export default function App() {
   // ── Read aloud ───────────────────────────────────────────────────────────
   const tts = useTts()
   const [ttsPromptOpen, setTtsPromptOpen] = useState(false)
+  // Paints the sentence being spoken and keeps it on screen.
+  useSpeechHighlight({ text: tts.currentText, index: tts.index })
 
   /** Read from the page in view to the end — where the reader actually is. */
   const startReading = useCallback(async () => {
@@ -522,13 +525,26 @@ export default function App() {
       raw = body ? textFromElement(body) : ''
     } else if (pdfDoc) {
       const { textFromPages } = await import('./services/ttsSource')
-      raw = await textFromPages(pdfDoc, kind, { from: currentPage, to: numPages })
+      raw = await textFromPages(pdfDoc, kind, { from: currentPage, to: numPages }, {
+        // A scanned page has an empty text layer; whatever OCR already
+        // recognized there is the only thing there is to read.
+        ocrRuns: page => {
+          const result = ocr.ocrResults.get(page)
+          return result && result.status === 'done' ? result.words : undefined
+        },
+      })
     }
 
     const { chunks } = planSpeech(raw)
-    if (chunks.length === 0) { showToast(t('tts.noText')); return }
+    if (chunks.length === 0) {
+      // A scanned page is the common case here, and "nothing to read" is a
+      // dead end unless it also says what to do about it.
+      const scanned = !flowDoc && ocr.ocrResults.size === 0
+      showToast(t(scanned ? 'tts.needsOcr' : 'tts.noText'))
+      return
+    }
     await tts.speak(chunks)
-  }, [tts, flowDoc, pdfDoc, kind, currentPage, numPages, showToast])
+  }, [tts, flowDoc, pdfDoc, kind, currentPage, numPages, showToast, ocr.ocrResults])
 
   const handleToggleSpeech = useCallback(async () => {
     if (tts.status !== 'idle') { tts.stop(); return }

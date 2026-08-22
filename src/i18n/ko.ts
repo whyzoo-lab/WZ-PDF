@@ -120,6 +120,7 @@ export const ko = {
   'tts.preparing': '음성 준비 중...',
   'tts.reading': '읽는 중 {done}/{total}',
   'tts.noText': '이 페이지에는 읽을 텍스트가 없습니다',
+  'tts.needsOcr': '이 페이지에는 텍스트가 없습니다. OCR을 먼저 실행한 뒤 읽어주기를 누르세요.',
   'tts.needsModel': '읽어주기를 쓰려면 음성 모델을 한 번 내려받아야 합니다({size}). 이후에는 오프라인으로 동작합니다.',
   'tts.download': '음성 모델 내려받기',
   'tts.downloading': '음성 모델 내려받는 중 {done}/{total} MB',

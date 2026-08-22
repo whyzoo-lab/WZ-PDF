@@ -677,6 +677,31 @@ in the characters distinguishes a heading from a wrapped line. The format knows
 has block elements — so each extractor emits blank lines between blocks and the
 splitter can stay dumb.
 
+**Scanned pages go through OCR.** An image-only PDF has an empty text layer, so
+`textFromPages` falls back per page to whatever OCR has already recognized —
+`OcrWord` and `HwpTextRun` are both "text plus a box", which is why they share
+`linesFromRuns`. Native text always wins where it exists; recognition is a guess.
+Detection order is not reading order, so OCR boxes are sorted by (y, x) first,
+which the format's own runs never need. If a page has neither, the message says
+to run OCR rather than just "nothing to read".
+
+**The highlight is a search, not a stored position** (`useSpeechHighlight`).
+By the time a sentence is spoken its offsets mean nothing: wrapped lines were
+joined and spaces collapsed. Its characters still match, so it is found by
+scanning forward from the previous sentence — linear over the document, and a
+repeated sentence lands in the right place. Both targets are DOM
+(`[data-wz-flow-print]` for mail/Markdown, `.pdf-text-layer` for pages — which
+`OcrTextLayer` also uses, so scans highlight with no extra code), painted with
+the CSS Custom Highlight API so neither the sanitized body nor pdfjs's
+carefully positioned spans are rewritten.
+
+`services/domText.ts` holds the shared DOM-to-text machinery, used by find as
+well. One trap encoded there: a block boundary is marked with `\u001f`, not a
+newline, because a newline also occurs *inside* a text node — markup indented
+across lines puts one there, and the paragraph is still one paragraph — and a
+joined sentence has to match across those while never matching across a real
+paragraph gap.
+
 **Packaging.** `onnxruntime-node` is the first real runtime dependency of the
 main process, so `electron-builder.json5` lists it explicitly instead of
 dropping the blanket `node_modules` exclusion. Only the CPU pieces ship

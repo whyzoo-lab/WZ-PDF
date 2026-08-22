@@ -97,6 +97,10 @@ Show a PDF inline on any page — no download, no plugin:
   everything after that works offline. Note that the model's weights are under
   the OpenRAIL-M licence rather than MIT — see
   [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
+- **Follow along while it reads** — the sentence being spoken is highlighted in
+  the document and scrolls into view, in PDFs, HWP, mail and Markdown alike.
+  **Scanned documents work too**: run OCR first and the recognized text is what
+  gets read.
 
 ### HWP / HWPX (Korean documents)
 - View `.hwp` (binary) and `.hwpx` (OOXML) files through the **same pipeline as

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import type { DocKind, ViewerDoc } from '../types/viewerDoc'
 import {
   groupLinesIntoBlocks,
-  linesFromHwpRuns,
+  linesFromRuns,
   linesFromPdfItems,
   textFromElement,
+  textFromPages,
 } from './ttsSource'
 
 describe('grouping lines into blocks', () => {
@@ -70,9 +72,9 @@ describe('lines from a pdfjs text stream', () => {
   })
 })
 
-describe('lines from rhwp runs', () => {
+describe('lines from positioned runs (rhwp or OCR)', () => {
   it('merges runs that share a baseline', () => {
-    const lines = linesFromHwpRuns([
+    const lines = linesFromRuns([
       { text: '총 계약금액은 ', x: 50, y: 100, width: 60, height: 12 },
       { text: '1억 원', x: 110, y: 101, width: 30, height: 12 },
       { text: '다음 줄입니다', x: 50, y: 120, width: 60, height: 12 },
@@ -81,7 +83,7 @@ describe('lines from rhwp runs', () => {
   })
 
   it('orders runs on a line by x, not by arrival', () => {
-    const lines = linesFromHwpRuns([
+    const lines = linesFromRuns([
       { text: '뒤', x: 110, y: 100, width: 10, height: 12 },
       { text: '앞', x: 50, y: 100, width: 10, height: 12 },
     ])
@@ -114,5 +116,58 @@ describe('text from a reflowing document', () => {
 
   it('collapses the whitespace that markup leaves behind', () => {
     expect(textFromElement(html('<p>줄이\n  나뉜   문장</p>'))).toBe('줄이 나뉜 문장')
+  })
+})
+
+describe('falling back to OCR on a scanned page', () => {
+  /** A one-page document whose text layer is empty, like an image-only PDF. */
+  const scannedDoc = (items: unknown[]): ViewerDoc => ({
+    numPages: 1,
+    getPage: async () => ({
+      getViewport: () => ({ width: 100, height: 100, scale: 1 }),
+      render: () => ({ promise: Promise.resolve() }),
+      getTextContent: async () => ({ items }),
+    }),
+    destroy: () => undefined,
+  })
+
+  it('reads recognized text when the page has no text layer', async () => {
+    const text = await textFromPages(scannedDoc([]), 'pdf' as DocKind, { from: 1, to: 1 }, {
+      ocrRuns: () => [
+        { text: '스캔 문서', x: 40, y: 20, height: 14 },
+        { text: '읽기 시험입니다.', x: 40, y: 44, height: 14 },
+      ],
+    })
+    expect(text).toContain('스캔 문서')
+    expect(text).toContain('읽기 시험입니다.')
+  })
+
+  it('puts recognized boxes into reading order', async () => {
+    // Detection order is not reading order, so the boxes arrive shuffled.
+    const text = await textFromPages(scannedDoc([]), 'pdf' as DocKind, { from: 1, to: 1 }, {
+      ocrRuns: () => [
+        { text: '셋째', x: 40, y: 80, height: 14 },
+        { text: '첫째', x: 40, y: 20, height: 14 },
+        { text: '둘째', x: 40, y: 50, height: 14 },
+      ],
+    })
+    expect(text.indexOf('첫째')).toBeLessThan(text.indexOf('둘째'))
+    expect(text.indexOf('둘째')).toBeLessThan(text.indexOf('셋째'))
+  })
+
+  it('prefers the real text layer over recognition', async () => {
+    // Native text is exact; OCR is a guess. Never trade down.
+    const withText = scannedDoc([{ str: '진짜 텍스트입니다.', hasEOL: true, transform: [1, 0, 0, 1, 0, 700] }])
+    const text = await textFromPages(withText, 'pdf' as DocKind, { from: 1, to: 1 }, {
+      ocrRuns: () => [{ text: '잘못 인식된 글자', x: 0, y: 0, height: 14 }],
+    })
+    expect(text).toBe('진짜 텍스트입니다.')
+  })
+
+  it('returns nothing when OCR has not run on the page', async () => {
+    const text = await textFromPages(scannedDoc([]), 'pdf' as DocKind, { from: 1, to: 1 }, {
+      ocrRuns: () => undefined,
+    })
+    expect(text).toBe('')
   })
 })

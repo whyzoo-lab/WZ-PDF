@@ -1,4 +1,4 @@
-import type { DocKind, HwpTextRun, ViewerDoc } from '../types/viewerDoc'
+import type { DocKind, ViewerDoc } from '../types/viewerDoc'
 
 /**
  * Getting speakable text out of each format.
@@ -10,6 +10,23 @@ import type { DocKind, HwpTextRun, ViewerDoc } from '../types/viewerDoc'
  * plain characters, so the structure has to be captured here, where the format
  * still knows it.
  */
+
+/**
+ * Text with a box around it.
+ *
+ * Both rhwp's `HwpTextRun` and OCR's `OcrWord` satisfy this, which is the point:
+ * a scanned page and a native one differ in where the runs come from, not in
+ * what has to be done with them.
+ */
+export interface PositionedRun {
+  text: string
+  x: number
+  y: number
+  height: number
+  /** Both sources carry it; nothing here needs it, but rejecting it would mean
+   *  callers had to strip real data down to fit. */
+  width?: number
+}
 
 /** A positioned line of text, before it is grouped into blocks. */
 export interface PositionedLine {
@@ -92,13 +109,16 @@ export function linesFromPdfItems(items: readonly unknown[]): PositionedLine[] {
 }
 
 /**
- * Rebuild lines from rhwp's positioned runs.
+ * Rebuild lines from positioned runs.
  *
- * Runs on the same visual line share a baseline but arrive as separate items
- * (one per formatting change), so they are merged when their `y` differs by
- * less than half a line height.
+ * Runs on the same visual line share a baseline but arrive as separate items —
+ * one per formatting change from rhwp, one per detected box from OCR — so they
+ * are merged when their `y` differs by less than half a line height.
+ *
+ * The two sources have the same shape for this purpose, which is why they share
+ * the code: `HwpTextRun` and `OcrWord` are both text plus a box.
  */
-export function linesFromHwpRuns(runs: readonly HwpTextRun[]): PositionedLine[] {
+export function linesFromRuns(runs: readonly PositionedRun[]): PositionedLine[] {
   const lines: PositionedLine[] = []
   let current: { parts: { x: number; text: string }[]; y: number; height: number } | null = null
 
@@ -155,17 +175,34 @@ export interface PageRange {
   to: number
 }
 
+export interface TextFromPagesOptions {
+  /**
+   * Recognized text for a page, when OCR has already run on it.
+   *
+   * This is what makes a scanned document readable at all: an image-only PDF
+   * has an empty text layer, so without it the reader has literally nothing to
+   * say. OCR boxes are not in guaranteed reading order, so they are sorted here
+   * rather than trusted the way a format's own runs are.
+   */
+  ocrRuns?: (pageNumber: number) => readonly PositionedRun[] | undefined
+}
+
 /**
  * Collect the text of a paginated document.
  *
  * Pages are separated by a blank line for the same reason blocks are: the last
  * line of one page and the first of the next are rarely one sentence, and
  * joining them produces a sentence that never existed.
+ *
+ * Native text wins over OCR wherever it exists — it is exact, while recognition
+ * is a guess — and OCR fills in per page, so a document that is text for twenty
+ * pages and a scan for one reads correctly throughout.
  */
 export async function textFromPages(
   doc: ViewerDoc,
   kind: DocKind,
   range: PageRange,
+  options: TextFromPagesOptions = {},
 ): Promise<string> {
   const parts: string[] = []
   const from = Math.max(1, range.from)
@@ -174,12 +211,21 @@ export async function textFromPages(
   for (let pageNumber = from; pageNumber <= to; pageNumber++) {
     let lines: PositionedLine[]
     if (kind === 'hwp' && doc.getPageText) {
-      lines = linesFromHwpRuns(await doc.getPageText(pageNumber))
+      lines = linesFromRuns(await doc.getPageText(pageNumber))
     } else {
       const page = await doc.getPage(pageNumber)
       const content = await page.getTextContent()
       lines = linesFromPdfItems(content.items)
     }
+
+    if (lines.every(line => !line.text.trim())) {
+      const recognized = options.ocrRuns?.(pageNumber)
+      if (recognized && recognized.length > 0) {
+        const ordered = [...recognized].sort((a, b) => (a.y - b.y) || (a.x - b.x))
+        lines = linesFromRuns(ordered)
+      }
+    }
+
     const text = groupLinesIntoBlocks(lines).trim()
     if (text) parts.push(text)
   }

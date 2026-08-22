@@ -120,6 +120,7 @@ export const en = {
   'tts.preparing': 'Preparing speech...',
   'tts.reading': 'Reading {done}/{total}',
   'tts.noText': 'Nothing to read on this page',
+  'tts.needsOcr': 'No text on this page. Run OCR first, then press read aloud.',
   'tts.needsModel': 'Reading aloud needs a one-time {size} download of the voice model. It then works offline.',
   'tts.download': 'Download voice model',
   'tts.downloading': 'Downloading voice model {done}/{total} MB',

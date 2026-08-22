@@ -28,6 +28,8 @@ export interface TtsState {
   status: TtsStatus
   /** Index of the sentence currently sounding, or -1. */
   index: number
+  /** Its text, for the highlighter to locate in the document. */
+  currentText: string | null
   chunkCount: number
   error: string | null
   model: TtsModelStatus | null
@@ -40,6 +42,9 @@ export interface TtsState {
 export function useTts() {
   const [status, setStatus] = useState<TtsStatus>('idle')
   const [index, setIndex] = useState(-1)
+  // The sentence itself, not just its number: the highlighter finds it in the
+  // document by searching for these very characters.
+  const [currentText, setCurrentText] = useState<string | null>(null)
   const [chunkCount, setChunkCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [model, setModel] = useState<TtsModelStatus | null>(null)
@@ -156,6 +161,7 @@ export function useTts() {
     ctxRef.current = null
     setStatus('idle')
     setIndex(-1)
+    setCurrentText(null)
     setChunkCount(0)
     // Hand the ~570 MB back rather than leaving the worker resident.
     void window.electronAPI?.ttsStop?.()
@@ -183,6 +189,7 @@ export function useTts() {
         if (runRef.current !== run) return
 
         setIndex(i)
+        setCurrentText(chunks[i])
         setStatus('speaking')
         // Queue the next ones while this one is audible; failures here surface
         // when their turn comes, not now.
@@ -237,7 +244,8 @@ export function useTts() {
   useEffect(() => stop, [stop])
 
   const state: TtsState = {
-    status, index, chunkCount, error, model, downloading, downloadProgress, voice, speed,
+    status, index, currentText, chunkCount, error, model, downloading, downloadProgress,
+    voice, speed,
   }
 
   return {
