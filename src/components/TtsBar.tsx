@@ -25,10 +25,14 @@ export interface TtsBarProps {
   downloadProgress: TtsDownloadProgress | null
   /** The consent prompt is showing, because the model is not on disk yet. */
   promptOpen: boolean
+  /** What the controls show — the draft, not necessarily what is being spoken. */
   voice: string
   speed: number
-  /** A change has been made but is not audible yet — the controls are locked
-   *  until it is, so the delay reads as "working" rather than "ignored". */
+  /** The draft differs from what is being spoken, so Apply has something to do. */
+  canApply: boolean
+  /** Apply was pressed and is not audible yet. Only now are the controls
+   *  locked: the change cannot take effect before the sentence already sounding
+   *  has finished, and without saying so the UI just looks unresponsive. */
   applying: boolean
   onDownload: () => void
   onCancelDownload: () => void
@@ -38,6 +42,7 @@ export interface TtsBarProps {
   onStop: () => void
   onVoiceChange: (voice: string) => void
   onSpeedChange: (speed: number) => void
+  onApply: () => void
 }
 
 const shell = 'no-print fixed bottom-4 left-1/2 -translate-x-1/2 z-40 max-w-[min(92vw,44rem)] '
@@ -49,9 +54,9 @@ const ghost = 'rounded-full px-3 py-1.5 text-sm text-gray-200 hover:bg-white/10 
 export function TtsBar(props: TtsBarProps) {
   const {
     status, index, chunkCount, error, model, downloading, downloadProgress,
-    promptOpen, voice, speed, applying,
+    promptOpen, voice, speed, canApply, applying,
     onDownload, onCancelDownload, onDismissPrompt,
-    onPause, onResume, onStop, onVoiceChange, onSpeedChange,
+    onPause, onResume, onStop, onVoiceChange, onSpeedChange, onApply,
   } = props
 
   if (promptOpen && !downloading) {
@@ -108,10 +113,7 @@ export function TtsBar(props: TtsBarProps) {
 
       <button type="button" className={ghost} onClick={onStop}>{t('tts.stop')}</button>
 
-      <label
-        className="ml-1 flex items-center gap-1 text-xs text-gray-400"
-        title={applying ? t('tts.applying') : undefined}
-      >
+      <label className="ml-1 flex items-center gap-1 text-xs text-gray-400">
         {t('tts.voice')}
         <select
           value={voice}
@@ -126,10 +128,7 @@ export function TtsBar(props: TtsBarProps) {
         </select>
       </label>
 
-      <label
-        className="flex items-center gap-1 text-xs text-gray-400"
-        title={applying ? t('tts.applying') : undefined}
-      >
+      <label className="flex items-center gap-1 text-xs text-gray-400">
         {t('tts.speed')}
         <input
           type="range"
@@ -141,8 +140,20 @@ export function TtsBar(props: TtsBarProps) {
           onChange={e => onSpeedChange(Number(e.target.value))}
           className="w-20 accent-blue-500 disabled:opacity-40 disabled:cursor-wait"
         />
-        <span className="w-8 tabular-nums text-gray-300">{speed.toFixed(2)}x</span>
+        <span className="w-12 tabular-nums text-gray-300">{speed.toFixed(2)}x</span>
       </label>
+
+      {/* Changes are drafted, not live: picking a voice does not interrupt the
+          sentence being read, and nothing is locked until this is pressed. */}
+      <button
+        type="button"
+        onClick={onApply}
+        disabled={!canApply || applying}
+        title={applying ? t('tts.applying') : undefined}
+        className={`${ghost} text-xs ${canApply && !applying
+          ? 'bg-blue-600/90 hover:bg-blue-500 text-white'
+          : ''} disabled:cursor-default`}
+      >{applying ? t('tts.applying') : t('tts.apply')}</button>
 
       {error && <span className="text-xs text-red-300">{error}</span>}
     </div>

@@ -635,8 +635,9 @@ export default function App() {
         downloading={tts.downloading}
         downloadProgress={tts.downloadProgress}
         promptOpen={ttsPromptOpen}
-        voice={tts.voice}
-        speed={tts.speed}
+        voice={tts.draftVoice}
+        speed={tts.draftSpeed}
+        canApply={tts.canApply}
         applying={tts.applying}
         onDownload={handleTtsDownload}
         onCancelDownload={tts.cancelDownload}
@@ -646,6 +647,7 @@ export default function App() {
         onStop={tts.stop}
         onVoiceChange={tts.setVoice}
         onSpeedChange={tts.setSpeed}
+        onApply={tts.applySettings}
       />
 
       {/* Hidden file input for F2 / double-click to open */}

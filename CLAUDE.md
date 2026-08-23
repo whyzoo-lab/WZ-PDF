@@ -677,6 +677,20 @@ in the characters distinguishes a heading from a wrapped line. The format knows
 has block elements — so each extractor emits blank lines between blocks and the
 splitter can stay dumb.
 
+**Voice and speed are drafted, then applied.** Committing on change was tried
+and is worse: the slider commits on every intermediate value, and locking the
+controls the instant they are touched is exactly the friction an Apply button
+removes. So the bar edits a draft, and `applySettings` commits it — which bumps
+a version, discards look-ahead audio made with the old settings, and locks the
+controls only until a sentence made with the new ones starts playing. Without
+discarding the look-ahead a change is inaudible for three sentences, which reads
+as the app ignoring the click.
+
+The version and the refs the playback loop reads are written in the same tick,
+deliberately. Syncing the refs through an effect leaves a gap where the loop can
+synthesize with the *old* voice and tag it with the *new* version, unlocking the
+controls while the previous voice is still being heard.
+
 **Scanned pages go through OCR.** An image-only PDF has an empty text layer, so
 `textFromPages` falls back per page to whatever OCR has already recognized —
 `OcrWord` and `HwpTextRun` are both "text plus a box", which is why they share

@@ -34,8 +34,13 @@ export interface TtsState {
   index: number
   /** Its text, for the highlighter to locate in the document. */
   currentText: string | null
-  /** A voice or speed change has been made but is not audible yet. */
+  /** An applied change is not audible yet — the controls are locked meanwhile. */
   applying: boolean
+  /** What the controls show. Only becomes `voice`/`speed` on apply. */
+  draftVoice: string
+  draftSpeed: number
+  /** The draft differs from what is being spoken, so there is something to do. */
+  canApply: boolean
   chunkCount: number
   error: string | null
   model: TtsModelStatus | null
@@ -57,10 +62,16 @@ export function useTts() {
   const [downloading, setDownloading] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState<TtsDownloadProgress | null>(null)
   const [voice, setVoice] = useState('F1')
-  // True from the moment the voice or speed is changed until a sentence made
-  // with the new setting actually starts playing. The controls are disabled
-  // meanwhile: the change cannot take effect before the sentence already
-  // sounding has finished, and without saying so the UI just looks unresponsive.
+  // What the controls show, which is not what is being spoken until the reader
+  // presses Apply. Committing on every keystroke of a slider would mean
+  // discarding and re-synthesizing the look-ahead on each intermediate value,
+  // and locking the controls the instant they are touched — which is exactly
+  // the friction this separation removes.
+  const [draftVoice, setDraftVoice] = useState('F1')
+  const [draftSpeed, setDraftSpeed] = useState(DEFAULT_SPEED)
+  // True from Apply until a sentence made with the new setting starts playing.
+  // Only then are the controls locked, and only because the change genuinely
+  // cannot take effect before the sentence already sounding has finished.
   const [applying, setApplying] = useState(false)
   const [speed, setSpeed] = useState(DEFAULT_SPEED)
 
@@ -68,7 +79,7 @@ export function useTts() {
   const sourceRef = useRef<AudioBufferSourceNode | null>(null)
   const chunksRef = useRef<string[]>([])
   const cacheRef = useRef(new Map<number, { version: number; promise: Promise<AudioBuffer> }>())
-  /** Bumped whenever the voice or speed changes; see `changeVoice` below. */
+  /** Bumped when the draft settings are applied; see `applySettings` below. */
   const versionRef = useRef(0)
   /**
    * Invalidates in-flight work. Every async step re-checks it, so a stop takes
@@ -184,6 +195,11 @@ export function useTts() {
     setCurrentText(null)
     setChunkCount(0)
     setApplying(false)
+    // Nothing is left to apply once the bar is gone; carrying an unapplied
+    // draft into the next document would show an Apply button for a change the
+    // reader has long forgotten making.
+    setDraftVoice(voiceRef.current)
+    setDraftSpeed(speedRef.current)
     // Hand the ~570 MB back rather than leaving the worker resident.
     void window.electronAPI?.ttsStop?.()
   }, [])
@@ -232,32 +248,31 @@ export function useTts() {
   }, [bufferFor, ensureContext, playBuffer, stop])
 
   /**
-   * Apply a new voice or speed from the next sentence on.
+   * Commit the draft settings, from the next sentence on.
    *
-   * Two sentences are normally synthesized ahead, so without invalidating them
-   * a change would only be heard three sentences later — long enough that the
-   * first thing a user does is click again, thinking it did not take. Bumping
-   * the version discards that work; the sentence already sounding has to finish
-   * either way, since it exists as rendered audio.
+   * Two sentences are normally synthesized ahead, so without discarding them a
+   * change would only be heard three sentences later — long enough that the
+   * first thing a reader does is press again, thinking it did not take. Bumping
+   * the version throws that work away; the sentence already sounding has to
+   * finish either way, since it exists as rendered audio, and that is the whole
+   * of the remaining wait.
+   *
+   * The refs are written here, in the same tick as the version bump. Syncing
+   * them through an effect instead leaves a gap in which the playback loop can
+   * synthesize with the *old* voice and tag it with the *new* version — which
+   * unlocks the controls while the previous voice is still being heard.
    */
-  const invalidateAhead = useCallback(() => {
+  const applySettings = useCallback(() => {
+    if (draftVoice === voiceRef.current && draftSpeed === speedRef.current) return
+    voiceRef.current = draftVoice
+    speedRef.current = draftSpeed
+    setVoice(draftVoice)
+    setSpeed(draftSpeed)
     versionRef.current++
-    // Only meaningful mid-document. When idle the next `speak` starts fresh
-    // with the new settings, so there is nothing to wait for.
+    // Only meaningful mid-document. When nothing is playing the next `speak`
+    // starts fresh with the new settings, so there is nothing to wait for.
     if (chunksRef.current.length > 0) setApplying(true)
-  }, [])
-
-  const changeVoice = useCallback((next: string) => {
-    voiceRef.current = next
-    setVoice(next)
-    invalidateAhead()
-  }, [invalidateAhead])
-
-  const changeSpeed = useCallback((next: number) => {
-    speedRef.current = next
-    setSpeed(next)
-    invalidateAhead()
-  }, [invalidateAhead])
+  }, [draftVoice, draftSpeed])
 
   const pause = useCallback(async () => {
     const ctx = ctxRef.current
@@ -297,13 +312,14 @@ export function useTts() {
 
   const state: TtsState = {
     status, index, currentText, applying, chunkCount, error, model, downloading,
-    downloadProgress, voice, speed,
+    downloadProgress, voice, speed, draftVoice, draftSpeed,
+    canApply: draftVoice !== voice || draftSpeed !== speed,
   }
 
   return {
     ...state,
     speak, pause, resume, stop,
-    setVoice: changeVoice, setSpeed: changeSpeed,
+    setVoice: setDraftVoice, setSpeed: setDraftSpeed, applySettings,
     download, cancelDownload, refreshModel,
   }
 }
