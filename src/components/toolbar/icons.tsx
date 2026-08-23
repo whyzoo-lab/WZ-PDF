@@ -244,3 +244,42 @@ export const IconStopSpeak = () => (
     <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor" stroke="none" />
   </Icon>
 )
+
+// ── Read-aloud transport ────────────────────────────────────────────────────
+/** Play — solid triangle, so it reads as a transport control at a glance. */
+export const IconPlay = () => (
+  <Icon>
+    <path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="currentColor" strokeLinejoin="round" />
+  </Icon>
+)
+
+/** Pause. */
+export const IconPause = () => (
+  <Icon>
+    <path d="M9 5.5v13M15 5.5v13" strokeWidth="2.4" />
+  </Icon>
+)
+
+/** Stop — closes the reader, so it is the square, not another pause. */
+export const IconStop = () => (
+  <Icon>
+    <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor" stroke="none" />
+  </Icon>
+)
+
+/** Which voice — a head in profile, the usual mark for "speaker" as a person
+ *  rather than "speaker" as a loudspeaker (which the read-aloud button uses). */
+export const IconVoice = () => (
+  <Icon>
+    <circle cx="12" cy="8" r="3.4" />
+    <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0" />
+  </Icon>
+)
+
+/** How fast — a speedometer, whose needle says "rate" without a word. */
+export const IconSpeed = () => (
+  <Icon>
+    <path d="M4 17a8 8 0 1 1 16 0" />
+    <path d="M12 17l4-4.5" strokeLinecap="round" />
+  </Icon>
+)

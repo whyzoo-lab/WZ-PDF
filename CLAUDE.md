@@ -719,6 +719,21 @@ in the characters distinguishes a heading from a wrapped line. The format knows
 has block elements — so each extractor emits blank lines between blocks and the
 splitter can stay dumb.
 
+**The playing bar is built for a 390px screen.** Its first version was a row of
+Korean labels — 읽는 중 12/4794, 읽기 중지, 목소리, 속도, 적용 — which on a
+phone had nowhere to go and wrapped one character per line. Everything that can
+be a glyph is one; the only text left is the speed readout and Apply; and the
+speed slider is the single element allowed to absorb the remaining space
+(`flex-1 min-w-0`, everything else `shrink-0`), so a narrow screen shortens the
+track instead of stacking the row into columns. Progress is a hairline along the
+bottom edge rather than a sentence count — the number was the widest thing in
+the row and the least use.
+
+Play/pause is one button because they are one idea; **stop is a separate
+control**, since it ends the session and takes the bar with it. Read-aloud also
+has to be reachable from the collapsed toolbar's menu — it was inline-only at
+first, which meant a phone could not start reading at all.
+
 **Voice and speed are drafted, then applied.** Committing on change was tried
 and is worse: the slider commits on every intermediate value, and locking the
 controls the instant they are touched is exactly the friction an Apply button

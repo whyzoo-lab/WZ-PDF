@@ -119,6 +119,8 @@ export const en = {
   // ── Read aloud ───────────────────────────────────────────────────────────
   'tts.read': 'Read aloud',
   'tts.stop': 'Stop reading',
+  'tts.pause': 'Pause',
+  'tts.resume': 'Resume',
   'tts.preparing': 'Preparing speech...',
   'tts.reading': 'Reading {done}/{total}',
   'tts.noText': 'Nothing to read on this page',

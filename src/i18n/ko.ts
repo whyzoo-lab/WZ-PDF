@@ -119,6 +119,8 @@ export const ko = {
   // ── Read aloud ───────────────────────────────────────────────────────────
   'tts.read': '읽어주기',
   'tts.stop': '읽기 중지',
+  'tts.pause': '일시정지',
+  'tts.resume': '이어 읽기',
   'tts.preparing': '음성 준비 중...',
   'tts.reading': '읽는 중 {done}/{total}',
   'tts.noText': '이 페이지에는 읽을 텍스트가 없습니다',

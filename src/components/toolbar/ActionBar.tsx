@@ -710,6 +710,15 @@ export function ActionBar({
               <button onClick={() => { onOpenUrl(); setRightMenuOpen(false) }} className={menuItem}><IconLink /><span>{t('tool.openUrl')}</span></button>
             </>
           )}
+          {onToggleSpeech && (hasPdf || flowDoc) && (
+            <button
+              onClick={() => { onToggleSpeech(); setRightMenuOpen(false) }}
+              className={menuItem}
+            >
+              {isSpeaking ? <IconStopSpeak /> : <IconSpeak />}
+              <span>{isSpeaking ? t('tts.stop') : t('tts.read')}</span>
+            </button>
+          )}
           {hasPdf && (
             <>
               <button onClick={() => { onPrint(); setRightMenuOpen(false) }} className={menuItem}><IconPrint /><span>{t('tool.print')}</span></button>
