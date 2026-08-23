@@ -22,6 +22,10 @@ const LOOKAHEAD = 2
 /** Denoising steps. 8 is the engine default; fewer is faster and flatter. */
 const TOTAL_STEP = 8
 
+/** Plain speed. The engine's own examples use 1.05, but someone who has not
+ *  touched the slider should hear the document at 1x, not slightly hurried. */
+export const DEFAULT_SPEED = 1
+
 export type TtsStatus = 'idle' | 'preparing' | 'speaking' | 'paused'
 
 export interface TtsState {
@@ -30,6 +34,8 @@ export interface TtsState {
   index: number
   /** Its text, for the highlighter to locate in the document. */
   currentText: string | null
+  /** A voice or speed change has been made but is not audible yet. */
+  applying: boolean
   chunkCount: number
   error: string | null
   model: TtsModelStatus | null
@@ -51,12 +57,19 @@ export function useTts() {
   const [downloading, setDownloading] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState<TtsDownloadProgress | null>(null)
   const [voice, setVoice] = useState('F1')
-  const [speed, setSpeed] = useState(1.05)
+  // True from the moment the voice or speed is changed until a sentence made
+  // with the new setting actually starts playing. The controls are disabled
+  // meanwhile: the change cannot take effect before the sentence already
+  // sounding has finished, and without saying so the UI just looks unresponsive.
+  const [applying, setApplying] = useState(false)
+  const [speed, setSpeed] = useState(DEFAULT_SPEED)
 
   const ctxRef = useRef<AudioContext | null>(null)
   const sourceRef = useRef<AudioBufferSourceNode | null>(null)
   const chunksRef = useRef<string[]>([])
-  const cacheRef = useRef(new Map<number, Promise<AudioBuffer>>())
+  const cacheRef = useRef(new Map<number, { version: number; promise: Promise<AudioBuffer> }>())
+  /** Bumped whenever the voice or speed changes; see `changeVoice` below. */
+  const versionRef = useRef(0)
   /**
    * Invalidates in-flight work. Every async step re-checks it, so a stop takes
    * effect immediately instead of being overwritten by a synthesis that was
@@ -65,13 +78,14 @@ export function useTts() {
   const runRef = useRef(0)
   // Read inside the playback loop, which must see the latest value without
   // being restarted — changing the voice mid-document applies from the next
-  // sentence rather than cutting the current one off. Synced in an effect
-  // because writing a ref during render is a side effect in a place React is
-  // free to re-run or discard.
+  // sentence rather than cutting the current one off.
+  //
+  // Written by the change handlers, in the same tick as the version bump. Going
+  // through an effect instead would leave a gap in which the loop could
+  // synthesize with the *old* voice and tag it with the *new* version, which
+  // re-enables the controls while the previous voice is still being heard.
   const voiceRef = useRef(voice)
   const speedRef = useRef(speed)
-  useEffect(() => { voiceRef.current = voice }, [voice])
-  useEffect(() => { speedRef.current = speed }, [speed])
 
   const refreshModel = useCallback(async () => {
     const api = window.electronAPI
@@ -100,8 +114,12 @@ export function useTts() {
 
   /** Synthesize one chunk, memoized so the look-ahead never pays twice. */
   const bufferFor = useCallback((i: number): Promise<AudioBuffer> => {
+    const version = versionRef.current
     const cached = cacheRef.current.get(i)
-    if (cached) return cached
+    // A hit from before the settings changed is deliberately discarded: it was
+    // synthesized in the old voice, and playing it would make the change look
+    // like it had not registered.
+    if (cached && cached.version === version) return cached.promise
 
     const text = chunksRef.current[i]
     const promise = (async () => {
@@ -124,10 +142,12 @@ export function useTts() {
       return buffer
     })()
 
-    cacheRef.current.set(i, promise)
+    cacheRef.current.set(i, { version, promise })
     // A rejected entry must not poison the cache, or a retry replays the error
     // without ever calling the engine again.
-    promise.catch(() => cacheRef.current.delete(i))
+    promise.catch(() => {
+      if (cacheRef.current.get(i)?.promise === promise) cacheRef.current.delete(i)
+    })
     return promise
   }, [ensureContext])
 
@@ -163,6 +183,7 @@ export function useTts() {
     setIndex(-1)
     setCurrentText(null)
     setChunkCount(0)
+    setApplying(false)
     // Hand the ~570 MB back rather than leaving the worker resident.
     void window.electronAPI?.ttsStop?.()
   }, [])
@@ -191,6 +212,9 @@ export function useTts() {
         setIndex(i)
         setCurrentText(chunks[i])
         setStatus('speaking')
+        // What is now audible was made with the settings currently selected, so
+        // the controls are honest again.
+        if (cacheRef.current.get(i)?.version === versionRef.current) setApplying(false)
         // Queue the next ones while this one is audible; failures here surface
         // when their turn comes, not now.
         for (let ahead = 1; ahead <= LOOKAHEAD; ahead++) {
@@ -206,6 +230,34 @@ export function useTts() {
       stop()
     }
   }, [bufferFor, ensureContext, playBuffer, stop])
+
+  /**
+   * Apply a new voice or speed from the next sentence on.
+   *
+   * Two sentences are normally synthesized ahead, so without invalidating them
+   * a change would only be heard three sentences later — long enough that the
+   * first thing a user does is click again, thinking it did not take. Bumping
+   * the version discards that work; the sentence already sounding has to finish
+   * either way, since it exists as rendered audio.
+   */
+  const invalidateAhead = useCallback(() => {
+    versionRef.current++
+    // Only meaningful mid-document. When idle the next `speak` starts fresh
+    // with the new settings, so there is nothing to wait for.
+    if (chunksRef.current.length > 0) setApplying(true)
+  }, [])
+
+  const changeVoice = useCallback((next: string) => {
+    voiceRef.current = next
+    setVoice(next)
+    invalidateAhead()
+  }, [invalidateAhead])
+
+  const changeSpeed = useCallback((next: number) => {
+    speedRef.current = next
+    setSpeed(next)
+    invalidateAhead()
+  }, [invalidateAhead])
 
   const pause = useCallback(async () => {
     const ctx = ctxRef.current
@@ -244,14 +296,14 @@ export function useTts() {
   useEffect(() => stop, [stop])
 
   const state: TtsState = {
-    status, index, currentText, chunkCount, error, model, downloading, downloadProgress,
-    voice, speed,
+    status, index, currentText, applying, chunkCount, error, model, downloading,
+    downloadProgress, voice, speed,
   }
 
   return {
     ...state,
     speak, pause, resume, stop,
-    setVoice, setSpeed,
+    setVoice: changeVoice, setSpeed: changeSpeed,
     download, cancelDownload, refreshModel,
   }
 }

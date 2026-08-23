@@ -637,6 +637,7 @@ export default function App() {
         promptOpen={ttsPromptOpen}
         voice={tts.voice}
         speed={tts.speed}
+        applying={tts.applying}
         onDownload={handleTtsDownload}
         onCancelDownload={tts.cancelDownload}
         onDismissPrompt={() => setTtsPromptOpen(false)}

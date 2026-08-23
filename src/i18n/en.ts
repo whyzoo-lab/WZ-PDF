@@ -127,6 +127,7 @@ export const en = {
   'tts.cancel': 'Cancel',
   'tts.voice': 'Voice',
   'tts.speed': 'Speed',
+  'tts.applying': 'Applying from the next sentence...',
   'tts.desktopOnly': 'Reading aloud is available in the desktop app',
   'ocr.recognizing': 'Recognizing…',
 

@@ -152,10 +152,17 @@ export const IconPrint = () => (
     <rect x="7" y="14" width="10" height="6" rx="1" />
   </Icon>
 )
+/** Recognize text — a document inside a scan frame.
+ *
+ *  The frame's corners are deliberately square while the printer beside it is
+ *  all rounded: at 16px the two used to differ only in their innards, and the
+ *  silhouette is what the eye actually sorts by. */
 export const IconOcr = () => (
   <Icon>
-    <path d="M3 8V5.5A2.5 2.5 0 0 1 5.5 3H8M16 3h2.5A2.5 2.5 0 0 1 21 5.5V8M21 16v2.5a2.5 2.5 0 0 1-2.5 2.5H16M8 21H5.5A2.5 2.5 0 0 1 3 18.5V16" />
-    <path d="M7.5 9h6M7.5 12h9M7.5 15h7" />
+    <path d="M3 7.5V3h4.5M16.5 3H21v4.5M21 16.5V21h-4.5M7.5 21H3v-4.5" />
+    <path d="M7.5 5.5h6l4 4v9h-10z" />
+    <path d="M13.5 5.5v4h4" />
+    <path d="M10 13h5M10 16h5" />
   </Icon>
 )
 
@@ -216,15 +223,15 @@ export const IconFitWidth = () => (
 
 /** Read aloud — a speaker with sound waves. */
 export const IconSpeak = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
-    <path d="M4 8v4h2.5L10 15V5L6.5 8H4z" strokeLinejoin="round" />
-    <path d="M13 7.5a3.5 3.5 0 010 5M15.2 5.3a6.5 6.5 0 010 9.4" strokeLinecap="round" />
-  </svg>
+  <Icon>
+    <path d="M4.5 9.5v5h3l4.5 3.5V6l-4.5 3.5h-3z" />
+    <path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.2 6.4a8 8 0 0 1 0 11.2" />
+  </Icon>
 )
 
 /** Stop reading — a filled square, the universal stop. */
 export const IconStopSpeak = () => (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
-    <rect x="5.5" y="5.5" width="9" height="9" rx="1.2" fill="currentColor" stroke="none" />
-  </svg>
+  <Icon>
+    <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor" stroke="none" />
+  </Icon>
 )

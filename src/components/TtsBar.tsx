@@ -27,6 +27,9 @@ export interface TtsBarProps {
   promptOpen: boolean
   voice: string
   speed: number
+  /** A change has been made but is not audible yet — the controls are locked
+   *  until it is, so the delay reads as "working" rather than "ignored". */
+  applying: boolean
   onDownload: () => void
   onCancelDownload: () => void
   onDismissPrompt: () => void
@@ -46,7 +49,7 @@ const ghost = 'rounded-full px-3 py-1.5 text-sm text-gray-200 hover:bg-white/10 
 export function TtsBar(props: TtsBarProps) {
   const {
     status, index, chunkCount, error, model, downloading, downloadProgress,
-    promptOpen, voice, speed,
+    promptOpen, voice, speed, applying,
     onDownload, onCancelDownload, onDismissPrompt,
     onPause, onResume, onStop, onVoiceChange, onSpeedChange,
   } = props
@@ -105,12 +108,17 @@ export function TtsBar(props: TtsBarProps) {
 
       <button type="button" className={ghost} onClick={onStop}>{t('tts.stop')}</button>
 
-      <label className="ml-1 flex items-center gap-1 text-xs text-gray-400">
+      <label
+        className="ml-1 flex items-center gap-1 text-xs text-gray-400"
+        title={applying ? t('tts.applying') : undefined}
+      >
         {t('tts.voice')}
         <select
           value={voice}
+          disabled={applying}
           onChange={e => onVoiceChange(e.target.value)}
-          className="rounded bg-white/10 px-1 py-0.5 text-gray-100 outline-none"
+          className="rounded bg-white/10 px-1 py-0.5 text-gray-100 outline-none
+                     disabled:opacity-40 disabled:cursor-wait"
         >
           {VOICE_LABELS.map(v => (
             <option key={v.id} value={v.id} className="text-gray-900">{v.label}</option>
@@ -118,7 +126,10 @@ export function TtsBar(props: TtsBarProps) {
         </select>
       </label>
 
-      <label className="flex items-center gap-1 text-xs text-gray-400">
+      <label
+        className="flex items-center gap-1 text-xs text-gray-400"
+        title={applying ? t('tts.applying') : undefined}
+      >
         {t('tts.speed')}
         <input
           type="range"
@@ -126,10 +137,11 @@ export function TtsBar(props: TtsBarProps) {
           max={1.5}
           step={0.05}
           value={speed}
+          disabled={applying}
           onChange={e => onSpeedChange(Number(e.target.value))}
-          className="w-20 accent-blue-500"
+          className="w-20 accent-blue-500 disabled:opacity-40 disabled:cursor-wait"
         />
-        <span className="w-8 tabular-nums text-gray-300">{speed.toFixed(2)}</span>
+        <span className="w-8 tabular-nums text-gray-300">{speed.toFixed(2)}x</span>
       </label>
 
       {error && <span className="text-xs text-red-300">{error}</span>}

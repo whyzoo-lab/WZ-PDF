@@ -127,6 +127,7 @@ export const ko = {
   'tts.cancel': '취소',
   'tts.voice': '목소리',
   'tts.speed': '속도',
+  'tts.applying': '다음 문장부터 적용됩니다...',
   'tts.desktopOnly': '읽어주기는 데스크톱 앱에서 사용할 수 있습니다',
   'ocr.recognizing': '인식 중…',
 
