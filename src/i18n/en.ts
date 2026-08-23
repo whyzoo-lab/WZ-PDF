@@ -14,7 +14,8 @@ export const en = {
   'tool.fitWidth': 'Fit width — sharper text, but the page scrolls',
   'tool.zoomReset': 'Reset zoom',
   'tool.zoomIn': 'Zoom in',
-  'tool.rotate': 'Rotate 90° (current: {deg}°)',
+  'tool.rotate': 'Rotate right 90° (now {deg}°)',
+  'tool.rotateLeft': 'Rotate left 90° (now {deg}°)',
   'tool.pages': 'Toggle page panel',
   'tool.reset': 'Clear markups (pen / rectangle)',
   'tool.select': 'Select',
@@ -24,6 +25,7 @@ export const en = {
   'tool.delete': 'Delete selected',
   'tool.viewer': 'Viewer mode — read only',
   'tool.editor': 'Editor mode — stamp / sign / watermark',
+  'tool.editTools': 'Edit',
   // Short labels shown inside the viewer/editor segmented switch.
   // Accessible label for the edit-lock switch (locked = read-only viewer).
   'tool.editLock': 'Edit lock',

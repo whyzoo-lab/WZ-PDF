@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import { LANG } from '../i18n'
 import type { ViewMode, AppMode } from '../types/viewModes'
 import type { ViewerDoc } from '../types/viewerDoc'
@@ -22,7 +22,23 @@ interface GlobalShortcutsDeps {
   removeAnnotation: (id: string) => void
   clearMarkups: () => void
   setActiveMode: (mode: ActiveMode) => void
+  /** OCR the page in view. */
+  onRunOcr: () => void
+  /** OCR every page. */
+  onRunOcrAll: () => void
+  /** Start or stop reading aloud. Absent outside the desktop build. */
+  onToggleSpeech?: () => void
 }
+
+/**
+ * How long a second `r` still counts as a double press.
+ *
+ * The single-press action is deliberately delayed by this much, rather than run
+ * immediately and then corrected: OCR takes seconds, so a third of one is
+ * imperceptible, whereas running the current page and *then* the whole document
+ * would recognize the visible page twice.
+ */
+const DOUBLE_PRESS_MS = 350
 
 /**
  * Global keyboard shortcuts. A single capture-phase listener covers every
@@ -32,14 +48,21 @@ interface GlobalShortcutsDeps {
  *
  * Shortcuts: F1 help, Ctrl+P print, Ctrl+F find, F2 open, F5 fullscreen,
  * Delete/Backspace remove selection, ESC (two-step: clear markups → exit
- * fullscreen), 1 pen, 2 rectangle.
+ * fullscreen), 1 pen, 2 rectangle, R OCR this page (RR the whole document),
+ * S read aloud.
  */
 export function useGlobalShortcuts({
   pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
   setViewMode, setShowSearch, setFullscreenLayout,
   prevViewModeRef, fileInputRef,
   removeAnnotation, clearMarkups, setActiveMode,
+  onRunOcr, onRunOcrAll, onToggleSpeech,
 }: GlobalShortcutsDeps) {
+  // Set while waiting to see whether an `r` becomes `rr`.
+  const ocrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => { if (ocrTimer.current) clearTimeout(ocrTimer.current) }, [])
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const tgt = e.target as HTMLElement | null
@@ -86,6 +109,34 @@ export function useGlobalShortcuts({
         setViewMode('fullscreen')
         return
       }
+      // Letter shortcuts are case-insensitive and never fire with a modifier,
+      // so Ctrl+R (reload) and Ctrl+S (save) keep their usual meaning. They are
+      // here, above the PDF-only guard below, because reading aloud works for
+      // Markdown and mail as well.
+      const letter = e.key.length === 1 ? e.key.toLowerCase() : ''
+      const plain = !e.ctrlKey && !e.metaKey && !e.altKey && !inInput
+
+      if (letter === 's' && plain && onToggleSpeech && (pdfDoc || flowDoc)) {
+        e.preventDefault()
+        onToggleSpeech()
+        return
+      }
+
+      // OCR is page-only, and pointless while presenting.
+      if (letter === 'r' && plain && pdfDoc && viewMode !== 'fullscreen') {
+        e.preventDefault()
+        if (ocrTimer.current) {
+          // Second press within the window: the whole document, and the pending
+          // single-page run is dropped so the visible page is not done twice.
+          clearTimeout(ocrTimer.current)
+          ocrTimer.current = null
+          onRunOcrAll()
+        } else {
+          ocrTimer.current = setTimeout(() => { ocrTimer.current = null; onRunOcr() }, DOUBLE_PRESS_MS)
+        }
+        return
+      }
+
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && appMode === 'editor') {
         removeAnnotation(selectedId)
         return
@@ -134,5 +185,5 @@ export function useGlobalShortcuts({
     // Setters/refs are stable; re-run only on the reactive values the handler
     // reads. Exact dep list preserved from the original inline effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, removeAnnotation, appMode, viewMode, pdfDoc, flowDoc, activeMode, annotations, clearMarkups, setActiveMode])
+  }, [selectedId, removeAnnotation, appMode, viewMode, pdfDoc, flowDoc, activeMode, annotations, clearMarkups, setActiveMode, onRunOcr, onRunOcrAll, onToggleSpeech])
 }

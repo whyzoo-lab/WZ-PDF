@@ -55,11 +55,14 @@ export const IconGrid = () => (
 export const IconFullscreen = () => (
   <Icon><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></Icon>
 )
-export const IconRotate = () => (
-  <Icon>
+const RotateBody = () => (
+  <>
     <path d="M20 12a8 8 0 1 1-2.3-5.6" />
     <path d="M20 3v4.5h-4.5" />
-  </Icon>
+  </>
+)
+export const IconRotate = () => (
+  <Icon><RotateBody /></Icon>
 )
 
 // ── Zoom ────────────────────────────────────────────────────────────────────
@@ -157,6 +160,12 @@ export const IconPrint = () => (
  *  The frame's corners are deliberately square while the printer beside it is
  *  all rounded: at 16px the two used to differ only in their innards, and the
  *  silhouette is what the eye actually sorts by. */
+/** Rotate counter-clockwise — the same glyph as IconRotate, mirrored, so the
+ *  pair reads as one control with two directions rather than two tools. */
+export const IconRotateLeft = () => (
+  <Icon className="w-4 h-4 -scale-x-100"><RotateBody /></Icon>
+)
+
 export const IconOcr = () => (
   <Icon>
     <path d="M3 7.5V3h4.5M16.5 3H21v4.5M21 16.5V21h-4.5M7.5 21H3v-4.5" />

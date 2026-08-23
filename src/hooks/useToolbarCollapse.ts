@@ -26,7 +26,16 @@ export function useToolbarCollapse(contentKey: string) {
   // children are the compact hamburgers).
   const requiredWidth = (e: HTMLElement) => {
     let total = 0
-    for (const c of Array.from(e.children)) total += (c as HTMLElement).offsetWidth
+    for (const c of Array.from(e.children)) {
+      const el = c as HTMLElement
+      // Absolutely positioned children take no space in the flex row, so they
+      // must not be counted. The centred file name is `absolute inset-0`, whose
+      // offsetWidth is the *whole bar* — adding that guaranteed the sum always
+      // exceeded the width and left the toolbar permanently collapsed.
+      const position = getComputedStyle(el).position
+      if (position === 'absolute' || position === 'fixed') continue
+      total += el.offsetWidth
+    }
     return total
   }
 

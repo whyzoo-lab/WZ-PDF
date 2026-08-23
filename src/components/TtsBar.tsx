@@ -133,7 +133,7 @@ export function TtsBar(props: TtsBarProps) {
         <input
           type="range"
           min={0.8}
-          max={1.5}
+          max={2}
           step={0.05}
           value={speed}
           disabled={applying}

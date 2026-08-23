@@ -392,6 +392,33 @@ Page CRUD operations are handled by pure functions in `src/services/pdfPageServi
 - `readOnly` prop: hides toolbar, disables drag, disables Delete key listener — used in Viewer mode
 - Delete key shortcut: fires `handleDelete` when `!readOnly && selected.size > 0` and focus is not in an input/textarea
 
+### Toolbar layout
+
+Two rows, not one. The top bar navigates the document; the second appears only
+in editor mode and changes it. Folding the editing tools into the top bar was
+also what pushed it into its collapsed (hamburger) layout the moment the padlock
+was opened.
+
+**The file name is centred with `position: absolute`, and that has a
+consequence.** `useToolbarCollapse` decides whether to fold the bar by summing
+its children's widths — and an `absolute inset-0` child reports the width of the
+*whole bar*, so counting it guaranteed the sum always exceeded the available
+space and left the toolbar permanently collapsed at every window size. The
+measurement now skips absolutely-positioned children. Anything else added as an
+overlay must stay out of that sum too.
+
+In the collapsed layout the name shares the middle with the page counter, since
+that is the only place a narrow bar has room for it; `flex-1 min-w-0` is what
+actually centres that block between two clusters of unequal width.
+
+Keyboard: `R` recognizes the page, `RR` the whole document, `S` reads aloud.
+The single-press action is deliberately deferred by 350 ms so a second press can
+override it — running the page immediately and then the document would recognize
+the visible page twice. Letters are matched case-insensitively and never fire
+with a modifier, so Ctrl+R and Ctrl+S keep their usual meanings. `S` sits above
+the PDF-only guard in `useGlobalShortcuts`, because reading aloud works for
+Markdown and mail as well.
+
 ### Volatile markup tools (pen & rectangle)
 
 Drawing tools that are **display-only and not exported to PDF**. They live alongside permanent annotations in the same `annotations` array but are identified by `isVolatile(a)` (`type === 'pen' || type === 'rectangle'`).

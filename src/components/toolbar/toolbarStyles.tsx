@@ -22,5 +22,7 @@ export const BTN_ACTIVE = 'bg-white/15 text-white'
 export const BTN_ARMED = 'bg-blue-600 text-white'
 
 // Group separator. Deliberately whitespace, not a rule: the old 1px dividers
-// (8 of them) were most of the toolbar's visual noise.
-export const Sep = () => <div className="w-2 shrink-0" aria-hidden />
+// (8 of them) were most of the toolbar's visual noise. Narrow on purpose —
+// with a dozen controls, 8px between every group is ~100px of pure air, which
+// is what pushed the bar into its collapsed layout earlier than it needed to.
+export const Sep = () => <div className="w-1 shrink-0" aria-hidden />

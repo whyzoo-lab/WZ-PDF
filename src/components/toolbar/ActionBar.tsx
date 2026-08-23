@@ -10,7 +10,7 @@ import {
   IconStamp, IconSignature, IconWatermark, IconDelete, IconUpload, IconLink,
   IconDownload, IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
   IconExe, IconLock, IconLockOpen, IconMenu, IconMore, IconFitWidth,
-  IconSpeak, IconStopSpeak,
+  IconSpeak, IconStopSpeak, IconRotateLeft,
 } from './icons'
 import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED } from './toolbarStyles'
 import { ZoomControl } from './ZoomControl'
@@ -51,6 +51,8 @@ export interface ActionBarProps {
   /** Zoom so the page fills the width, the way a browser PDF viewer opens one. */
   onFitWidth: () => void
   onRotate: () => void
+  /** Counter-clockwise. */
+  onRotateLeft: () => void
   onModeChange: (mode: ActiveMode) => void
   onStampSelect: (src: string, presetId?: string) => void
   onSignatureClick: () => void
@@ -77,6 +79,8 @@ export interface ActionBarProps {
   onToggleSpeech?: () => void
   /** Reading is under way — the button becomes a stop button. */
   isSpeaking?: boolean
+  /** Shown centred in the title bar. Absent when no document is open. */
+  fileName?: string
 }
 
 export function ActionBar({
@@ -105,6 +109,7 @@ export function ActionBar({
   onZoomSet,
   onFitWidth,
   onRotate,
+  onRotateLeft,
   onModeChange,
   onStampSelect,
   onSignatureClick,
@@ -123,6 +128,7 @@ export function ActionBar({
   onExportExe,
   onToggleSpeech,
   isSpeaking = false,
+  fileName,
 }: ActionBarProps) {
   const [stampPanelOpen, setStampPanelOpen] = useState(false)
   const [stampMenuRect, setStampMenuRect] = useState<DOMRect | null>(null)
@@ -287,13 +293,23 @@ export function ActionBar({
     </div>
   )
 
+  // Both directions. One-way rotation means three presses to undo a mis-click,
+  // which is exactly when someone is most annoyed by it.
   const rotateButton = (
-    <button
-      onClick={onRotate}
-      className={`${iconBtn()} ${rotation !== 0 ? 'text-blue-400' : ''}`}
-      title={t('tool.rotate', { deg: rotation })}
-      aria-label={t('tool.rotate', { deg: rotation })}
-    ><IconRotate /></button>
+    <div className="flex items-center gap-0.5 shrink-0">
+      <button
+        onClick={onRotateLeft}
+        className={`${iconBtn()} ${rotation !== 0 ? 'text-blue-400' : ''}`}
+        title={t('tool.rotateLeft', { deg: rotation })}
+        aria-label={t('tool.rotateLeft', { deg: rotation })}
+      ><IconRotateLeft /></button>
+      <button
+        onClick={onRotate}
+        className={`${iconBtn()} ${rotation !== 0 ? 'text-blue-400' : ''}`}
+        title={t('tool.rotate', { deg: rotation })}
+        aria-label={t('tool.rotate', { deg: rotation })}
+      ><IconRotate /></button>
+    </div>
   )
 
   const pagesButton = (
@@ -379,10 +395,13 @@ export function ActionBar({
     </button>
   ) : null
 
+  // A plain ghost button like every other tool. It used to carry a filled grey
+  // pill, which made it the only control in the bar that looked like something
+  // you were supposed to press.
   const printButton = (hasPdf || flowDoc) ? (
     <button
       onClick={onPrint}
-      className={`${BTN_BASE} bg-gray-700 hover:bg-gray-600 text-gray-100`}
+      className={iconBtn()}
       title={t('tool.print')}
       aria-label={t('tool.print')}
     ><IconPrint /></button>
@@ -481,7 +500,7 @@ export function ActionBar({
 
   // ── Expanded (inline) sections ─────────────────────────────────────────────
   const expandedLeft = (
-    <div className="flex items-center gap-1 px-3 py-1.5 min-w-0 shrink-0">
+    <div className="relative flex items-center gap-0.5 px-2 py-1.5 min-w-0 shrink-0">
       {!hasPdf && brandingCluster}
       {flowDoc && !isFullscreen && (<><Sep />{fullscreenButton}<Sep />{zoomCluster}</>)}
       {hasPdf && (
@@ -491,14 +510,13 @@ export function ActionBar({
           {!isFullscreen && viewMode !== 'grid' && (<><Sep />{zoomCluster}</>)}
           {!isFullscreen && (<><Sep />{rotateButton}</>)}
           {!isFullscreen && (<><Sep />{pagesButton}{eraserButton}</>)}
-          {appMode === 'editor' && !isFullscreen && (<><Sep />{editorCluster}</>)}
         </>
       )}
     </div>
   )
 
   const expandedRight = (
-    <div className="flex items-center gap-1 px-2 sm:px-3 py-1.5 shrink-0 border-l border-gray-700/40">
+    <div className="relative flex items-center gap-0.5 px-1.5 sm:px-2 py-1.5 shrink-0 border-l border-gray-700/40">
       {modeToggleCluster}
       {modeToggleCluster && <Sep />}
 
@@ -583,7 +601,6 @@ export function ActionBar({
                   {eraserButton}
                 </div>
               )}
-              {hasPdf && appMode === 'editor' && !isFullscreen && editorCluster}
             </div>
           )}
         </>
@@ -591,7 +608,23 @@ export function ActionBar({
     </div>
   )
 
-  const collapsedCenter = hasPdf && !isFullscreen ? pageCounter : <span />
+  // The collapsed bar's middle was empty apart from a page counter floating off
+  // to one side. It is the only place a narrow screen has room for the file
+  // name, so it carries both — and `flex-1 min-w-0` is what actually centres
+  // it between two clusters of unequal width, rather than leaving it wherever
+  // `justify-between` happens to put it.
+  const collapsedCenter = (
+    <div className="flex flex-1 min-w-0 items-center justify-center gap-1.5 px-1">
+      {fileName && (
+        <span className="truncate text-xs text-gray-400 min-w-0">{fileName}</span>
+      )}
+      {hasPdf && !isFullscreen && (
+        <span className="shrink-0 text-xs text-gray-500 tabular-nums">
+          {currentPage} / {numPages}
+        </span>
+      )}
+    </div>
+  )
 
   const collapsedRight = (
     <div ref={rightMenuRef} className="relative flex items-center px-2 py-1.5 border-l border-gray-700/40">
@@ -642,18 +675,51 @@ export function ActionBar({
     </div>
   )
 
+  // The document's name, centred in the bar the way a title bar names its
+  // window. Absolutely positioned so it is centred on the *bar*, not on
+  // whatever space the two clusters happen to leave; `pointer-events-none`
+  // keeps it out of the way of the window drag region in the desktop build.
+  // Hidden on narrow screens, where the clusters reach the middle.
+  const titleCentre = fileName ? (
+    <div
+      className="pointer-events-none absolute inset-0 hidden md:flex items-center justify-center"
+      aria-hidden
+    >
+      <span className="truncate max-w-[30%] text-xs text-gray-400">{fileName}</span>
+    </div>
+  ) : null
+
+  // Editing tools get their own row rather than more of the main bar. They are
+  // a different job — the bar above navigates the document, this one changes
+  // it — and folding them in was also what pushed the bar into its collapsed
+  // layout as soon as the padlock was opened.
+  const editorRow = (hasPdf && appMode === 'editor' && !isFullscreen) ? (
+    <div className="no-print flex items-center gap-0.5 shrink-0 overflow-x-auto
+                    bg-gray-800/80 border-b border-gray-700 px-2 py-1">
+      <span className="hidden sm:inline shrink-0 pr-1.5 text-[11px] font-medium text-amber-300/80">
+        {t('tool.editTools')}
+      </span>
+      {editorCluster}
+      {/* The markup eraser deliberately stays in the main bar: pen and rectangle
+          can be drawn in viewer mode too (keys 1 and 2), so clearing them is not
+          an editing-mode action. */}
+    </div>
+  ) : null
+
   return (
     <>
       {/* ── Toolbar ───────────────────────────────────────────────────────────
-          Two clusters justified to the edges. When the inline controls no
-          longer fit (narrow window) `useToolbarCollapse` folds each cluster
-          into a hamburger menu instead of showing a horizontal scrollbar. */}
+          Two clusters justified to the edges, with the file name centred
+          between them. When the inline controls no longer fit (narrow window)
+          `useToolbarCollapse` folds each cluster into a hamburger menu instead
+          of showing a horizontal scrollbar. */}
       <header
         ref={headerRef}
         className="flex items-stretch justify-between bg-gray-900 text-white shadow-md z-10 shrink-0 border-b border-gray-700 relative"
         onDragOver={e => e.preventDefault()}
         onDrop={handleDrop}
       >
+        {!collapsed && titleCentre}
         {collapsed ? (
           <>
             {collapsedLeft}
@@ -667,6 +733,8 @@ export function ActionBar({
           </>
         )}
       </header>
+
+      {editorRow}
 
       <input ref={fileInputRef} type="file" accept="application/pdf,.pdf,.hwp,.hwpx" className="hidden" onChange={handleFileChange} />
 

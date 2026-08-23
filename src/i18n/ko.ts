@@ -14,7 +14,8 @@ export const ko = {
   'tool.fitWidth': '너비 맞춤 — 글자가 선명해지고 세로 스크롤이 생깁니다',
   'tool.zoomReset': '배율 초기화',
   'tool.zoomIn': '확대',
-  'tool.rotate': '90° 회전 (현재: {deg}°)',
+  'tool.rotate': '오른쪽으로 90° 회전 (현재: {deg}°)',
+  'tool.rotateLeft': '왼쪽으로 90° 회전 (현재: {deg}°)',
   'tool.pages': '페이지 패널 열기/닫기',
   'tool.reset': '화면 필기 지우기 (형광펜 / 사각형)',
   'tool.select': '선택',
@@ -24,6 +25,7 @@ export const ko = {
   'tool.delete': '선택 항목 삭제',
   'tool.viewer': '뷰어 모드 — 읽기 전용',
   'tool.editor': '편집 모드 — 도장 · 서명 · 워터마크',
+  'tool.editTools': '편집 도구',
   // Short labels shown inside the viewer/editor segmented switch.
   // Accessible label for the edit-lock switch (locked = read-only viewer).
   'tool.editLock': '편집 잠금',

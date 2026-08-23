@@ -202,14 +202,6 @@ export default function App() {
     return () => { cancelled = true }
   }, [file])
 
-  // ── Global keyboard shortcuts ─────────────────────────────────────────────
-  useGlobalShortcuts({
-    pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
-    setViewMode, setShowSearch, setFullscreenLayout,
-    prevViewModeRef, fileInputRef,
-    removeAnnotation, clearMarkups, setActiveMode,
-  })
-
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
@@ -415,6 +407,12 @@ export default function App() {
     return () => document.removeEventListener('wz-print', onPrint)
   }, [kind, handlePrintAny])
 
+  const handleRotateLeft = useCallback(() => {
+    // +270 rather than -90: the modulo of a negative number is negative in JS,
+    // which would leave rotation at -90 and break every `rotation === 90` test.
+    setRotation(r => (r + 270) % 360)
+  }, [])
+
   const handleRotate = useCallback(() => {
     setRotation(r => (r + 90) % 360)
   }, [])
@@ -567,6 +565,20 @@ export default function App() {
     if (status?.ready) await startReading()
   }, [tts, startReading])
 
+  // ── Global keyboard shortcuts ─────────────────────────────────────────────
+  // Declared here, not with the other hooks above, because it needs the
+  // read-aloud toggle — and hoisting that instead would put the whole speech
+  // wiring above the state it reads.
+  useGlobalShortcuts({
+    pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
+    setViewMode, setShowSearch, setFullscreenLayout,
+    prevViewModeRef, fileInputRef,
+    removeAnnotation, clearMarkups, setActiveMode,
+    onRunOcr: () => ocr.runPage(currentPage),
+    onRunOcrAll: ocr.runAll,
+    onToggleSpeech: window.electronAPI?.ttsSynthesize ? handleToggleSpeech : undefined,
+  })
+
   const actionBarProps = {
     hasPdf: !!pdfDoc,
     flowDoc,
@@ -595,6 +607,7 @@ export default function App() {
     // also what hides the button.
     onToggleSpeech: window.electronAPI?.ttsSynthesize ? handleToggleSpeech : undefined,
     isSpeaking: tts.status !== 'idle',
+    fileName: file?.name,
     onPrint: handlePrintAny,
     onAppModeChange: handleAppModeChange,
     onViewModeChange: handleViewModeChange,
@@ -604,6 +617,7 @@ export default function App() {
     onZoomSet: handleZoomSet,
     onFitWidth: fitWidth,
     onRotate: handleRotate,
+    onRotateLeft: handleRotateLeft,
     onModeChange: setActiveMode,
     onStampSelect: handleStampSelect,
     onSignatureClick: handleSignatureClick,
