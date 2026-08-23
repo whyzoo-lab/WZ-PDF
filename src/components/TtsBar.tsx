@@ -120,7 +120,11 @@ export function TtsBar(props: TtsBarProps) {
 
   return (
     <div
-      className={`${shell} relative overflow-hidden w-[min(94vw,34rem)] flex items-center gap-1 px-2 py-1.5`}
+      // No `relative` here: it is a position utility and would override the
+      // `fixed` in `shell`, dropping the bar out of its corner and into the
+      // document flow just under the toolbar. `fixed` is already a containing
+      // block, so the progress hairline below positions against it as it is.
+      className={`${shell} overflow-hidden w-[min(94vw,34rem)] flex items-center gap-1 px-2 py-1.5`}
       role="status"
       aria-live="polite"
     >
