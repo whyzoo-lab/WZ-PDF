@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { AppMode, ViewMode } from '../../types/viewModes'
 import type { ActiveMode } from '../../types/annotation'
@@ -12,7 +12,7 @@ import {
   IconExe, IconLock, IconLockOpen, IconMenu, IconMore, IconFitWidth,
   IconSpeak, IconStopSpeak, IconRotateLeft,
 } from './icons'
-import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED } from './toolbarStyles'
+import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED, TITLE_MIN_WIDTH, TITLE_GUTTER } from './toolbarStyles'
 import { ZoomControl } from './ZoomControl'
 import { useToolbarCollapse } from '../../hooks/useToolbarCollapse'
 
@@ -141,6 +141,9 @@ export function ActionBar({
   const stampPortalRef = useRef<HTMLDivElement>(null)
   const exportRef     = useRef<HTMLDivElement>(null)
   const openRef       = useRef<HTMLDivElement>(null)
+  const leftClusterRef  = useRef<HTMLDivElement>(null)
+  const rightClusterRef = useRef<HTMLDivElement>(null)
+  const titleRef        = useRef<HTMLDivElement>(null)
   const leftMenuRef   = useRef<HTMLDivElement>(null)
   const rightMenuRef  = useRef<HTMLDivElement>(null)
 
@@ -191,6 +194,56 @@ export function ActionBar({
       : [setLeftMenuOpen, setRightMenuOpen]
     close.forEach(fn => fn(false))
   }, [collapsed])
+
+  /**
+   * Fit the centred file name to whatever gap the two clusters leave, and hide
+   * it when there is not one.
+   *
+   * A breakpoint cannot answer this: the clusters' widths depend on the format,
+   * the mode and whether anything is selected, so the same window width has a
+   * different amount of room from one document to the next — which is how the
+   * name ended up printed straight through the rotate buttons. Because the name
+   * is centred on the *bar*, it can only stay clear of both clusters if it is
+   * narrower than `barWidth - 2 x widerCluster`; that is the number measured
+   * here.
+   *
+   * Applied to the node rather than to state on purpose: this runs on every
+   * resize, and a re-render per frame to set one width is waste.
+   */
+  useLayoutEffect(() => {
+    const header = headerRef.current
+    const title = titleRef.current
+    if (!header || !title) return
+
+    const fit = () => {
+      const left = leftClusterRef.current?.offsetWidth ?? 0
+      const right = rightClusterRef.current?.offsetWidth ?? 0
+      const bar = header.clientWidth
+      const room = Math.min(bar - 2 * left, bar - 2 * right) - TITLE_GUTTER
+      const el = titleRef.current
+      if (!el) return
+      if (room < TITLE_MIN_WIDTH) {
+        el.style.visibility = 'hidden'
+        return
+      }
+      el.style.visibility = 'visible'
+      const span = el.firstElementChild as HTMLElement | null
+      if (span) span.style.maxWidth = `${Math.floor(room)}px`
+    }
+
+    fit()
+    // Both, deliberately. ResizeObserver catches the bar changing width without
+    // the window doing so (the page panel opening, a cluster growing); the
+    // window listener catches the case where the observer is deferred, which
+    // Chromium does for a window that is not on screen.
+    window.addEventListener('resize', fit)
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit)
+    ro?.observe(header)
+    return () => {
+      window.removeEventListener('resize', fit)
+      ro?.disconnect()
+    }
+  }, [headerRef, collapsed, contentKey, fileName])
 
   const openStampMenu = () => {
     if (stampPanelOpen) { setStampPanelOpen(false); return }
@@ -500,7 +553,7 @@ export function ActionBar({
 
   // ── Expanded (inline) sections ─────────────────────────────────────────────
   const expandedLeft = (
-    <div className="relative flex items-center gap-0.5 px-2 py-1.5 min-w-0 shrink-0">
+    <div ref={leftClusterRef} className="relative flex items-center gap-0.5 px-2 py-1.5 min-w-0 shrink-0">
       {!hasPdf && brandingCluster}
       {flowDoc && !isFullscreen && (<><Sep />{fullscreenButton}<Sep />{zoomCluster}</>)}
       {hasPdf && (
@@ -516,7 +569,7 @@ export function ActionBar({
   )
 
   const expandedRight = (
-    <div className="relative flex items-center gap-0.5 px-1.5 sm:px-2 py-1.5 shrink-0 border-l border-gray-700/40">
+    <div ref={rightClusterRef} className="relative flex items-center gap-0.5 px-1.5 sm:px-2 py-1.5 shrink-0 border-l border-gray-700/40">
       {modeToggleCluster}
       {modeToggleCluster && <Sep />}
 
@@ -682,10 +735,14 @@ export function ActionBar({
   // Hidden on narrow screens, where the clusters reach the middle.
   const titleCentre = fileName ? (
     <div
-      className="pointer-events-none absolute inset-0 hidden md:flex items-center justify-center"
+      ref={titleRef}
+      className="pointer-events-none absolute inset-0 flex items-center justify-center"
       aria-hidden
+      // Width and visibility are set imperatively by the effect below, which is
+      // the only thing that knows how much room the two clusters have left.
+      style={{ visibility: 'hidden' }}
     >
-      <span className="truncate max-w-[30%] text-xs text-gray-400">{fileName}</span>
+      <span className="truncate text-xs text-gray-400">{fileName}</span>
     </div>
   ) : null
 

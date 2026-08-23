@@ -134,6 +134,9 @@ export default function App() {
   const { fitWidth } = useFitZoom({ pdfDoc, viewMode, rotation, setZoom, viewportRef: mainRef })
   const update = useUpdateCheck()
   const ocr = useOcr(pdfDoc, numPages)
+  // Declared with the other feature hooks, not down with the speech wiring,
+  // because opening a document has to be able to stop it.
+  const tts = useTts()
   const search = useSearch(pdfDoc, numPages, (page) => {
     const r = ocr.ocrResults.get(page)
     return r && r.status === 'done' ? r.words.map(w => w.text) : undefined
@@ -286,7 +289,11 @@ export default function App() {
     setShowSearch(false)
     search.clear()
     flowSearch.clear()
-  }, [setActiveMode, search, flowSearch])
+    // Reading belongs to the document that was open. Left running it keeps
+    // speaking the old text over the new document, and the highlight hunts for
+    // sentences that are no longer on screen.
+    tts.stop()
+  }, [setActiveMode, search, flowSearch, tts])
 
   /** Main upload handler — accepts PDF and HWP/HWPX files. */
   const handleUpload = useCallback((f: File) => {
@@ -509,7 +516,6 @@ export default function App() {
       }
 
   // ── Read aloud ───────────────────────────────────────────────────────────
-  const tts = useTts()
   const [ttsPromptOpen, setTtsPromptOpen] = useState(false)
   // Where the sentence being spoken is, as screen rectangles.
   const speechRects = useSpeechHighlight({ text: tts.currentText, index: tts.index })

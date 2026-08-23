@@ -26,3 +26,10 @@ export const BTN_ARMED = 'bg-blue-600 text-white'
 // with a dozen controls, 8px between every group is ~100px of pure air, which
 // is what pushed the bar into its collapsed layout earlier than it needed to.
 export const Sep = () => <div className="w-1 shrink-0" aria-hidden />
+
+// The centred file name needs at least this much clear space between the two
+// clusters before it is worth showing; below it the name is hidden rather than
+// printed through the controls. TITLE_GUTTER is the breathing room kept on each
+// side so it never sits flush against a button.
+export const TITLE_MIN_WIDTH = 90
+export const TITLE_GUTTER = 32

@@ -399,13 +399,28 @@ in editor mode and changes it. Folding the editing tools into the top bar was
 also what pushed it into its collapsed (hamburger) layout the moment the padlock
 was opened.
 
-**The file name is centred with `position: absolute`, and that has a
-consequence.** `useToolbarCollapse` decides whether to fold the bar by summing
-its children's widths — and an `absolute inset-0` child reports the width of the
-*whole bar*, so counting it guaranteed the sum always exceeded the available
-space and left the toolbar permanently collapsed at every window size. The
-measurement now skips absolutely-positioned children. Anything else added as an
-overlay must stay out of that sum too.
+**The file name is centred with `position: absolute`, and that has two
+consequences.**
+
+`useToolbarCollapse` decides whether to fold the bar by summing its children's
+widths — and an `absolute inset-0` child reports the width of the *whole bar*,
+so counting it guaranteed the sum always exceeded the available space and left
+the toolbar permanently collapsed at every window size. The measurement now
+skips absolutely-positioned children. Anything else added as an overlay must
+stay out of that sum too.
+
+And because it is centred on the *bar* rather than on the space left over, it
+can print straight through the controls at in-between widths. No breakpoint can
+fix that: the clusters' widths depend on the format, the mode and whether
+anything is selected, so the same window width leaves a different amount of room
+from one document to the next. `ActionBar` measures instead — a centred box only
+clears both clusters if it is narrower than `barWidth - 2 x widerCluster`, and
+below `TITLE_MIN_WIDTH` of room the name is hidden rather than crowded. The
+measurement is applied to the node directly, not through state, because it runs
+on every resize. It listens to **both** a ResizeObserver and `window.resize`:
+the observer catches the bar changing width on its own (a panel opening), and
+the window event covers the case where Chromium defers the observer because the
+window is not on screen.
 
 In the collapsed layout the name shares the middle with the page counter, since
 that is the only place a narrow bar has room for it; `flex-1 min-w-0` is what
