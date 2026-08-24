@@ -175,15 +175,31 @@ export const IconOcr = () => (
   </Icon>
 )
 
-// ── Modes ───────────────────────────────────────────────────────────────────
-/** Closed padlock — viewer mode (document is locked / read-only). */
+// ── Modes ──────────────────────────────────────────────────────────────
+/**
+ * Pencil over a line — editing.
+ *
+ * The body is one closed outline: a flat butt at the bottom left (where the
+ * pencil is held) rising at 45° to a rounded cap at the top right. The short
+ * cross stroke is the ferrule, and the rule underneath is a separate mark, not
+ * part of the pencil — that gap is what stops it reading as an arrow.
+ */
+export const IconPencil = () => (
+  <Icon>
+    <path d="M3 20.2v-4.5c0-.7.28-1.36.77-1.85L14.2 3.42a4.35 4.35 0 0 1 6.15 6.15L9.94 19.98c-.49.49-1.15.77-1.85.77H3.55a.55.55 0 0 1-.55-.55z" />
+    <path d="M13.6 4 19.75 10.15" />
+    <path d="M13.2 20.75h7.6" />
+  </Icon>
+)
+
+/** Closed padlock — the document has a password on it. */
 export const IconLock = () => (
   <Icon>
     <rect x="4.5" y="10.5" width="15" height="10" rx="2.2" />
     <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
   </Icon>
 )
-/** Open padlock — editor mode (editing unlocked). The shackle swings right, so
+/** Open padlock — the document has no password. The shackle swings right, so
  *  the two states differ in silhouette, not just in colour. */
 export const IconLockOpen = () => (
   <Icon>

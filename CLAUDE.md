@@ -253,7 +253,7 @@ this depends on:
 - At the bottom of the file nothing can scroll further, so the trailing sections
   would never light up; that case explicitly selects the last heading.
 
-**Editing** — the padlock switch (`appMode === 'editor'`) swaps the rendered page
+**Editing** — the pencil switch (`appMode === 'editor'`) swaps the rendered page
 for a monospace textarea holding the **raw** Markdown, tags and all. The buffer is
 keyed to the source it came from (`{ base, text }`) so opening another file
 reseeds it without an effect that would setState during render — the same pattern
@@ -299,9 +299,10 @@ App
 ├── ActionBar          ← Top bar: view/zoom controls, editor tools, Reset markup button, upload/export
 │                        Chrome-style flat chrome: every control is a rounded-full
 │                        ghost button (no idle background), groups are separated by
-│                        whitespace rather than 1px rules, and editing is one padlock
-│                        `role="switch"` (locked = read-only) instead of a segmented
-│                        viewer/editor control. BTN_ACTIVE is a soft wash for "which
+│                        whitespace rather than 1px rules, and editing is one pencil
+│                        `role="switch"` instead of a segmented viewer/editor
+│                        control. A padlock in this bar means a password, never
+│                        a mode — see "Encrypted documents". BTN_ACTIVE is a soft wash for "which
 │                        view am I in"; BTN_ARMED keeps the saturated accent for a
 │                        drawing tool, because that changes what the next click does.
 ├── PagePanel          ← Left sidebar: thumbnail strip, multi-select, drag-reorder, add/delete pages
@@ -378,10 +379,11 @@ Page CRUD operations are handled by pure functions in `src/services/pdfPageServi
 
 | Function | Description |
 |---|---|
-| `deletePages(bytes, pageNums)` | Remove one or more pages (1-based); surviving pages are remapped |
-| `insertBlankPage(bytes, afterPage, width?, height?)` | Insert a blank A4 page after `afterPage` (0 = prepend) |
-| `insertPagesFromPdf(bytes, afterPage, srcBytes)` | Append all pages from another PDF after `afterPage` |
-| `reorderPages(bytes, newOrder)` | Reorder pages according to a permutation array |
+| `deletePages(bytes, pageNums, password?)` | Remove one or more pages (1-based); surviving pages are remapped |
+| `insertBlankPage(bytes, afterPage, password?)` | Insert a blank A4 page after `afterPage` (0 = prepend) |
+| `insertPagesFromPdf(bytes, srcBytes, afterPage, password?)` | Append all pages from another PDF after `afterPage` |
+| `reorderPages(bytes, newOrder, password?)` | Reorder pages according to a permutation array |
+| `extractPages(bytes, pageNums, password?)` | Copy the given pages into a new PDF ("선택 저장") |
 
 `useThumbnails(pdfDoc, numPages)` — hook that renders page thumbnails sequentially at `THUMBNAIL_SCALE=0.2` (JPEG quality 0.8). Returns `thumbnails: string[]` (data URLs). Re-runs whenever `pdfDoc` changes.
 
@@ -396,8 +398,8 @@ Page CRUD operations are handled by pure functions in `src/services/pdfPageServi
 
 Two rows, not one. The top bar navigates the document; the second appears only
 in editor mode and changes it. Folding the editing tools into the top bar was
-also what pushed it into its collapsed (hamburger) layout the moment the padlock
-was opened.
+also what pushed it into its collapsed (hamburger) layout the moment editing
+was switched on.
 
 **The file name is centred with `position: absolute`, and that has two
 consequences.**
@@ -512,9 +514,103 @@ Four export formats, all operating on `fileBytes` (not the rendered canvas). All
 | Format | Service | Notes |
 |---|---|---|
 | PDF (annotated) | `src/services/pdfExporter.ts` | Embeds stamp/signature/watermark using **pdf-lib**; pen/rectangle are volatile and **not** exported |
+| PDF (password) | `src/services/pdfExporter.ts` | Same output, encrypted or decrypted. Not a menu item — it is the toolbar padlock; see "Encrypted documents" |
 | HTML viewer | `src/services/htmlExporter.ts` | Self-contained file: PDF encoded as base64, decoded to a Blob URL at runtime |
 | Images (ZIP) | `src/services/imageExporter.ts` | Each page rendered to PNG at 2× scale via pdfjs; bundled with **JSZip** |
 | Viewer EXE | `electron/main.ts` `export-exe` IPC | Self-clone of the portable exe with PDF bytes appended; only works when running the packaged portable build |
+
+### Encrypted documents
+
+Three separate acts, and it is worth keeping them apart: **opening** one,
+**taking the password off**, and **putting one on**.
+
+**Opening.** An encrypted PDF is not a failure, it is a question. `getDocument`
+exposes it as `task.onPassword(updatePassword, reason)`; without a handler pdfjs
+rejects with "No password given", which the viewer showed as an error with no
+way to answer. `usePdfDocument` now asks (`PasswordPrompt`), and re-asks when
+`reason === 2` (INCORRECT_PASSWORD) saying so, rather than looking as though the
+click did nothing.
+
+**The password has to travel further than the prompt.** pdfjs decrypts for
+*display*; every save path hands the **raw file** to pdf-lib, which needs the key
+of its own. So the answer that worked is kept for the life of the document
+(`documentPassword`, memory only, never persisted) and flows to `useExporters`,
+`usePageOperations` and the page-selection save. Without it, opening an encrypted
+document appeared to work and then every save failed.
+
+**Removing a password is saving without one.** Open with the password, save
+without → the file is unlocked. That is why `PdfSaveOptions` has two distinct
+fields (`sourcePassword` opens, `password` locks) rather than one.
+
+**Both live on one padlock button**, and that button does not save. It sets
+what the *next* save will do — `savePassword`, a string to lock with or null to
+leave unlocked — and `PDF 저장` carries it out, so the export menu keeps the
+three formats it always had. Making the click save as well was tried and is
+worse: one press then meant both "put a password on this" and "write a file
+now", with no way to change your mind about the first without doing the second.
+
+The glyph reports that intent — closed and amber when the save will lock the
+file — and the saved name records what happened: `_locked`, `_unlocked`,
+`_annotated`. The default for a document that arrived encrypted is to **stay**
+encrypted; saving it must not quietly strip the password off. That default is
+derived during render from `{ from, value }` keyed to `documentPassword`, the
+same trick the Markdown edit buffer uses, so opening another file reseeds it
+without an effect that sets state after render.
+
+**pdf-lib cannot encrypt, so the renderer runs `@cantoo/pdf-lib`** — a
+maintained fork of the same library, API-compatible for the five symbols we use
+(`PDFDocument`, `PDFFont`, `StandardFonts`, `rgb`, `degrees`). Shipping both was
+never an option: pdf-lib is the 420 KB `es-*` chunk plus 711 KB of fontkit, and a
+second copy would have doubled it. The fork costs +210 KB raw (+87 KB gzip) on
+that chunk and **nothing at startup** — it is only in lazy export/page-op chunks.
+`mcp/` is a separate package with its own lockfile and no encryption feature, so
+it stays on upstream pdf-lib. AES-256 is the library default and is what we use;
+the owner password is set to the same value as the user password, because an
+empty owner password lets any tool re-save without restrictions — "encrypted"
+would then be true only until the first round trip.
+
+**`services/pdfLoad.ts` exists for one bug, and the comment there is the
+warning.** The library parses the source's cross-reference stream as an opaque
+`PDFInvalidObject` and copies its **raw bytes** into the new file — bytes that
+still read `/Encrypt 17 0 R`, pointing at an object that is no longer written.
+pdfjs and pypdf ignore it, so the file opens everywhere; pdf-lib re-parses that
+stale dictionary as a trailer and refuses the document as encrypted. The effect
+was that a file this app had just unlocked could no longer be page-edited by this
+app. `loadPdfForWriting` drops it. Two traps in finding it: the object's
+`toString()` is only a placeholder (`PDFInvalidObject(310 bytes)`), so it must be
+identified from its bytes, and `context.trailerInfo.Encrypt` is already clean —
+looking there says nothing. Only files encrypted by this same library carry the
+leftover; PDFs locked by other tools round-trip clean either way. Per the
+never-patch-a-dependency rule this lives in our wrapper, not in `node_modules`.
+
+**Page operations refuse rather than corrupt.** If the password is not known,
+`loadForEditing` turns pdf-lib's developer-facing English error into a sentence a
+reader can act on. It deliberately does **not** follow that error's own advice:
+`ignoreEncryption: true` parses the document but leaves the content streams
+encrypted, so the output would have the right page count and unreadable
+contents — worse than failing.
+
+### Saving a selection of pages
+
+Right-clicking the page panel offers "선택 저장", writing the selected pages as a
+new PDF (`extractPages`). It works in **viewer mode too**: extraction produces a
+separate file and never touches the open document, so it has nothing to do with
+edit permission — the `readOnly` guard on it was only an accident of where the
+menu was first added. Everything else `readOnly` covers (the add/delete toolbar,
+drag-reorder, the Delete key) stays gated. Three details:
+
+- `copyPages` is called **once** with every wanted page. Calling it per page
+  copies shared resources (fonts, images) again each time and the output grows
+  several-fold.
+- The menu closes on scroll, and that listener is scoped to the thumbnail list —
+  a `window` capture-phase scroll listener closed it instantly, because clicking
+  a thumbnail scrolls the document pane.
+
+- The extract is written unencrypted even from a locked source; the padlock
+  arms `PDF 저장`, not this.
+
+`utils/pageSuffix.ts` names the file: `_p3`, `_p3-5` for a run, `_4p` for a
+scattered selection — never a range that would claim pages it does not contain.
 
 ### Viewer EXE feature
 
@@ -1025,7 +1121,8 @@ at any moment. A local edit is invisible to `npm install` and silently
 disappears, or silently blocks, the next upgrade. Put the workaround in our own
 wrapper/adapter and comment *why*, so it can be deleted without archaeology once
 upstream fixes it. Precedents: `ensureImagePainted` in `hwpDocAdapter.ts` (rhwp's
-async picture decode) and the blob-worker polyfills in `pdfjsWorker.ts`. If a
+async picture decode), the blob-worker polyfills in `pdfjsWorker.ts`, and
+`dropStaleXrefObjects` in `pdfLoad.ts` (pdf-lib's leftover xref stream). If a
 patch is ever unavoidable, prefer a documented build-time patch (`patch-package`)
 over an ad-hoc edit, and record it here.
 

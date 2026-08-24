@@ -5,6 +5,8 @@ type PageOpResult = { newBytes: ArrayBuffer; pageMapping: Map<number, number> }
 
 interface UsePageOperationsArgs {
   fileBytes: ArrayBuffer | null
+  /** Password the document was opened with, if it is encrypted. */
+  documentPassword: string | null
   /** Called when an op succeeds — caller updates file state + annotations. */
   onResult: (newBytes: ArrayBuffer, pageMapping: Map<number, number>) => void
 }
@@ -17,7 +19,7 @@ interface UsePageOperationsArgs {
  * `isPageOperating` gates the panel UI while an operation is in flight,
  * preventing overlapping clicks during pdf-lib's slow re-serialization.
  */
-export function usePageOperations({ fileBytes, onResult }: UsePageOperationsArgs) {
+export function usePageOperations({ fileBytes, documentPassword, onResult }: UsePageOperationsArgs) {
   const [isPageOperating, setIsPageOperating] = useState(false)
 
   /**
@@ -49,47 +51,47 @@ export function usePageOperations({ fileBytes, onResult }: UsePageOperationsArgs
     await runOp(
       async () => {
         const { deletePages } = await import('../services/pdfPageService')
-        return deletePages(fileBytes, pageNums)
+        return deletePages(fileBytes, pageNums, documentPassword ?? undefined)
       },
       err => console.error('Delete pages failed:', err),
     )
-  }, [fileBytes, runOp])
+  }, [fileBytes, documentPassword, runOp])
 
   const handleInsertBlankPage = useCallback(async (afterPage: number) => {
     if (!fileBytes) return
     await runOp(
       async () => {
         const { insertBlankPage } = await import('../services/pdfPageService')
-        return insertBlankPage(fileBytes, afterPage)
+        return insertBlankPage(fileBytes, afterPage, documentPassword ?? undefined)
       },
       err => console.error('Insert blank page failed:', err),
     )
-  }, [fileBytes, runOp])
+  }, [fileBytes, documentPassword, runOp])
 
   const handleInsertFromPdf = useCallback(async (afterPage: number, srcBytes: ArrayBuffer) => {
     if (!fileBytes) return
     await runOp(
       async () => {
         const { insertPagesFromPdf } = await import('../services/pdfPageService')
-        return insertPagesFromPdf(fileBytes, srcBytes, afterPage)
+        return insertPagesFromPdf(fileBytes, srcBytes, afterPage, documentPassword ?? undefined)
       },
       err => {
         console.error('Insert from PDF failed:', err)
         alert(t('error.pdfInsertFailed', { error: err instanceof Error ? err.message : String(err) }))
       },
     )
-  }, [fileBytes, runOp])
+  }, [fileBytes, documentPassword, runOp])
 
   const handleReorderPages = useCallback(async (newOrder: number[]) => {
     if (!fileBytes) return
     await runOp(
       async () => {
         const { reorderPages } = await import('../services/pdfPageService')
-        return reorderPages(fileBytes, newOrder)
+        return reorderPages(fileBytes, newOrder, documentPassword ?? undefined)
       },
       err => console.error('Reorder pages failed:', err),
     )
-  }, [fileBytes, runOp])
+  }, [fileBytes, documentPassword, runOp])
 
   return {
     isPageOperating,

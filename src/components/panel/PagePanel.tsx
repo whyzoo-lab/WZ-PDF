@@ -1,5 +1,6 @@
 // src/components/panel/PagePanel.tsx
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { ViewerDoc } from '../../types/viewerDoc'
 import { useThumbnails } from '../../hooks/useThumbnails'
 import { t } from '../../i18n'
@@ -18,6 +19,13 @@ export interface PagePanelProps {
   onInsertBlankPage: (afterPage: number) => void
   onInsertFromPdf: (afterPage: number, srcBytes: ArrayBuffer) => void
   onReorderPages: (newOrder: number[]) => void
+  /**
+   * Save the selected pages as a new PDF. Absent when the open document is not
+   * a PDF — extraction goes through pdf-lib, which has nothing to say about a
+   * HWP or an image, and a menu entry that always failed would be worse than
+   * no menu entry.
+   */
+  onSavePages?: (pageNums: number[]) => void
 }
 
 export function PagePanel({
@@ -32,13 +40,17 @@ export function PagePanel({
   onInsertBlankPage,
   onInsertFromPdf,
   onReorderPages,
+  onSavePages,
 }: PagePanelProps) {
   const [selected, setSelected]         = useState<Set<number>>(new Set())
   const [lastSelected, setLastSelected] = useState<number | null>(null)
   const [dragSource, setDragSource]     = useState<number | null>(null)
   const [dragOver, setDragOver]         = useState<number | null>(null)
   const [addMenuOpen, setAddMenuOpen]   = useState(false)
+  /** Where the right-click landed, in viewport coordinates. */
+  const [contextAt, setContextAt]       = useState<{ x: number; y: number } | null>(null)
   const addMenuRef   = useRef<HTMLDivElement>(null)
+  const listRef      = useRef<HTMLDivElement>(null)
   const thumbnails   = useThumbnails(pdfDoc, numPages)
 
   // 패널 바깥 클릭 시 추가 메뉴 닫기
@@ -77,6 +89,54 @@ export function PagePanel({
       onScrollToPage(pageNum)
     }
   }
+
+  // ── 우클릭 ──────────────────────────────────────────────────────────────────
+  // 선택 밖의 페이지를 우클릭하면 그 페이지만 선택한다. 파일 탐색기와 같은
+  // 규칙으로, 선택해 둔 것을 지운 채 메뉴를 여는 사고를 막아 준다.
+  // 읽기 전용에서도 연다. 선택 저장은 문서를 바꾸지 않고 복사본을 하나 만들 뿐이라
+  // 편집 권한과 상관이 없고, 편집 모드로 들어갔다 나오게 만들 이유도 없다.
+  const handleContextMenu = (pageNum: number, e: React.MouseEvent) => {
+    if (!onSavePages) return
+    e.preventDefault()
+    if (!selected.has(pageNum)) {
+      setSelected(new Set([pageNum]))
+      setLastSelected(pageNum)
+    }
+    setContextAt({ x: e.clientX, y: e.clientY })
+  }
+
+  const closeContextMenu = () => setContextAt(null)
+
+  const handleSaveSelected = () => {
+    closeContextMenu()
+    if (selected.size === 0) return
+    // 정렬해서 넘긴다 — 클릭한 순서가 아니라 문서 순서가 저장 순서여야 한다.
+    onSavePages?.([...selected].sort((a, b) => a - b))
+  }
+
+  // 메뉴는 화면 어디를 눌러도, ESC로도, 섬네일 목록이 스크롤되어도 닫힌다.
+  // 메뉴는 커서 위치에 고정돼 있어서, 목록이 움직이면 가리키던 섬네일과
+  // 어긋나기 때문이다.
+  //
+  // 스크롤은 목록에만 건다. window에 capture로 걸면 *다른* 스크롤에도 닫힌다 —
+  // 페이지를 클릭하면 본문이 그 페이지로 스크롤되는데, 그 스크롤이 우클릭 직후에
+  // 도착해 메뉴를 곧바로 닫아 버렸다.
+  useEffect(() => {
+    if (!contextAt) return
+    const close = () => setContextAt(null)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    const list = listRef.current
+    window.addEventListener('mousedown', close)
+    window.addEventListener('resize', close)
+    window.addEventListener('keydown', onKey)
+    list?.addEventListener('scroll', close)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('keydown', onKey)
+      list?.removeEventListener('scroll', close)
+    }
+  }, [contextAt])
 
   // ── 삭제 ────────────────────────────────────────────────────────────────────
   const handleDelete = () => {
@@ -236,7 +296,7 @@ export function PagePanel({
       )}
 
       {/* 섬네일 목록 */}
-      <div className="flex-1 overflow-y-auto py-2 px-1.5 flex flex-col gap-2">
+      <div ref={listRef} className="flex-1 overflow-y-auto py-2 px-1.5 flex flex-col gap-2">
         {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => {
           const isSelected   = selected.has(pageNum)
           const isCurrent    = currentPage === pageNum
@@ -251,6 +311,7 @@ export function PagePanel({
               onDrop={readOnly ? undefined : e => handleDrop(e, pageNum)}
               onDragEnd={readOnly ? undefined : handleDragEnd}
               onClick={e => handleClick(pageNum, e)}
+              onContextMenu={e => handleContextMenu(pageNum, e)}
               className={[
                 'flex flex-col items-center gap-1 p-1 rounded cursor-pointer transition-all',
                 isSelected  ? 'bg-blue-600/30 ring-2 ring-blue-500' : 'hover:bg-gray-800',
@@ -275,6 +336,29 @@ export function PagePanel({
           )
         })}
       </div>
+
+      {/* 우클릭 메뉴 — 패널은 overflow-hidden이고 목록은 스크롤 영역이라,
+          안에 그리면 잘린다. body로 띄우고 커서 위치에 고정한다. */}
+      {contextAt && createPortal(
+        <div
+          role="menu"
+          style={{ position: 'fixed', top: contextAt.y, left: contextAt.x, zIndex: 9999 }}
+          className="min-w-[150px] rounded-lg border border-gray-600 bg-gray-800 py-1 shadow-xl"
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleSaveSelected}
+            disabled={isOperating}
+            className="w-full px-3 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-700
+                       disabled:opacity-40 transition-colors"
+          >
+            {t('panel.saveSelected', { n: selected.size })}
+          </button>
+        </div>,
+        document.body,
+      )}
 
       {/* 조작 중 오버레이 */}
       {isOperating && (

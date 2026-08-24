@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ViewerDoc, DocKind } from '../types/viewerDoc'
 import type { ParsedEmail } from '../services/emlParser'
 import { detectDocType } from '../utils/detectDocType'
 import { markOpen, resetOpenMarks } from '../services/openPerf'
+import { t } from '../i18n'
 
 interface UsePdfDocumentReturn {
   pdfDoc: ViewerDoc | null
@@ -14,6 +15,20 @@ interface UsePdfDocumentReturn {
   email: ParsedEmail | null
   /** Raw Markdown source; set only when kind === 'md' (pdfDoc stays null). */
   markdown: string | null
+  /**
+   * The document is encrypted and pdfjs is waiting for a password. `wrong` is
+   * true on a second and later ask, i.e. the last attempt was rejected.
+   */
+  passwordPrompt: { wrong: boolean } | null
+  /**
+   * The password that actually opened the current document, or null when it was
+   * not encrypted. Kept so the save paths can re-open the same bytes — pdfjs
+   * decrypts for display only; pdf-lib gets the raw file and needs the key too.
+   * In memory for the life of the document, never persisted.
+   */
+  documentPassword: string | null
+  submitPassword: (password: string) => void
+  cancelPassword: () => void
 }
 
 export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
@@ -24,6 +39,24 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
   const [kind, setKind] = useState<DocKind>('pdf')
   const [email, setEmail] = useState<ParsedEmail | null>(null)
   const [markdown, setMarkdown] = useState<string | null>(null)
+  const [passwordPrompt, setPasswordPrompt] = useState<{ wrong: boolean } | null>(null)
+  const [documentPassword, setDocumentPassword] = useState<string | null>(null)
+  /**
+   * Answers the pending password question.
+   *
+   * pdfjs asks through a callback, not a promise, and asks again with the same
+   * mechanism when the password was wrong — so what the UI needs is a single
+   * place to send an answer to whatever ask is currently outstanding.
+   */
+  const answerRef = useRef<((password: string | null) => void) | null>(null)
+
+  const submitPassword = useCallback((password: string) => {
+    answerRef.current?.(password)
+  }, [])
+
+  const cancelPassword = useCallback(() => {
+    answerRef.current?.(null)
+  }, [])
 
   useEffect(() => {
     if (!file) {
@@ -35,7 +68,15 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
     }
     let cancelled = false
     let loadedDoc: ViewerDoc | null = null
-    setIsLoading(true); setError(null)
+    // Set when the reader closes the password prompt. Destroying the task
+    // rejects it with a worker-teardown message, which is true but useless to
+    // read; this turns it back into the thing that actually happened.
+    let passwordAbandoned = false
+    // The last answer handed to pdfjs. If the loading task then resolves, that
+    // answer was the right one — pdfjs has no other way to tell us which of the
+    // attempts worked.
+    let accepted: string | null = null
+    setIsLoading(true); setError(null); setDocumentPassword(null)
     resetOpenMarks()
 
     type Loaded = {
@@ -84,7 +125,7 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
       if (!pdfjs.GlobalWorkerOptions.workerSrc) {
         pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl()
       }
-      const doc = await pdfjs.getDocument({
+      const task = pdfjs.getDocument({
         data: buffer,
         // Disable CSS @font-face / FontFace API for embedded fonts.
         // pdfjs's FontFace.loaded path can hang in Electron because the browser
@@ -111,7 +152,32 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         standardFontDataUrl: new URL('standard_fonts/', new URL('./', document.baseURI)).href,
         cMapUrl: new URL('cmaps/', new URL('./', document.baseURI)).href,
         cMapPacked: true, // pdfjs ships .bcmap (packed) CMaps
-      }).promise
+      })
+
+      // An encrypted PDF is not a failure, it is a question. Without this
+      // handler pdfjs rejects with "No password given" and the viewer showed
+      // that as an error, with no way to answer it.
+      task.onPassword = (updatePassword: (password: string) => void, reason: number) => {
+        if (cancelled) return
+        // 1 = NEED_PASSWORD, 2 = INCORRECT_PASSWORD. Asking a second time means
+        // the last answer was wrong, which the prompt should say rather than
+        // looking as though the click did nothing.
+        setPasswordPrompt({ wrong: reason === 2 })
+        answerRef.current = (password) => {
+          answerRef.current = null
+          setPasswordPrompt(null)
+          if (password === null) {
+            passwordAbandoned = true
+            void task.destroy()
+            return
+          }
+          accepted = password
+          updatePassword(password)
+        }
+      }
+
+      const doc = await task.promise
+      setDocumentPassword(accepted)
       markOpen('document')
       return { doc: doc as unknown as ViewerDoc, kind: 'pdf', email: null, markdown: null }
     })
@@ -127,7 +193,11 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
       })
       .catch(err => {
         if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Failed to load document')
+        setPasswordPrompt(null)
+        answerRef.current = null
+        setError(passwordAbandoned
+          ? t('password.required')
+          : (err instanceof Error ? err.message : 'Failed to load document'))
         setIsLoading(false)
       })
 
@@ -140,5 +210,8 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
     }
   }, [file])
 
-  return { pdfDoc, numPages, isLoading, error, kind, email, markdown }
+  return {
+    pdfDoc, numPages, isLoading, error, kind, email, markdown,
+    passwordPrompt, submitPassword, cancelPassword, documentPassword,
+  }
 }

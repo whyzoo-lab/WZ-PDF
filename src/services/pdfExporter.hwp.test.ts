@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 
 const addPage = vi.fn(() => ({ drawImage: vi.fn() }))
 const embedJpg = vi.fn(async () => ({ width: 100, height: 200 }))
-vi.mock('pdf-lib', () => ({
+vi.mock('@cantoo/pdf-lib', () => ({
   PDFDocument: { create: async () => ({ addPage, embedJpg, save: async () => new Uint8Array([1]) }) },
   StandardFonts: { Helvetica: 'Helvetica' },
   rgb: vi.fn(),

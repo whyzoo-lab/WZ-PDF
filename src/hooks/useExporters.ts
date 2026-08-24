@@ -12,6 +12,11 @@ interface UseExportersArgs {
   numPages: number
   annotations: Annotation[]
   kind: DocKind
+  /** Password the current document was opened with, if it was encrypted. */
+  documentPassword: string | null
+  /** Password to put on the next save, or null to save unlocked. Owned by the
+   *  toolbar padlock, which sets the intent; saving is what carries it out. */
+  savePassword: string | null
   onSuccess: (message: string) => void
 }
 
@@ -37,13 +42,19 @@ export function useExporters({
   numPages,
   annotations,
   kind,
+  documentPassword,
+  savePassword,
   onSuccess,
 }: UseExportersArgs) {
   const [isExporting, setIsExporting] = useState(false)
 
   const handleExportPdf = useCallback(async () => {
+    const password = savePassword ?? undefined
     const baseName = file ? stripDocExt(file.name) : 'document'
-    const downloadName = `${baseName}_annotated.pdf`
+    // The name says which of the three things happened, so the file is still
+    // recognisable a week later.
+    const suffix = password ? '_locked' : documentPassword ? '_unlocked' : '_annotated'
+    const downloadName = `${baseName}${suffix}.pdf`
     // Ask where to save BEFORE building anything: the picker needs the click's
     // activation, which a long export would outlive. It also means the success
     // toast can wait until the bytes are really on disk.
@@ -58,24 +69,32 @@ export function useExporters({
       if (kind === 'pdf') {
         if (!fileBytes) return
         const { exportPdf } = await import('../services/pdfExporter')
-        blob = await exportPdf(fileBytes, annotations)
+        blob = await exportPdf(fileBytes, annotations, {
+          sourcePassword: documentPassword ?? undefined, password,
+        })
       } else {
         // Non-PDF sources have no PDF to patch — build one from the rendered
         // pages (this is also the HWP→PDF converter).
         if (!pdfDoc) return
         const { exportHwpToPdf } = await import('../services/pdfExporter')
-        const bytes = await exportHwpToPdf(pdfDoc, annotations)
+        const bytes = await exportHwpToPdf(pdfDoc, annotations, password)
         blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
       }
       if (await saveBlobTo(target, blob, downloadName)) {
-        onSuccess(t('export.pdfDone', { name: downloadName }))
+        // Saving an encrypted document without a new password takes the
+        // password off it. That is the point, but it should be said out loud
+        // rather than left for the reader to discover on the next open.
+        const message = password
+          ? 'export.pdfLockedDone'
+          : documentPassword ? 'export.pdfUnlockedDone' : 'export.pdfDone'
+        onSuccess(t(message, { name: downloadName }))
       }
     } catch (err) {
       console.error('PDF export failed:', err)
     } finally {
       setIsExporting(false)
     }
-  }, [fileBytes, pdfDoc, annotations, file, kind, onSuccess])
+  }, [fileBytes, pdfDoc, annotations, file, kind, documentPassword, savePassword, onSuccess])
 
   const handleExportHtml = useCallback(async () => {
     const filename = file?.name ?? 'document.pdf'

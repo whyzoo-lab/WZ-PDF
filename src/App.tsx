@@ -18,11 +18,15 @@ import { SpeechHighlight } from './components/SpeechHighlight'
 import { TtsBar } from './components/TtsBar'
 import { planSpeech } from './services/ttsText'
 import { SearchBar } from './components/SearchBar'
+import { PasswordPrompt } from './components/modals/PasswordPrompt'
+import { PasswordSetPrompt } from './components/modals/PasswordSetPrompt'
 import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
 import { isFlowKind } from './types/viewerDoc'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
 import { classifyDocFile } from './utils/detectDocType'
+import { pickSaveTarget, saveBlobTo, stripDocExt } from './utils/download'
+import { pageSuffix } from './utils/pageSuffix'
 import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
 import { UpdateToast } from './components/UpdateToast'
@@ -96,6 +100,8 @@ export default function App() {
   const [pendingSignature, setPendingSignature] = useState<string | null>(null)
   const [showSignaturePad, setShowSignaturePad] = useState(false)
   const [showWatermarkConfig, setShowWatermarkConfig] = useState(false)
+  // Open while the reader is choosing a password for an encrypted export.
+  const [askEncryptPassword, setAskEncryptPassword] = useState(false)
 
   // ── Search state ──────────────────────────────────────────────────────────
   const [showSearch, setShowSearch] = useState(false)
@@ -112,7 +118,10 @@ export default function App() {
   // The viewer viewport — measured by useFitZoom so auto-fit uses real space.
   const mainRef = useRef<HTMLElement>(null)
 
-  const { pdfDoc, numPages, isLoading, error, kind, email, markdown } = usePdfDocument(file)
+  const {
+    pdfDoc, numPages, isLoading, error, kind, email, markdown,
+    passwordPrompt, submitPassword, cancelPassword, documentPassword,
+  } = usePdfDocument(file)
   // A reflowing document is loaded and on screen. Guarded on the payload as
   // well as the kind so it is false during the load, when there is nothing to
   // zoom, print or present yet.
@@ -132,6 +141,24 @@ export default function App() {
 
   // ── Hooks: feature bundles ────────────────────────────────────────────────
   const { fitWidth } = useFitZoom({ pdfDoc, viewMode, rotation, setZoom, viewportRef: mainRef })
+
+  /**
+   * What the next save should do about a password: a string puts one on, null
+   * saves unlocked. The padlock only edits this — nothing is written until the
+   * reader saves — so setting a password and choosing where the file goes stay
+   * two separate decisions.
+   *
+   * Keyed to the document it was chosen for, like the Markdown edit buffer, so
+   * opening another file reseeds it without an effect that would setState after
+   * render. The default is the password the document arrived with: one that
+   * came locked stays locked unless the reader says otherwise.
+   */
+  const [chosenPassword, setChosenPassword] =
+    useState<{ from: string | null; value: string | null }>({ from: null, value: null })
+
+  const savePassword = chosenPassword.from === documentPassword
+    ? chosenPassword.value
+    : documentPassword
   const update = useUpdateCheck()
   const ocr = useOcr(pdfDoc, numPages)
   // Declared with the other feature hooks, not down with the speech wiring,
@@ -153,8 +180,21 @@ export default function App() {
     handleExportImages,
     handleExportExe,
   } = useExporters({
-    file, fileBytes, pdfDoc, numPages, annotations, kind, onSuccess: showToast,
+    file, fileBytes, pdfDoc, numPages, annotations, kind, documentPassword, savePassword,
+    onSuccess: showToast,
   })
+
+  // The padlock decides *what saving will do*; it does not save. Otherwise one
+  // click meant both "put a password on this" and "write a file now", and there
+  // was no way to change your mind about the first without doing the second.
+  const handlePassword = useCallback(() => {
+    if (savePassword) {
+      setChosenPassword({ from: documentPassword, value: null })
+      showToast(t('password.willRemove'))
+      return
+    }
+    setAskEncryptPassword(true)
+  }, [savePassword, documentPassword, showToast])
 
   // Page CRUD ops: when one succeeds we rewrite `file`, remap annotations,
   // and jump the viewer back to page 1 (the user's edits change the layout
@@ -173,7 +213,7 @@ export default function App() {
     handleInsertBlankPage,
     handleInsertFromPdf,
     handleReorderPages,
-  } = usePageOperations({ fileBytes, onResult: handlePageOpResult })
+  } = usePageOperations({ fileBytes, documentPassword, onResult: handlePageOpResult })
 
   // ── Warm the viewer chunks once the shell is on screen ────────────────────
   // See prefetchViewerChunks: this is what stops "open a PDF" from paying a
@@ -571,6 +611,34 @@ export default function App() {
     if (status?.ready) await startReading()
   }, [tts, startReading])
 
+  /**
+   * Save the pages selected in the panel as a new PDF.
+   *
+   * The destination is chosen FIRST, before the document is built. Picking a
+   * file needs transient user activation — the permission the click granted,
+   * which expires in a few seconds — and building a PDF out of a long document
+   * can easily outlive it. See utils/download.ts.
+   */
+  const handleSavePages = useCallback(async (pageNums: number[]) => {
+    if (!fileBytes || pageNums.length === 0) return
+    const suggested = `${stripDocExt(file?.name ?? 'document')}${pageSuffix(pageNums)}.pdf`
+
+    const target = await pickSaveTarget(suggested, {
+      description: 'PDF document',
+      accept: { 'application/pdf': ['.pdf'] },
+    })
+    if (target.kind === 'canceled') return
+
+    try {
+      const { extractPages } = await import('./services/pdfPageService')
+      const bytes = await extractPages(fileBytes, pageNums, documentPassword ?? undefined)
+      const saved = await saveBlobTo(target, new Blob([bytes], { type: 'application/pdf' }), suggested)
+      if (saved) showToast(t('panel.savedSelected', { n: pageNums.length }))
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : String(err))
+    }
+  }, [fileBytes, file, documentPassword, showToast])
+
   // ── Global keyboard shortcuts ─────────────────────────────────────────────
   // Declared here, not with the other hooks above, because it needs the
   // read-aloud toggle — and hoisting that instead would put the whole speech
@@ -603,6 +671,8 @@ export default function App() {
     onUpload: handleUpload,
     onOpenUrl: () => setShowUrlModal(true),
     onExportPdf: handleExportPdf,
+    onPassword: handlePassword,
+    saveLocked: !!savePassword,
     onExportHtml: handleExportHtml,
     onExportImages: handleExportImages,
     // EXE Viewer:
@@ -643,6 +713,25 @@ export default function App() {
   return (
     <div className="flex flex-col h-dvh overflow-hidden bg-gray-900">
       <ActionBar {...actionBarProps} />
+
+      {askEncryptPassword && (
+        <PasswordSetPrompt
+          onSubmit={password => {
+            setAskEncryptPassword(false)
+            setChosenPassword({ from: documentPassword, value: password })
+            showToast(t('password.willApply'))
+          }}
+          onCancel={() => setAskEncryptPassword(false)}
+        />
+      )}
+
+      {passwordPrompt && (
+        <PasswordPrompt
+          wrong={passwordPrompt.wrong}
+          onSubmit={submitPassword}
+          onCancel={cancelPassword}
+        />
+      )}
 
       <SpeechHighlight rects={speechRects} />
 
@@ -704,6 +793,9 @@ export default function App() {
               isOperating={isPageOperating}
               readOnly={appMode === 'viewer'}
               onClose={() => setIsPanelOpen(false)}
+              // Only for PDFs: extraction is pdf-lib's job, and it has nothing
+              // to say about a HWP page or an image.
+              onSavePages={kind === 'pdf' ? handleSavePages : undefined}
               onScrollToPage={page => {
                 setScrollToPage(page)
                 if (viewMode === 'grid') setViewMode('single')

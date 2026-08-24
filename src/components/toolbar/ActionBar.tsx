@@ -9,7 +9,7 @@ import {
   IconSingle, IconSpread, IconGrid, IconFullscreen, IconRotate, IconSelect,
   IconStamp, IconSignature, IconWatermark, IconDelete, IconUpload, IconLink,
   IconDownload, IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
-  IconExe, IconLock, IconLockOpen, IconMenu, IconMore, IconFitWidth,
+  IconExe, IconLock, IconLockOpen, IconPencil, IconMenu, IconMore, IconFitWidth,
   IconSpeak, IconStopSpeak, IconRotateLeft,
 } from './icons'
 import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED, TITLE_MIN_WIDTH, TITLE_GUTTER } from './toolbarStyles'
@@ -69,6 +69,10 @@ export interface ActionBarProps {
   ocrProgress: { done: number; total: number } | null
   // ── Export menu ────────────────────────────────────────────────────────────
   onExportPdf: () => void
+  /** The padlock: puts a password on the next save, or takes it back off. */
+  onPassword: () => void
+  /** True when the next save will put a password on the file. */
+  saveLocked?: boolean
   onExportHtml: () => void
   onExportImages: () => void
   /** If undefined, the EXE option is hidden (only available in Electron builds). */
@@ -123,6 +127,8 @@ export function ActionBar({
   isOcrRunning,
   ocrProgress,
   onExportPdf,
+  onPassword,
+  saveLocked = false,
   onExportHtml,
   onExportImages,
   onExportExe,
@@ -428,9 +434,9 @@ export function ActionBar({
   // segmented-switch treatment: a recessed track with a single sliding thumb.
   // The thumb is one element that translates between the two halves, which is
   // what makes it read as a switch rather than as two independent icon buttons.
-  // Editing is a lock, not a pair of destinations: locked = read-only viewer,
-  // unlocked = editing tools appear. One round ghost button, like every other
-  // control in the bar — `role="switch"` gives it real on/off semantics.
+  // The glyph is a pencil in both states and the amber wash carries on/off,
+  // because a padlock now means what it says everywhere else in this app: a
+  // password. Two different locks in one bar was the confusing part.
   const modeToggleCluster = !embed ? (
     <button
       role="switch"
@@ -444,8 +450,22 @@ export function ActionBar({
           : BTN_IDLE
       }`}
     >
-      {appMode === 'editor' ? <IconLockOpen /> : <IconLock />}
+      <IconPencil />
     </button>
+  ) : null
+
+  // The padlock, and now it only ever means one thing: a password. It arms the
+  // next save rather than saving, so the glyph reports the state the file will
+  // be written in — closed means the save will lock it. PDF only: it is the one
+  // format whose bytes this app can encrypt.
+  const passwordButton = (hasPdf && !embed) ? (
+    <button
+      onClick={onPassword}
+      disabled={isExporting}
+      className={`${BTN_BASE} ${saveLocked ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30' : BTN_IDLE}`}
+      title={saveLocked ? t('tool.passwordRemove') : t('tool.passwordSet')}
+      aria-label={saveLocked ? t('tool.passwordRemove') : t('tool.passwordSet')}
+    >{saveLocked ? <IconLock /> : <IconLockOpen />}</button>
   ) : null
 
   // A plain ghost button like every other tool. It used to carry a filled grey
@@ -597,6 +617,7 @@ export function ActionBar({
       )}
 
       {printButton}
+      {passwordButton}
       {speakButton}
       {ocrCluster}
 
@@ -699,12 +720,20 @@ export function ActionBar({
                 onClick={() => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor')}
                 className={menuItem}
               >
-                {appMode === 'editor' ? <IconLockOpen /> : <IconLock />}
+                <IconPencil />
                 <span className="flex-1 text-left">{t('tool.editLock')}</span>
                 <span className={`text-[10px] font-semibold ${appMode === 'editor' ? 'text-amber-300' : 'text-gray-500'}`}>
                   {appMode === 'editor' ? 'ON' : 'OFF'}
                 </span>
               </button>
+              {hasPdf && (
+                <button onClick={() => { onPassword(); setRightMenuOpen(false) }} className={menuItem} disabled={isExporting}>
+                  {saveLocked ? <IconLock /> : <IconLockOpen />}
+                  <span className="flex-1 text-left">
+                    {saveLocked ? t('tool.passwordRemove') : t('tool.passwordSet')}
+                  </span>
+                </button>
+              )}
               <div className="my-1 border-t border-gray-600" />
               <button onClick={() => { fileInputRef.current?.click(); setRightMenuOpen(false) }} className={menuItem}><IconUpload /><span>{t('tool.openFile')}</span></button>
               <button onClick={() => { onOpenUrl(); setRightMenuOpen(false) }} className={menuItem}><IconLink /><span>{t('tool.openUrl')}</span></button>

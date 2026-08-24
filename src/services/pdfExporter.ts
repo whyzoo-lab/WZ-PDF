@@ -1,4 +1,5 @@
-import { PDFDocument, PDFFont, rgb, degrees, StandardFonts } from 'pdf-lib'
+import { PDFDocument, PDFFont, rgb, degrees, StandardFonts } from '@cantoo/pdf-lib'
+import { loadPdfForWriting } from './pdfLoad'
 import type { Annotation, WatermarkAnnotation } from '../types/annotation'
 import { annotationsForPage } from '../types/annotation'
 import { toPdfLibY, hexToRgb } from '../utils/coordinates'
@@ -50,11 +51,37 @@ function needsKoreanFont(s: string): boolean {
   return false
 }
 
+/**
+ * 요청이 있었으면 문서를 암호로 잠근다.
+ *
+ * owner 암호를 user 암호와 같은 값으로 함께 건다. owner 암호를 비워 두면 어떤
+ * 도구든 제한 없이 다시 저장할 수 있어서, "암호를 걸었다"는 말이 첫 번째 왕복까지만
+ * 참이 된다. 알고리즘은 라이브러리 기본값인 AES-256을 그대로 쓴다.
+ */
+function lock(pdfDoc: PDFDocument, password?: string): void {
+  if (!password) return
+  pdfDoc.encrypt({ userPassword: password, ownerPassword: password })
+}
+
+/** How the saved file relates to the document that was opened. */
+export interface PdfSaveOptions {
+  /** Password that opens `originalBytes`, when the source document is encrypted. */
+  sourcePassword?: string
+  /**
+   * Password to put on the saved file. Leaving it out saves an unlocked file —
+   * which is how removing a password works: open the document with the one it
+   * has, save it without one.
+   */
+  password?: string
+}
+
 export async function exportPdf(
   originalBytes: ArrayBuffer,
   annotations: Annotation[],
+  save: PdfSaveOptions = {},
 ): Promise<Blob> {
-  const pdfDoc = await PDFDocument.load(originalBytes)
+  const { sourcePassword, password } = save
+  const pdfDoc = await loadPdfForWriting(originalBytes, sourcePassword)
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
 
   // Embed the Korean font lazily — only when a watermark or textEdit needs it.
@@ -150,6 +177,7 @@ export async function exportPdf(
     }
   }
 
+  lock(pdfDoc, password)
   const pdfBytes = await pdfDoc.save()
   // pdfBytes is a Uint8Array; BlobPart accepts it, but its backing buffer may
   // be a SharedArrayBuffer in some TS lib configs — cast to a plain Uint8Array
@@ -172,6 +200,7 @@ export async function exportPdf(
 export async function exportHwpToPdf(
   doc: ViewerDoc,
   annotations: Annotation[],
+  password?: string,
 ): Promise<Uint8Array> {
   const { getOrRenderPage } = await import('../hooks/usePdfPage')
 
@@ -301,5 +330,6 @@ export async function exportHwpToPdf(
     }
   }
 
+  lock(pdfDoc, password)
   return pdfDoc.save()
 }
