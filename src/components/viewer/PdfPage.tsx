@@ -140,6 +140,11 @@ function PdfPageInner({
   }, [pdfDoc, pageNumber, kind])
   const hasHwpText = !!(hwpWords && hwpWords.length > 0)
 
+  // Whether this page has text a screen reader could actually read. Declared up
+  // here with the other hooks: everything below the loading early-return would
+  // change hook order between renders.
+  const [hasPdfText, setHasPdfText] = useState(false)
+
   // Ctrl+drag region → OCR the crop → hand the text back (clipboard). useCallback
   // so the Stage's onMouseUp and the window-mouseup net (for drags that end off
   // the Stage, e.g. on the gray margin) share one implementation.
@@ -424,12 +429,16 @@ function PdfPageInner({
     })
   }
 
-  // Triple-click an un-recognized page (not while a drawing/placement tool is
-  // active) to OCR it, with the scanning animation radiating from the click.
-  // `event.detail` is the consecutive-click count, so the 3rd rapid click fires
-  // a click event with detail === 3 — no manual timer needed.
-  const handleTripleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
-    if (e.detail !== 3) return
+  // Click an un-recognized page four times quickly (not while a drawing or
+  // placement tool is active) to OCR it, with the scanning animation radiating
+  // from the click. `event.detail` is the consecutive-click count, so the 4th
+  // rapid click arrives as a click event with detail === 4 — no manual timer.
+  //
+  // Four rather than three because three is the browser's own select-a-paragraph
+  // gesture: on a page that *does* have text, the third click selects a line and
+  // starting OCR on top of that is not what the reader asked for.
+  const handleQuadClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (e.detail !== 4) return
     if (!onOcrRequest || ocrResult || ocrActive) return
     if (!(activeMode === null || activeMode === 'select')) return
     const rect = e.currentTarget.getBoundingClientRect()
@@ -437,14 +446,33 @@ function PdfPageInner({
     onOcrRequest(pageNumber)
   }
 
+  const readableText = hasPdfText || hasHwpText || !!(ocrResult && ocrResult.words.length > 0)
+
   // The outer div holds the layout box (swapped dimensions for 90/270).
   // The inner Stage is rendered at the original orientation and rotated via CSS.
   return (
     <div
-      onClick={handleTripleClick}
+      onClick={handleQuadClick}
       style={{ width: stageWidth, height: stageHeight, overflow: 'hidden', position: 'relative' }}
+      role="group"
+      aria-label={t('page.a11yPage', { n: pageNumber })}
     >
-      <div style={{ position: 'absolute', top: 0, left: 0, ...rotationStyle }}>
+      {/* A page with no text is a picture, and a picture of a document is
+          nothing at all to someone using a screen reader — the canvas has no
+          text to expose and no name of its own. Saying what it is, and that OCR
+          can turn it into words, is the difference between an empty document
+          and a document that needs one more step. */}
+      {/* A heading per page, so the H key moves page to page — the only
+          structure a paginated document has, and the way screen reader users
+          skim. Hidden: the page number is already painted in the panel and the
+          counter. */}
+      <h2 className="sr-only">{t('page.a11yPage', { n: pageNumber })}</h2>
+      {!readableText && (
+        <p className="sr-only">{t('page.a11yImageOnly', { n: pageNumber })}</p>
+      )}
+      {/* The canvas is either duplicated by the text layer above it or carries
+          nothing readable at all, so it is never worth announcing on its own. */}
+      <div aria-hidden style={{ position: 'absolute', top: 0, left: 0, ...rotationStyle }}>
         <Stage
           width={renderedW}
           height={renderedH}
@@ -546,6 +574,7 @@ function PdfPageInner({
           height={stageHeight}
           highlights={searchHighlights}
           onEditCommit={appMode === 'editor' ? commitTextEdit : undefined}
+          onTextPresence={setHasPdfText}
         />
       )}
       {/* HWP native selectable text — replaces OCR for HWP pages that carry text. */}

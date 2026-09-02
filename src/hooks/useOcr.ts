@@ -80,8 +80,12 @@ export function useOcr(pdfDoc: ViewerDoc | null, numPages: number): UseOcrReturn
   const runPage = useCallback(async (page: number) => {
     setIsOcrRunning(true)
     setOcrError(null)
+    // Reported like a one-page run of `runAll`. Recognising a single page still
+    // takes seconds, and to a reader who cannot see the scanning animation those
+    // seconds are silence that could equally mean nothing happened.
+    setOcrProgress({ done: 0, total: 1 })
     try { store(await ocrOnePage(page)) }
-    finally { setIsOcrRunning(false); setOcrActivePage(null) }
+    finally { setIsOcrRunning(false); setOcrActivePage(null); setOcrProgress(null) }
   }, [ocrOnePage, store])
 
   const runAll = useCallback(async () => {

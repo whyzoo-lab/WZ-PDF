@@ -18,6 +18,7 @@ import { SpeechHighlight } from './components/SpeechHighlight'
 import { TtsBar } from './components/TtsBar'
 import { planSpeech } from './services/ttsText'
 import { SearchBar } from './components/SearchBar'
+import { SpeechAnnouncer } from './components/SpeechAnnouncer'
 import { PasswordPrompt } from './components/modals/PasswordPrompt'
 import { PasswordSetPrompt } from './components/modals/PasswordSetPrompt'
 import type { Annotation, OmitId } from './types/annotation'
@@ -651,6 +652,12 @@ export default function App() {
     onRunOcr: () => ocr.runPage(currentPage),
     onRunOcrAll: ocr.runAll,
     onToggleSpeech: window.electronAPI?.ttsSynthesize ? handleToggleSpeech : undefined,
+    // Bound only while something is being read, so Alt+arrow keeps whatever it
+    // otherwise means the rest of the time.
+    onSpeechPrevious: tts.status === 'idle' ? undefined : tts.previous,
+    onSpeechNext: tts.status === 'idle' ? undefined : tts.next,
+    onSpeechPlayPause: tts.status === 'idle' ? undefined
+      : () => { void (tts.status === 'paused' ? tts.resume() : tts.pause()) },
   })
 
   const actionBarProps = {
@@ -712,6 +719,38 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-dvh overflow-hidden bg-gray-900">
+      {/* Before the toolbar, purely for the keyboard: the bar is `fixed`, so
+          where it sits in the markup does not move it on screen, but it is what
+          decides where Tab reaches it. At the end of the tree its first control
+          was the 21st stop, behind every toolbar button — and it only exists
+          while something is being read, which is exactly when it is the control
+          most likely to be wanted. */}
+      <TtsBar
+        status={tts.status}
+        index={tts.index}
+        chunkCount={tts.chunkCount}
+        error={tts.error}
+        model={tts.model}
+        downloading={tts.downloading}
+        downloadProgress={tts.downloadProgress}
+        promptOpen={ttsPromptOpen}
+        voice={tts.draftVoice}
+        speed={tts.draftSpeed}
+        canApply={tts.canApply}
+        applying={tts.applying}
+        onDownload={handleTtsDownload}
+        onCancelDownload={tts.cancelDownload}
+        onDismissPrompt={() => setTtsPromptOpen(false)}
+        onPrevious={tts.previous}
+        onNext={tts.next}
+        onPause={tts.pause}
+        onResume={tts.resume}
+        onStop={tts.stop}
+        onVoiceChange={tts.setVoice}
+        onSpeedChange={tts.setSpeed}
+        onApply={tts.applySettings}
+      />
+
       <ActionBar {...actionBarProps} />
 
       {askEncryptPassword && (
@@ -733,31 +772,17 @@ export default function App() {
         />
       )}
 
+      {/* The highlight is for people who can see it; this is the same
+          information for people who cannot. Mounted always, because the thing
+          most worth announcing — that reading has ended — happens at the moment
+          the bar itself disappears. */}
+
+
+      <SpeechAnnouncer status={tts.status} />
+
       <SpeechHighlight rects={speechRects} />
 
-      <TtsBar
-        status={tts.status}
-        index={tts.index}
-        chunkCount={tts.chunkCount}
-        error={tts.error}
-        model={tts.model}
-        downloading={tts.downloading}
-        downloadProgress={tts.downloadProgress}
-        promptOpen={ttsPromptOpen}
-        voice={tts.draftVoice}
-        speed={tts.draftSpeed}
-        canApply={tts.canApply}
-        applying={tts.applying}
-        onDownload={handleTtsDownload}
-        onCancelDownload={tts.cancelDownload}
-        onDismissPrompt={() => setTtsPromptOpen(false)}
-        onPause={tts.pause}
-        onResume={tts.resume}
-        onStop={tts.stop}
-        onVoiceChange={tts.setVoice}
-        onSpeedChange={tts.setSpeed}
-        onApply={tts.applySettings}
-      />
+
 
       {/* Hidden file input for F2 / double-click to open */}
       <input
@@ -814,6 +839,7 @@ export default function App() {
         )}
         <main
           ref={mainRef}
+          aria-label={t('a11y.document')}
           className="flex-1 overflow-hidden"
           onDragOver={e => e.preventDefault()}
           onDrop={e => {
@@ -823,6 +849,15 @@ export default function App() {
           }}
           onDoubleClick={handleMainDoubleClick}
         >
+          {/* The document's own heading. There was none anywhere in the viewing
+              path, so a screen reader had nothing to navigate by and no name for
+              what it had just opened — the file name is only painted in the
+              toolbar. Hidden, because the toolbar already shows it. */}
+          {file && (
+            <h1 className="sr-only">
+              {t('a11y.documentNamed', { name: file.name, n: numPages || 1 })}
+            </h1>
+          )}
           {error && (
             <div className="flex items-center justify-center h-full text-red-400 p-4">
               Failed to load PDF: {error}

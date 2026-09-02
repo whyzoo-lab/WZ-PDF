@@ -28,6 +28,10 @@ interface GlobalShortcutsDeps {
   onRunOcrAll: () => void
   /** Start or stop reading aloud. Absent outside the desktop build. */
   onToggleSpeech?: () => void
+  /** Moving through what is being read. Absent when nothing is being read. */
+  onSpeechPrevious?: () => void
+  onSpeechNext?: () => void
+  onSpeechPlayPause?: () => void
 }
 
 /**
@@ -49,7 +53,7 @@ const DOUBLE_PRESS_MS = 350
  * Shortcuts: F1 help, Ctrl+P print, Ctrl+F find, F2 open, F5 fullscreen,
  * Delete/Backspace remove selection, ESC (two-step: clear markups → exit
  * fullscreen), 1 pen, 2 rectangle, R OCR this page (RR the whole document),
- * S read aloud.
+ * S read aloud, and while reading Alt+← / Alt+→ / Alt+Space to move through it.
  */
 export function useGlobalShortcuts({
   pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
@@ -57,6 +61,7 @@ export function useGlobalShortcuts({
   prevViewModeRef, fileInputRef,
   removeAnnotation, clearMarkups, setActiveMode,
   onRunOcr, onRunOcrAll, onToggleSpeech,
+  onSpeechPrevious, onSpeechNext, onSpeechPlayPause,
 }: GlobalShortcutsDeps) {
   // Set while waiting to see whether an `r` becomes `rr`.
   const ocrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -109,12 +114,38 @@ export function useGlobalShortcuts({
         setViewMode('fullscreen')
         return
       }
-      // Letter shortcuts are case-insensitive and never fire with a modifier,
-      // so Ctrl+R (reload) and Ctrl+S (save) keep their usual meaning. They are
-      // here, above the PDF-only guard below, because reading aloud works for
-      // Markdown and mail as well.
+      // ── Moving through what is being read ────────────────────────────────
+      // Deliberately modifier combinations rather than bare letters. A screen
+      // reader in browse mode swallows single letters as its own quick-nav keys
+      // (in NVDA `s` is "next separator", `r` "next radio button"), so a plain
+      // letter would never reach the app for the readers these controls exist
+      // for. Alt+arrow is free in every mode.
+      //
+      // Only bound while something is being read, so Alt+Left keeps whatever it
+      // otherwise means the rest of the time.
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !inInput) {
+        if (e.key === 'ArrowLeft' && onSpeechPrevious) {
+          e.preventDefault(); onSpeechPrevious(); return
+        }
+        if (e.key === 'ArrowRight' && onSpeechNext) {
+          e.preventDefault(); onSpeechNext(); return
+        }
+        if (e.key === ' ' && onSpeechPlayPause) {
+          e.preventDefault(); onSpeechPlayPause(); return
+        }
+      }
+
+      // Letter shortcuts are case-insensitive. They fire bare **or with Alt**,
+      // for the reason given above: a screen reader in browse mode keeps the
+      // bare letter for its own quick-nav, so `S` alone never reaches the app
+      // for the readers read-aloud exists for. Alt+S and Alt+R do the same
+      // thing and pass straight through. Ctrl and Cmd stay excluded, so Ctrl+R
+      // (reload) and Ctrl+S (save) keep their usual meaning.
+      //
+      // They are here, above the PDF-only guard below, because reading aloud
+      // works for Markdown and mail as well.
       const letter = e.key.length === 1 ? e.key.toLowerCase() : ''
-      const plain = !e.ctrlKey && !e.metaKey && !e.altKey && !inInput
+      const plain = !e.ctrlKey && !e.metaKey && !inInput
 
       if (letter === 's' && plain && onToggleSpeech && (pdfDoc || flowDoc)) {
         e.preventDefault()

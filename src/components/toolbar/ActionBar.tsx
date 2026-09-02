@@ -12,6 +12,7 @@ import {
   IconExe, IconLock, IconLockOpen, IconPencil, IconMenu, IconMore, IconFitWidth,
   IconSpeak, IconStopSpeak, IconRotateLeft,
 } from './icons'
+import { OcrAnnouncer } from '../OcrAnnouncer'
 import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED, TITLE_MIN_WIDTH, TITLE_GUTTER } from './toolbarStyles'
 import { ZoomControl } from './ZoomControl'
 import { useToolbarCollapse } from '../../hooks/useToolbarCollapse'
@@ -509,8 +510,14 @@ export function ActionBar({
         title={t('ocr.runAll')}
         className="px-1 text-[10px] rounded hover:bg-gray-700 disabled:opacity-40 text-gray-300"
       >ALL</button>
+      {/* Recognising a scanned document takes minutes, and the only sign of it
+          was this bare "12/30". For a reader who cannot see it that was minutes
+          of silence with no way to tell progress from a hang. */}
+      <OcrAnnouncer progress={ocrProgress} />
       {ocrProgress && (
-        <span className="ml-1 text-[10px] text-gray-400 tabular-nums">{ocrProgress.done}/{ocrProgress.total}</span>
+        <span className="ml-1 text-[10px] text-gray-400 tabular-nums" aria-hidden>
+          {ocrProgress.done}/{ocrProgress.total}
+        </span>
       )}
       {ocrProgress && (
         <button

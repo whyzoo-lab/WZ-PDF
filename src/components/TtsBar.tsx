@@ -1,7 +1,8 @@
 import { t } from '../i18n'
+import { LiveRegion } from './LiveRegion'
 import { VOICE_LABELS } from '../services/ttsVoices'
 import {
-  IconPause, IconPlay, IconSpeed, IconStop, IconVoice,
+  IconNextSentence, IconPause, IconPlay, IconPrevSentence, IconSpeed, IconStop, IconVoice,
 } from './toolbar/icons'
 
 /**
@@ -50,6 +51,9 @@ export interface TtsBarProps {
   onPause: () => void
   onResume: () => void
   onStop: () => void
+  /** Back a sentence — or to the start of this one, if it is already under way. */
+  onPrevious: () => void
+  onNext: () => void
   onVoiceChange: (voice: string) => void
   onSpeedChange: (speed: number) => void
   onApply: () => void
@@ -71,19 +75,24 @@ export function TtsBar(props: TtsBarProps) {
     status, index, chunkCount, error, model, downloading, downloadProgress,
     promptOpen, voice, speed, canApply, applying,
     onDownload, onCancelDownload, onDismissPrompt,
-    onPause, onResume, onStop, onVoiceChange, onSpeedChange, onApply,
+    onPause, onResume, onStop, onPrevious, onNext, onVoiceChange, onSpeedChange, onApply,
   } = props
 
   if (promptOpen && !downloading) {
     const size = `${Math.round((model?.bytesTotal ?? 0) / MB)} MB`
     return (
-      <div className={`${shell} max-w-[min(92vw,32rem)] px-4 py-3`} role="dialog" aria-label={t('tts.read')}>
+      // aria-modal + a focused button: pressing the read-aloud key put this
+      // question on screen and then left focus on the body, so a reader using
+      // the keyboard alone was waiting on a dialog with no way to find it.
+      <div className={`${shell} max-w-[min(92vw,32rem)] px-4 py-3`}
+        role="dialog" aria-modal="true" aria-label={t('tts.read')}>
         <p className="text-sm leading-6">{t('tts.needsModel', { size })}</p>
         {error && <p className="mt-1 text-xs text-red-300">{error}</p>}
         <div className="mt-2 flex justify-end gap-1">
           <button type="button" className={ghost} onClick={onDismissPrompt}>{t('tts.cancel')}</button>
           <button
             type="button"
+            autoFocus
             className={`${ghost} bg-blue-600/90 hover:bg-blue-500 text-white`}
             onClick={onDownload}
           >{t('tts.download')}</button>
@@ -97,7 +106,11 @@ export function TtsBar(props: TtsBarProps) {
     const total = Math.round((downloadProgress?.bytesTotal ?? model?.bytesTotal ?? 0) / MB)
     const pct = total > 0 ? Math.min(100, (done / total) * 100) : 0
     return (
-      <div className={`${shell} w-[min(92vw,28rem)] px-4 py-3`} role="status">
+      <div className={`${shell} w-[min(92vw,28rem)] px-4 py-3`}
+        role="group" aria-label={t('tts.read')}>
+        {/* Announced in tenths. The visible figure changes many times a second;
+            reading every one of them aloud would bury everything else. */}
+        <LiveRegion message={t('tts.a11yDownloading', { pct: Math.round(pct / 10) * 10 })} />
         <div className="flex items-center justify-between gap-3 text-sm">
           <span>{t('tts.downloading', { done, total })}</span>
           <button type="button" className={ghost} onClick={onCancelDownload}>{t('tts.cancel')}</button>
@@ -124,10 +137,30 @@ export function TtsBar(props: TtsBarProps) {
       // `fixed` in `shell`, dropping the bar out of its corner and into the
       // document flow just under the toolbar. `fixed` is already a containing
       // block, so the progress hairline below positions against it as it is.
-      className={`${shell} overflow-hidden w-[min(94vw,34rem)] flex items-center gap-1 px-2 py-1.5`}
-      role="status"
-      aria-live="polite"
+      className={`${shell} overflow-hidden w-[min(94vw,34rem)] flex flex-wrap items-center gap-y-1 px-2 py-1.5`}
+      // A group, not a status. As a live region this bar announced its whole
+      // contents on every change — and its contents include the voice picker's
+      // options, so a screen reader read out "목소리 F1 F2 F3 F4 F5 M1 M2 M3 M4
+      // M5 속도 1.00x 적용". What is worth saying is said by SpeechAnnouncer.
+      role="group"
+      aria-label={t('tts.controls')}
     >
+      {/* Two groups, allowed to wrap onto two lines. Adding the sentence
+          controls to a single row left the speed slider with a track 0 px wide
+          on a 390 px screen — the settings now drop to their own line instead,
+          which is the one kind of stacking that stays legible. */}
+      <div className="flex items-center gap-1 shrink-0">
+      {/* Moving through the document, which is the whole difference between a
+          document you can listen to and one you can only sit through: a reader
+          who missed a sentence can hear it again instead of starting over. */}
+      <button
+        type="button"
+        className={iconBtn}
+        onClick={onPrevious}
+        aria-label={t('tts.previous')}
+        title={t('tts.previous')}
+      ><IconPrevSentence /></button>
+
       {/* One button for play and pause, because they are one idea: whether the
           reader is speaking. Disabled while the first sentence is still being
           made, when there is nothing to pause. */}
@@ -140,6 +173,14 @@ export function TtsBar(props: TtsBarProps) {
         title={preparing ? t('tts.preparing') : (paused ? t('tts.resume') : t('tts.pause'))}
       >{paused ? <IconPlay /> : <IconPause />}</button>
 
+      <button
+        type="button"
+        className={iconBtn}
+        onClick={onNext}
+        aria-label={t('tts.next')}
+        title={t('tts.next')}
+      ><IconNextSentence /></button>
+
       {/* Stop is a separate control, not the other half of pause: it ends the
           session and takes the bar with it. */}
       <button
@@ -149,7 +190,10 @@ export function TtsBar(props: TtsBarProps) {
         aria-label={t('tts.stop')}
         title={t('tts.stop')}
       ><IconStop /></button>
+      </div>
 
+      {/* Wide enough that it takes a line of its own rather than being crushed. */}
+      <div className="flex min-w-[13rem] flex-1 items-center gap-1">
       <label
         className="flex shrink-0 items-center gap-1 pl-1 text-gray-400"
         title={t('tts.voice')}
@@ -205,6 +249,7 @@ export function TtsBar(props: TtsBarProps) {
             : 'text-gray-500'
         } disabled:cursor-default`}
       >{t('tts.apply')}</button>
+      </div>
 
       {error && <span className="shrink-0 text-xs text-red-300">{error}</span>}
 

@@ -276,6 +276,22 @@ export const IconPause = () => (
   </Icon>
 )
 
+/** Back a sentence — solid triangle against a bar, matching Play's weight. */
+export const IconPrevSentence = () => (
+  <Icon>
+    <path d="M17.5 5.5v13L8 12z" fill="currentColor" stroke="currentColor" strokeLinejoin="round" />
+    <path d="M6.5 5.5v13" strokeWidth="2.2" />
+  </Icon>
+)
+
+/** Forward a sentence. */
+export const IconNextSentence = () => (
+  <Icon>
+    <path d="M6.5 5.5v13L16 12z" fill="currentColor" stroke="currentColor" strokeLinejoin="round" />
+    <path d="M17.5 5.5v13" strokeWidth="2.2" />
+  </Icon>
+)
+
 /** Stop — closes the reader, so it is the square, not another pause. */
 export const IconStop = () => (
   <Icon>

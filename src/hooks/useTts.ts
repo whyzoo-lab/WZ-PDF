@@ -19,6 +19,36 @@ import { languageFor } from '../services/ttsText'
 /** Sentences to keep synthesized ahead of the one being spoken. */
 const LOOKAHEAD = 2
 
+/**
+ * Sentences kept behind the one being spoken.
+ *
+ * Played audio used to be discarded immediately. Going back then had to
+ * synthesize again, and the pause before hearing a sentence you just missed is
+ * the one place a wait is least welcome. Four buffers of a few seconds each cost
+ * a couple of megabytes.
+ */
+const KEEP_BEHIND = 2
+
+/**
+ * How far into a sentence "previous" starts meaning "this one again".
+ *
+ * Someone who missed what was just said presses back to hear it again — that is
+ * what the control does on every audio player they have used. Pressing it again
+ * straight away, before this much has elapsed, goes to the sentence before.
+ */
+const RESTART_AFTER_MS = 1500
+
+/**
+ * Where "back" goes: this sentence again, or the one before it.
+ *
+ * Split out because it is the only judgement in the transport, and through the
+ * app it cannot be observed cleanly — playback keeps advancing on its own while
+ * a test is measuring.
+ */
+export function previousTarget(cursor: number, msIntoSentence: number): number {
+  return msIntoSentence > RESTART_AFTER_MS ? cursor : cursor - 1
+}
+
 /** Denoising steps. 8 is the engine default; fewer is faster and flatter. */
 const TOTAL_STEP = 8
 
@@ -87,6 +117,14 @@ export function useTts() {
    * already running when the user pressed the button.
    */
   const runRef = useRef(0)
+  /**
+   * The sentence the playback loop should speak next. It is a ref rather than a
+   * loop variable because moving through the document is something the *reader*
+   * does, from outside the loop, while it is awaiting audio.
+   */
+  const cursorRef = useRef(0)
+  /** When the sentence now sounding began, for the back-versus-again decision. */
+  const startedAtRef = useRef(0)
   // Read inside the playback loop, which must see the latest value without
   // being restarted — changing the voice mid-document applies from the next
   // sentence rather than cutting the current one off.
@@ -190,6 +228,7 @@ export function useTts() {
     }
     void ctxRef.current?.close().catch(() => undefined)
     ctxRef.current = null
+    cursorRef.current = 0
     setStatus('idle')
     setIndex(-1)
     setCurrentText(null)
@@ -220,14 +259,28 @@ export function useTts() {
     if (ctx.state === 'suspended') await ctx.resume()
 
     try {
-      for (let i = 0; i < chunks.length; i++) {
+      cursorRef.current = 0
+      // Driven by the cursor rather than a counter: `previous` and `next` move
+      // it from outside while this loop is awaiting audio, and the loop simply
+      // speaks wherever it points next.
+      while (cursorRef.current < chunks.length) {
+        const i = cursorRef.current
         if (runRef.current !== run) return
+        // Jumping past the look-ahead lands on a sentence that has not been
+        // made yet, and the wait should be reported like the first one is.
+        if (!cacheRef.current.has(i)) setStatus('preparing')
         const buffer = await bufferFor(i)
         if (runRef.current !== run) return
+        // A jump made while this sentence was being synthesized wins. Without
+        // this the loop plays where the reader *was* when they pressed, and the
+        // press looks ignored — which is most of the time, because jumping past
+        // the look-ahead is exactly what puts us in this wait.
+        if (cursorRef.current !== i) continue
 
         setIndex(i)
         setCurrentText(chunks[i])
         setStatus('speaking')
+        startedAtRef.current = Date.now()
         // What is now audible was made with the settings currently selected, so
         // the controls are honest again.
         if (cacheRef.current.get(i)?.version === versionRef.current) setApplying(false)
@@ -237,7 +290,14 @@ export function useTts() {
           if (i + ahead < chunks.length) void bufferFor(i + ahead).catch(() => undefined)
         }
         await playBuffer(buffer, run)
-        cacheRef.current.delete(i)
+
+        // Advance only if nothing moved the cursor while this sentence played;
+        // if something did, that jump is where to go next.
+        if (cursorRef.current === i) cursorRef.current = i + 1
+        // Keep a short tail so going back is instant, and drop the rest.
+        for (const key of cacheRef.current.keys()) {
+          if (key < cursorRef.current - KEEP_BEHIND) cacheRef.current.delete(key)
+        }
       }
       if (runRef.current === run) stop()
     } catch (err) {
@@ -273,6 +333,43 @@ export function useTts() {
     // starts fresh with the new settings, so there is nothing to wait for.
     if (chunksRef.current.length > 0) setApplying(true)
   }, [draftVoice, draftSpeed])
+
+  /**
+   * End the sentence that is sounding without ending the session.
+   *
+   * Deliberately not `stop()`: that one clears `onended` first, so the playback
+   * loop's promise never settles and the loop is abandoned. Here the handler is
+   * left in place, so cutting the audio short is exactly what lets the loop come
+   * round again and read the cursor.
+   */
+  const cutCurrent = useCallback(() => {
+    const source = sourceRef.current
+    sourceRef.current = null
+    if (source) {
+      try { source.stop() } catch { /* already finished */ }
+    }
+  }, [])
+
+  const jumpTo = useCallback((target: number) => {
+    const total = chunksRef.current.length
+    if (total === 0) return
+    cursorRef.current = Math.max(0, Math.min(total - 1, target))
+    // A jump made while paused would otherwise queue silently — the loop cannot
+    // reach the next sentence until the context is running again. Pressing a
+    // transport control means "play this", so play it.
+    const ctx = ctxRef.current
+    if (ctx?.state === 'suspended') {
+      void ctx.resume().then(() => setStatus('speaking'))
+    }
+    cutCurrent()
+  }, [cutCurrent])
+
+  const next = useCallback(() => jumpTo(cursorRef.current + 1), [jumpTo])
+
+  /** Back one sentence — or the start of this one, if it is already under way. */
+  const previous = useCallback(() => {
+    jumpTo(previousTarget(cursorRef.current, Date.now() - startedAtRef.current))
+  }, [jumpTo])
 
   const pause = useCallback(async () => {
     const ctx = ctxRef.current
@@ -318,7 +415,7 @@ export function useTts() {
 
   return {
     ...state,
-    speak, pause, resume, stop,
+    speak, pause, resume, stop, previous, next,
     setVoice: setDraftVoice, setSpeed: setDraftSpeed, applySettings,
     download, cancelDownload, refreshModel,
   }

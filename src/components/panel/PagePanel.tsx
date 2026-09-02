@@ -227,7 +227,13 @@ export function PagePanel({
   const canDelete = selected.size > 0 && numPages - selected.size >= 1
 
   return (
-    <div className="relative flex flex-col w-44 md:w-40 shrink-0 h-full bg-gray-900 border-r border-gray-700 overflow-hidden select-none">
+    // A navigation landmark, because that is what it is: the way to get to a
+    // page. A screen reader can jump straight to it instead of tabbing past the
+    // whole toolbar to find out what this column is.
+    <nav
+      aria-label={t('a11y.pageList')}
+      className="relative flex flex-col w-44 md:w-40 shrink-0 h-full bg-gray-900 border-r border-gray-700 overflow-hidden select-none"
+    >
       {/* 헤더 */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
         <span className="text-xs font-semibold text-gray-300">Pages</span>
@@ -366,6 +372,6 @@ export function PagePanel({
           <span className="text-xs text-gray-300">{t('panel.processing')}</span>
         </div>
       )}
-    </div>
+    </nav>
   )
 }

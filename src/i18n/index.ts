@@ -87,6 +87,14 @@ function detectLang(): Lang {
 
 export const LANG: Lang = detectLang()
 
+// Declare the language on the document itself. A screen reader picks its
+// pronunciation rules from `lang`, and the shipped HTML says `en` — so every
+// Korean string in the UI, and every Korean word in a PDF's text layer, was
+// being read to blind users with English phonetics. Set here rather than in the
+// HTML because the language is decided here, and it is one attribute write on
+// an element that already exists: nothing is fetched and nothing is measured.
+if (typeof document !== 'undefined') document.documentElement.lang = LANG
+
 /**
  * Translate a key. Supports `{name}`-style interpolation:
  *   t('export.pdfDone', { name: 'foo.pdf' })

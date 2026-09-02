@@ -830,6 +830,44 @@ control**, since it ends the session and takes the bar with it. Read-aloud also
 has to be reachable from the collapsed toolbar's menu — it was inline-only at
 first, which meant a phone could not start reading at all.
 
+**Moving through it is what makes a long document usable by ear.** Someone
+reading with their eyes skims; someone listening cannot, so without a way back
+a missed sentence means starting the document again. Playback is therefore
+driven by a **cursor ref**, not a loop counter: `previous` and `next` move it
+from outside while the loop is awaiting audio, and the loop simply speaks
+wherever it points next. Three things that has to get right:
+
+- **A jump made while a sentence is being synthesized wins.** The loop captures
+  its index before awaiting, so without re-checking the cursor afterwards it
+  plays where the reader *was* when they pressed. That is the common case, not
+  an edge one — jumping past the look-ahead is exactly what puts you in that
+  wait.
+- **Cutting the audio short is how the loop is told.** `cutCurrent` stops the
+  source but leaves `onended` in place, which is the opposite of `stop()`:
+  that one clears the handler first, so its promise never settles and the loop
+  is abandoned on purpose.
+- **Back means "again" once a sentence is under way**, and "the one before"
+  when pressed straight after — the convention every audio player uses, and the
+  reason a missed sentence costs one keypress. The rule is `previousTarget`,
+  split out because through the app it cannot be observed cleanly: playback
+  keeps advancing while a test is measuring.
+
+`KEEP_BEHIND` holds a couple of played sentences so going back is instant; they
+used to be discarded the moment they finished, which put a synthesis wait in
+front of the one thing a listener is most impatient for.
+
+**The keys are Alt+←, Alt+→ and Alt+Space, and the modifier is not decoration.**
+A screen reader in browse mode swallows bare letters as its own quick-nav keys
+(NVDA: `s` next separator, `r` next radio button), so a plain letter would never
+reach the app for the readers these controls exist for. They are bound only
+while something is being read, and the first spoken announcement of a session
+names them — a reader who cannot see the bar has no other way to find them.
+
+Adding the two transport buttons cost the bar its single-row layout: on a 390 px
+screen the speed slider was squeezed to a **0 px** track. The bar now wraps into
+transport and settings groups, so the settings drop to their own line instead of
+everything being crushed — the one kind of stacking that stays legible.
+
 **Voice and speed are drafted, then applied.** Committing on change was tried
 and is worse: the slider commits on every intermediate value, and locking the
 controls the instant they are touched is exactly the friction an Apply button
@@ -843,6 +881,10 @@ The version and the refs the playback loop reads are written in the same tick,
 deliberately. Syncing the refs through an effect leaves a gap where the loop can
 synthesize with the *old* voice and tag it with the *new* version, unlocking the
 controls while the previous voice is still being heard.
+
+Clicking an unrecognised page **four times** runs OCR on it. Four rather
+than three because three is the browser's own select-a-paragraph gesture,
+which a page that does have text uses.
 
 **Scanned pages go through OCR.** An image-only PDF has an empty text layer, so
 `textFromPages` falls back per page to whatever OCR has already recognized —
@@ -892,6 +934,74 @@ and `bin/**` is `asarUnpack`ed because a `.node` and a `.dll` cannot be loaded
 from inside an asar. The vendored helper is an ES module inside a CommonJS
 subtree, so its own `package.json` (`{"type":"module"}`) must ship with it —
 without it Node prints a parse warning or fails outright.
+
+### Screen readers
+
+Read-aloud has an audience that cannot see the screen, and for them the feature
+is not a convenience — a scanned PDF has no text layer, so **a screen reader
+cannot read it at all** and OCR plus speech is the only way in. A text PDF is
+the opposite: the text layer here is not `aria-hidden`, so NVDA/JAWS read it
+directly and generally do it better than we can. Design for the scanned case.
+
+Measured on the running app (accessibility tree, not guesses): all 20 toolbar
+controls already carry accessible names, everything is a real focusable element,
+and `<main>` exists. What was wrong was subtler:
+
+- **`<html lang>` said `en` while the UI and documents are Korean.** A screen
+  reader picks pronunciation from it, so Korean was read with English phonetics.
+  `i18n/index.ts` now sets `document.documentElement.lang` where the language is
+  decided — one attribute write, no measuring, nothing fetched.
+- **The playing bar was one big `role="status" aria-live="polite"`** wrapping
+  five controls, so any change announced its whole contents — including every
+  option of the voice `<select>`: *"목소리 F1 F2 F3 F4 F5 M1 M2 M3 M4 M5 속도
+  1.00x 적용"*. It is a `role="group"` now, and what is worth saying is said by
+  `SpeechAnnouncer`.
+- **A live region must be mounted before it has anything to say.** Most screen
+  readers do not announce a region that is inserted with its text already in it,
+  and every transient bar here (read-aloud, OCR) unmounts when its work ends —
+  the end being exactly what is worth announcing. Hence `LiveRegion` and the two
+  always-mounted announcers that use it.
+- **OCR must not narrate every page.** `OcrAnnouncer` speaks about ten times
+  over a run, whatever the length, plus once at the end; a 200-page scan would
+  otherwise talk over everything else for minutes. Single-page recognition
+  reports too — seconds of silence read the same as nothing happening — and says
+  "this page" rather than "page 0 of 1".
+- **A page with no text is a picture, and a picture of a document is nothing.**
+  The canvas is `aria-hidden` (it is either duplicated by the text layer or
+  carries nothing readable), the page is a labelled `role="group"`, and a page
+  with no text anywhere announces that OCR can turn it into words.
+  `PdfTextLayer` reports presence through `onTextPresence` — only it can tell,
+  since a scanned page renders identically to a typed one.
+
+Sentence navigation and the playing bar's place in the Tab order are since
+fixed — see "Reading aloud". The bar is rendered **before the toolbar** in the
+tree purely for the keyboard: it is `fixed`, so markup order does not move it on
+screen, but it decides where Tab reaches it, and it only exists while something
+is being read. Its first control went from stop #21 to **#1**.
+
+- **Structure to move around by.** There was none: no heading anywhere in the
+  viewing path and one unnamed landmark. A screen reader user navigates by
+  heading (`H`) and landmark, so a document with neither can only be walked
+  through linearly. Now a hidden `<h1>` names the open file, each rendered page
+  carries a hidden `<h2>` with its number — page-level headings are the only
+  structure a paginated document has — the page panel is a `<nav>`, and `<main>`
+  has a name. All hidden, because the toolbar and panel already show the same
+  things to anyone who can see them. Note that only *mounted* pages have a
+  heading; `LazyPdfPage` keeps the rest out of the tree.
+- **`R` and `S` also answer to Alt.** In browse mode a screen reader keeps the
+  bare letter for its own quick-nav (NVDA: `s` next separator, `r` next radio
+  button), so the letter alone never reached the app for exactly the readers
+  read-aloud exists for. `Alt+R` / `Alt+S` do the same thing and pass through;
+  the bare letters stay for everyone else, and the buttons' tooltips name both.
+  `Menu.setApplicationMenu(null)` is what leaves Alt combinations free.
+
+**What is still untested is the part that matters most: a real screen reader.**
+Everything above was measured from the accessibility tree, which says what is
+exposed, not what NVDA or JAWS actually says. Worth checking with one, in this
+order: whether `Alt+S` survives browse mode; whether the per-page headings are
+useful or merely noisy on a long document; whether the read-aloud announcement
+that names the keys is heard before the speech starts talking over it; and
+whether the OCR announcements land at a helpful rate.
 
 ### Console converters (`hwp2pdf`, `hwp2hwpx`, `hwpx2hwp`)
 

@@ -38,6 +38,13 @@ interface PdfTextLayerProps {
   onEditCommit?: (edit: TextEditCommit) => void
   /** Search hits to highlight on this page (span backgrounds). */
   highlights?: TextLayerHighlight[]
+  /**
+   * Whether this page carries any real text, reported once the layer has asked.
+   * Only the text layer knows: a scanned page renders identically to a typed one
+   * and differs solely in having nothing here — which is exactly what a reader
+   * using a screen reader needs to be told.
+   */
+  onTextPresence?: (hasText: boolean) => void
 }
 
 interface EditState {
@@ -63,6 +70,7 @@ interface EditState {
  */
 export function PdfTextLayer({
   pdfDoc, pageNumber, scale, rotation, width, height, onEditCommit, highlights,
+  onTextPresence,
 }: PdfTextLayerProps) {
   const ref = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -89,6 +97,9 @@ export function PdfTextLayer({
         if (cancelled) return
         const textContent = await page.getTextContent()
         if (cancelled) return
+        onTextPresence?.(textContent.items.some(
+          item => 'str' in item && item.str.trim().length > 0,
+        ))
         const viewport = page.getViewport({ scale, rotation })
 
         const layer = new TextLayer({
@@ -105,7 +116,7 @@ export function PdfTextLayer({
     })()
 
     return () => { cancelled = true }
-  }, [pdfDoc, pageNumber, scale, rotation])
+  }, [pdfDoc, pageNumber, scale, rotation, onTextPresence])
 
   // ── Search highlights ─────────────────────────────────────────────────────
   // pdfjs renders one <span> per text item, in order, so item index maps to
