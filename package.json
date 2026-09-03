@@ -1,7 +1,7 @@
 {
   "name": "wz-pdf",
   "private": true,
-  "version": "1.17.0",
+  "version": "1.18.0",
   "description": "Lightweight PDF viewer / editor with annotation, page management, multi-format export, and an MCP server. Built with React, Konva, pdfjs, pdf-lib, and Electron.",
   "license": "MIT",
   "author": "WhyZOO",
