@@ -36,7 +36,6 @@ The renderer never uses Node APIs directly. All IPC calls go through `window.ele
 | `onOpenPdfBytes(cb)` | PDF bytes when launched as a viewer-exe (portable build only) |
 | `readFile(path)` | Read a local file via main process (avoids CORS on `http://localhost`) |
 | `exportExe(pdfData)` | Save current PDF embedded into a copy of the portable exe |
-| `printWindow()` | Native OS print dialog |
 
 ### Rendering pipeline
 
@@ -161,6 +160,15 @@ RFC 2047 encoded-word subjects (including the split-across-lines form) and RFC
 `data:` URLs so a normal message renders without fetching anything.
 
 **Safety** (`src/services/emailHtml.ts`) — bodies are attacker-controlled.
+The remote-image gate is deny-by-default over **every** loading attribute
+(`src`, `poster`, `href`, `xlink:href`) on `img, video, audio, source, track,
+image, feImage`, plus inline `style` containing `url(`; it used to gate `<img
+src>` alone. "Remote" is decided by the browser's URL parser — `http:evil/x`,
+`http:/evil/x` and a tab in the scheme all fail a `//` prefix test yet load.
+`data:` is deliberately absent from `ALLOWED_URI_REGEXP` (DOMPurify keeps it
+for images by its own rule; on `<a href>` a `data:text/html` link is a page),
+and `cid:` parts are inlined only when their MIME type is `image/*`, once per
+part. `emailHtml.gate.test.ts` holds each bypass as a case.
 DOMPurify does the sanitizing; on top of that we drop `<style>`/`<link>` so a
 message cannot restyle the app around it, and **withhold remote images until the
 reader asks** (loading one silently tells the sender the mail was opened). Links
@@ -278,7 +286,7 @@ All state lives in `App.tsx` (no external store). Key state:
 | State | Purpose |
 |---|---|
 | `file / fileBytes` | Current PDF — `fileBytes` kept separately for export |
-| `zoom` | Display zoom multiplier (0.1–3, step 0.25). Does NOT affect render cache. |
+| `zoom` | Display zoom multiplier (0.1–3, step 0.1). Does NOT affect render cache. |
 | `rotation` | Page rotation: `0 \| 90 \| 180 \| 270` degrees |
 | `viewMode` | `'single' \| 'spread' \| 'grid' \| 'fullscreen'` |
 | `fullscreenLayout` | `'single' \| 'spread'` — captured from `viewMode` when entering fullscreen |
@@ -319,7 +327,7 @@ App
 
 `LazyPdfPage` wraps `PdfPage` and defers mounting the Konva Stage until the container enters the viewport (400px rootMargin). Once mounted it stays mounted — the render cache makes re-mounts cheap.
 
-`PdfPage` = Konva `<Stage>` with three layers: background (`KonvaImage`) + `AnnotationLayer` + in-progress drawing preview layer.
+`PdfPage` = Konva `<Stage>` with four layers: background (`KonvaImage`) + `AnnotationLayer` + in-progress drawing preview + the Ctrl+drag region highlighter.
 
 ### Performance notes
 
@@ -380,7 +388,7 @@ Page CRUD operations are handled by pure functions in `src/services/pdfPageServi
 | Function | Description |
 |---|---|
 | `deletePages(bytes, pageNums, password?)` | Remove one or more pages (1-based); surviving pages are remapped |
-| `insertBlankPage(bytes, afterPage, password?)` | Insert a blank A4 page after `afterPage` (0 = prepend) |
+| `insertBlankPage(bytes, afterPage, password?)` | Insert a blank page the size of the page before it after `afterPage` (0 = prepend) |
 | `insertPagesFromPdf(bytes, srcBytes, afterPage, password?)` | Append all pages from another PDF after `afterPage` |
 | `reorderPages(bytes, newOrder, password?)` | Reorder pages according to a permutation array |
 | `extractPages(bytes, pageNums, password?)` | Copy the given pages into a new PDF ("선택 저장") |
@@ -498,6 +506,20 @@ function isVolatile(a: Annotation): boolean  // true for pen and rectangle
 ```
 
 `remapAnnotations(mapping: Map<number, number>)` in `useAnnotations` — updates annotation page numbers after page CRUD. `allPages` watermarks are always preserved regardless of the mapping.
+
+### Failures reach the user
+
+Three save paths used to end in `console.error` and nothing else: the main
+PDF export, and delete / insert-blank / reorder in the page panel. The reader
+had picked a destination or watched the overlay finish, and silence read as
+success. `useExporters` and `usePageOperations` now take an `onError` beside
+`onResult`/`onSuccess`, and `App` routes both to the toast; the read-aloud
+entry points catch and toast as well, and `file.arrayBuffer()` has a `.catch`
+(a file rewritten after it was picked left `fileBytes` null and every later
+save a silent no-op). `ErrorBoundary` takes a `resetKey` (the open file) so one
+bad document no longer pins the reload screen for the next, and `main.tsx`
+wraps `App` in one — a render error above the three view boundaries used to
+unmount the root and leave a blank window.
 
 ### Toast notifications
 
@@ -783,6 +805,14 @@ viewer must not carry that for a whole session, so `electron/ttsWorker.ts` runs
 in a child that is spawned on first use and killed on stop or after five idle
 minutes — which returns every byte to the OS. It also keeps a native module out
 of the process that owns the window.
+
+**The weights are pinned to a commit and checked file by file.** `MODEL_REVISION`
+is a commit SHA, not `main` — a branch can be moved, and these bytes are fed to
+a native ONNX parser. Each `MODEL_FILES` entry carries the git blob id
+(`sha1("blob <size>\0" + bytes)`), which Hugging Face publishes for non-LFS
+files and which cannot change without changing the commit; a download whose
+hash differs is deleted instead of renamed into place. Bumping the model means
+updating the SHA and every `oid` together, from the HF tree API.
 
 **The weights are not in the installer.** They are 383 MB against a 246 MB
 installer, for an opt-in feature, so `electron/ttsModel.ts` downloads them once
@@ -1154,8 +1184,43 @@ Renderer is sandboxed and IPC inputs are validated. Notable measures:
 - `setWindowOpenHandler` denies new Electron windows; external `http(s)://` URLs are handed to `shell.openExternal`.
 - `web-contents-created` denies `<webview>` attachments app-wide.
 - **Production-only CSP** is injected via `session.defaultSession.webRequest.onHeadersReceived`. Dev mode skips this (Vite HMR needs `unsafe-eval` and a WebSocket connect, which would weaken the policy).
-- Every IPC handler rejects non-renderer senders. `read-file` resolves symlinks, accepts only `.pdf`/`.hwp`/`.hwpx`, verifies the file signature, and reads at most 500 MB through the validated handle.
+- Every IPC handler rejects non-renderer senders. `read-file` resolves symlinks, accepts only `DOCUMENT_EXTENSIONS` (see "File associations"), refuses UNC paths unless the OS itself handed them over, verifies the file signature, and reads at most 500 MB through the validated handle.
 - `fetch-url` rejects private/link-local targets (including redirects), applies a timeout and streaming size limit, and verifies the downloaded document signature.
+  **It connects to the address it vetted.** `assertPublicHttpUrl` used to return
+  the URL and `fetch()` then resolved the hostname a second time — the
+  DNS-rebinding hole: an attacker's resolver answers a public IP for the check
+  and `127.0.0.1` for the connection. It now returns a `PinnedTarget` and
+  `pinnedRequest` (`security.ts`) goes through `http(s).request` with a
+  `lookup` that hands back that address, so the socket goes where the check
+  looked while TLS and the Host header still use the hostname. Every redirect
+  hop is vetted and pinned again, and none may step down from https to http.
+  The same helper fetches the TTS weights. `pinnedRequest.test.ts` proves the
+  mechanism with a server the hostname could never resolve to. Two traps in
+  the helper: Node's connector calls `lookup` with `all: true` and expects an
+  array of `{address, family}`, and under a foreign `URL` (jsdom) `request(url)`
+  treats it as options and drops the path — hence the explicit options object.
+- **Every `WebContents` gets the navigation guards**, via
+  `app.on('web-contents-created')`: `will-navigate`, `setWindowOpenHandler` and
+  the webview denial used to be on the main window only, leaving the hidden CLI
+  converter window (`pdfCliBackend.ts`) free to navigate and open windows.
+- **Permission requests are denied** (`setPermissionRequestHandler`). Electron's
+  default is to grant camera, microphone, geolocation and notifications silently;
+  nothing here needs any of them.
+- **`read-file` refuses UNC paths** (`\\host\share\x.pdf`) unless the OS itself
+  handed the path over (argv, file association, `open-file` — recorded in
+  `osProvidedPaths`). Opening a share makes the main process initiate SMB and
+  leak the user's NTLM challenge-response with no interaction; a document on a
+  network drive the user double-clicked still opens.
+- **Electron fuses** (`electronFuses` in `electron-builder.json5`):
+  `NODE_OPTIONS`, `--inspect` and loading the app from outside the asar are off,
+  asar integrity validation is on. `runAsNode` **must stay on** — the bundled
+  MCP server starts this very binary with `ELECTRON_RUN_AS_NODE=1`. Note this
+  corrects an older claim in this file: before the fuse was set, a repacked
+  asar was *not* rejected by an integrity check.
+- The installer runs PowerShell by full path (`$SYSDIR\WindowsPowerShell\…`).
+  A bare `powershell` is searched for in the installer's own directory first
+  — usually Downloads — with the installer's token, Administrator for a
+  per-machine install.
 
 ## Critical gotchas
 
@@ -1169,6 +1234,14 @@ bytes instead of pulling the ~400 KB chunk into the entry bundle.
 
 ### Annotation coordinates
 Everything stored and exported uses the `effectiveZoom = PDF_RENDER_SCALE * zoom` divisor. If you pass plain `zoom` instead of `effectiveZoom` to `toStoredCoords`, annotations will be placed at the wrong position relative to the PDF.
+
+### pdfjs 6: `destroy()` lives on the loading task
+
+pdfjs 6 removed `PDFDocumentProxy.prototype.destroy()`. `tsc` stayed green
+because the proxy is cast to `ViewerDoc`, so the call only threw at unmount.
+`usePdfDocument` keeps the loading task and destroys *that*; the HWP and image
+adapters still own their own `destroy`. The other 6.x API-major change —
+`getDocument` without an options object — never applied here.
 
 ### `page.render()` API (pdfjs 5.x)
 Call as `page.render({ canvas, viewport })` — NOT `{ canvasContext: ctx, viewport }`. The old API was removed in pdfjs 5.x.
@@ -1272,6 +1345,16 @@ missing from the test fixtures, `tsc -b` failed with 30+ errors and
 electron-builder was never reached. Note that the referenced projects include
 `*.test.tsx`, so a prop added to a component's public interface must be added to
 its test fixtures too.
+
+### Stale compiled `electron/*.js` shadow their `.ts` sources
+
+`tsconfig.electron.json` emits `electron/*.js` next to the sources, and Vite's
+default resolution order puts `.js` before `.ts`. So `import './security'` in a
+test resolved to **yesterday's compiled file** — `security.test.ts` had been
+green against code that no longer existed, and a brand-new export read as
+"not a function" until the electron project was recompiled. `vite.config.ts`
+now lists `.ts` first in `resolve.extensions`. If a main-process test ever
+fails in a way the source cannot explain, run `npm run electron:compile` first.
 
 ### Claude Code file locks during build
 The `claude.exe` agent process can hold open file handles to `release/win-unpacked/resources/app.asar` from previous Glob/Read tool calls, causing electron-builder to fail with "process cannot access the file because it is being used by another process". Before a `build:exe` run, either restart the Claude Code session or delete `release/` from a separate admin terminal. Also add the project folder to Windows Defender exclusions if real-time scanning is locking newly written asars.

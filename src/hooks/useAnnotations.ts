@@ -28,7 +28,7 @@ export function useAnnotations(): UseAnnotationsReturn {
 
   const addAnnotation = useCallback((annotation: OmitId<Annotation>): string => {
     const id = crypto.randomUUID()
-    const volatile = annotation.type === 'pen' || annotation.type === 'rectangle'
+    const volatile = isVolatile(annotation)
     setState(prev => ({
       ...prev,
       annotations: [...prev.annotations, { ...annotation, id } as Annotation],

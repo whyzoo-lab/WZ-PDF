@@ -292,10 +292,27 @@ function extensionFor(mime: string): string {
  *  fetching anything from the network. */
 function inlineCidImages(html: string, attachments: EmailAttachment[]): string {
   if (!html.includes('cid:')) return html
+  // Encoded once per part, whatever the reference count: a body citing the
+  // same 5 MB picture a thousand times used to build a thousand base64
+  // copies. And only when the part really is an image — the MIME type is the
+  // sender's own claim, and `text/html` here would turn an <a href="cid:…">
+  // into a data: page.
+  const encoded = new Map<string, string | null>()
+  const dataUrlFor = (hit: EmailAttachment): string | null => {
+    const id = hit.contentId
+    if (!id) return null
+    if (!encoded.has(id)) {
+      encoded.set(id,
+        /^image\/[a-z0-9.+-]+$/i.test(hit.mimeType)
+          ? `data:${hit.mimeType.toLowerCase()};base64,${btoa(bytesToBinary(hit.bytes))}`
+          : null)
+    }
+    return encoded.get(id) ?? null
+  }
   return html.replace(/(["'])cid:([^"']+)\1/gi, (whole, quote: string, id: string) => {
     const hit = attachments.find(a => a.contentId === id)
-    if (!hit) return whole
-    return `${quote}data:${hit.mimeType};base64,${btoa(bytesToBinary(hit.bytes))}${quote}`
+    const url = hit && dataUrlFor(hit)
+    return url ? `${quote}${url}${quote}` : whole
   })
 }
 

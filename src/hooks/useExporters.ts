@@ -18,6 +18,7 @@ interface UseExportersArgs {
    *  toolbar padlock, which sets the intent; saving is what carries it out. */
   savePassword: string | null
   onSuccess: (message: string) => void
+  onError: (message: string) => void
 }
 
 /**
@@ -45,6 +46,7 @@ export function useExporters({
   documentPassword,
   savePassword,
   onSuccess,
+  onError,
 }: UseExportersArgs) {
   const [isExporting, setIsExporting] = useState(false)
 
@@ -90,11 +92,15 @@ export function useExporters({
         onSuccess(t(message, { name: downloadName }))
       }
     } catch (err) {
+      // The reader has already chosen where the file goes; ending in silence
+      // here looked like a save that worked. This is also where a wrong or
+      // missing password surfaces.
       console.error('PDF export failed:', err)
+      onError(t('export.pdfFailed', { error: err instanceof Error ? err.message : String(err) }))
     } finally {
       setIsExporting(false)
     }
-  }, [fileBytes, pdfDoc, annotations, file, kind, documentPassword, savePassword, onSuccess])
+  }, [fileBytes, pdfDoc, annotations, file, kind, documentPassword, savePassword, onSuccess, onError])
 
   const handleExportHtml = useCallback(async () => {
     const filename = file?.name ?? 'document.pdf'

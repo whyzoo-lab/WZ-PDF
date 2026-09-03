@@ -9,6 +9,8 @@ interface UsePageOperationsArgs {
   documentPassword: string | null
   /** Called when an op succeeds — caller updates file state + annotations. */
   onResult: (newBytes: ArrayBuffer, pageMapping: Map<number, number>) => void
+  /** Every failure ends here — the page list looking unchanged is not a message. */
+  onError: (err: unknown) => void
 }
 
 /**
@@ -19,7 +21,7 @@ interface UsePageOperationsArgs {
  * `isPageOperating` gates the panel UI while an operation is in flight,
  * preventing overlapping clicks during pdf-lib's slow re-serialization.
  */
-export function usePageOperations({ fileBytes, documentPassword, onResult }: UsePageOperationsArgs) {
+export function usePageOperations({ fileBytes, documentPassword, onResult, onError }: UsePageOperationsArgs) {
   const [isPageOperating, setIsPageOperating] = useState(false)
 
   /**
@@ -53,9 +55,9 @@ export function usePageOperations({ fileBytes, documentPassword, onResult }: Use
         const { deletePages } = await import('../services/pdfPageService')
         return deletePages(fileBytes, pageNums, documentPassword ?? undefined)
       },
-      err => console.error('Delete pages failed:', err),
+      err => { console.error('Delete pages failed:', err); onError(err) },
     )
-  }, [fileBytes, documentPassword, runOp])
+  }, [fileBytes, documentPassword, runOp, onError])
 
   const handleInsertBlankPage = useCallback(async (afterPage: number) => {
     if (!fileBytes) return
@@ -64,9 +66,9 @@ export function usePageOperations({ fileBytes, documentPassword, onResult }: Use
         const { insertBlankPage } = await import('../services/pdfPageService')
         return insertBlankPage(fileBytes, afterPage, documentPassword ?? undefined)
       },
-      err => console.error('Insert blank page failed:', err),
+      err => { console.error('Insert blank page failed:', err); onError(err) },
     )
-  }, [fileBytes, documentPassword, runOp])
+  }, [fileBytes, documentPassword, runOp, onError])
 
   const handleInsertFromPdf = useCallback(async (afterPage: number, srcBytes: ArrayBuffer) => {
     if (!fileBytes) return
@@ -89,9 +91,9 @@ export function usePageOperations({ fileBytes, documentPassword, onResult }: Use
         const { reorderPages } = await import('../services/pdfPageService')
         return reorderPages(fileBytes, newOrder, documentPassword ?? undefined)
       },
-      err => console.error('Reorder pages failed:', err),
+      err => { console.error('Reorder pages failed:', err); onError(err) },
     )
-  }, [fileBytes, documentPassword, runOp])
+  }, [fileBytes, documentPassword, runOp, onError])
 
   return {
     isPageOperating,

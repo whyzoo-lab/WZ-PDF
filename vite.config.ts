@@ -9,6 +9,12 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // `.ts` before `.js`. tsconfig.electron.json emits `electron/*.js` beside the
+  // sources, and with the default order vitest resolved `./security` to the
+  // stale compiled file — `security.test.ts` had been testing yesterday's build.
+  resolve: {
+    extensions: ['.ts', '.tsx', '.mts', '.mjs', '.js', '.jsx', '.json'],
+  },
   // Inject the app version at build time so the renderer can reference
   // package.json's version without bundling the whole file.
   define: {

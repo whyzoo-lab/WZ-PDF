@@ -93,7 +93,9 @@ export async function renderMarkdown(source: string): Promise<RenderedMarkdown> 
     FORBID_TAGS,
     FORBID_ATTR: ['ping', 'formaction'],
     ALLOW_DATA_ATTR: false,
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|data):|[./#])/i,
+    // `data:` deliberately absent — see emailHtml.ts. DOMPurify keeps it for
+    // images by its own rule; on <a href> it would be a page.
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[./#])/i,
   })
 
   // Post-process detached, so nothing here loads or executes.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ViewerDoc } from '../types/viewerDoc'
 import type { Annotation } from '../types/annotation'
 import { annotationsForPage } from '../types/annotation'
-import { getOrRenderPage } from './usePdfPage'
+import { t } from '../i18n'
 
 /**
  * Print render scale, independent of the on-screen render scale.
@@ -53,9 +53,6 @@ async function renderPageWithAnnotations(
 ): Promise<string> {
   // Re-render the page fresh at print scale instead of reusing the cached
   // on-screen canvas — that one is at PDF_RENDER_SCALE (1.5x) and prints fuzzy.
-  // `getOrRenderPage` is still called so other view code's cache stays warm,
-  // but the bytes we paint are the high-res ones.
-  await getOrRenderPage(pdfDoc, pageNumber)
   const page = await pdfDoc.getPage(pageNumber)
   const viewport = page.getViewport({ scale: PRINT_RENDER_SCALE })
   const out = document.createElement('canvas')
@@ -162,7 +159,7 @@ export function usePrint({ pdfDoc, numPages, annotations }: UsePrintArgs) {
       setPreviewPages(pages)
     } catch (err) {
       console.error('[print] failed:', err)
-      alert(`인쇄 준비 실패: ${err instanceof Error ? err.message : String(err)}`)
+      alert(t('print.prepareFailed', { error: err instanceof Error ? err.message : String(err) }))
     } finally {
       setIsPrinting(false)
       setProgress({ done: 0, total: 0 })
@@ -194,7 +191,7 @@ export function usePrint({ pdfDoc, numPages, annotations }: UsePrintArgs) {
       window.print()
     } catch (err) {
       console.error('[print] failed:', err)
-      alert(`인쇄 실패: ${err instanceof Error ? err.message : String(err)}`)
+      alert(t('print.failed', { error: err instanceof Error ? err.message : String(err) }))
     } finally {
       document.body.removeAttribute('data-wz-printing')
       root?.remove()

@@ -200,7 +200,7 @@ async function pdfGetText(args: { file: string; pages?: number[] }): Promise<str
     }
     return sections.join('\n\n')
   } finally {
-    await pdf.destroy()
+    await loadingTask.destroy()
   }
 }
 
@@ -214,11 +214,12 @@ async function pdfSearch(args: {
   const query = typeof args.query === 'string' ? args.query.trim() : ''
   if (!query) throw new Error('query must not be empty')
   const bytes = await readInputFile(args.file)
-  const pdf = await pdfjs.getDocument({
+  const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(bytes),
     useWorkerFetch: false,
     useSystemFonts: true,
-  }).promise
+  })
+  const pdf = await loadingTask.promise
 
   try {
     const needle = args.caseSensitive ? query : query.toLowerCase()
@@ -242,7 +243,7 @@ async function pdfSearch(args: {
     if (hits.length === 0) return `No matches for "${query}".`
     return `${hits.length} match(es) for "${query}":\n${hits.join('\n')}`
   } finally {
-    await pdf.destroy()
+    await loadingTask.destroy()
   }
 }
 

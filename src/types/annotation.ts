@@ -84,8 +84,9 @@ export type ActiveMode = 'select' | 'stamp' | 'signature' | 'watermark' | 'pen' 
 /** Annotation types that are display-only (not exported to PDF, cleared by Reset). */
 export const VOLATILE_TYPES: readonly AnnotationType[] = ['pen', 'rectangle']
 
-export function isVolatile(a: Annotation): boolean {
-  return a.type === 'pen' || a.type === 'rectangle'
+/** Accepts anything with a type, so a not-yet-saved annotation (no id) qualifies. */
+export function isVolatile(a: Pick<Annotation, "type">): boolean {
+  return VOLATILE_TYPES.includes(a.type)
 }
 
 /**

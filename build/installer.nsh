@@ -19,7 +19,11 @@
 
 !macro WzPdfPathScript ps
   System::Call 'kernel32::SetEnvironmentVariable(t "WZPDF_DIR", t "$INSTDIR")'
-  nsExec::ExecToLog "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $\"${ps}$\""
+  ; Full path on purpose. A bare "powershell" is searched for in the installer's
+  ; own directory first (usually Downloads), so a powershell.exe dropped beside
+  ; the installer would run with the installer's token - Administrator when the
+  ; user chose a per-machine install.
+  nsExec::ExecToLog "$\"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe$\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $\"${ps}$\""
   Pop $0
   ; Tell already-running shells and Explorer to re-read the environment.
   SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=3000

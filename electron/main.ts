@@ -19,6 +19,8 @@ import {
   isTrustedUpdateUrl,
   parseHttpUrl,
   resolveAppAssetPath,
+  pinnedRequest,
+  type PinnedResponse,
 } from './security'
 
 let win: BrowserWindow | null = null
@@ -176,23 +178,6 @@ function createWindow() {
       nodeIntegrationInWorker: false,
       nodeIntegrationInSubFrames: false,
     },
-  })
-
-  // Block in-app navigation to any URL except the renderer's own origin.
-  // PDF content shouldn't be able to navigate the host window.
-  win.webContents.on('will-navigate', (event, navUrl) => {
-    if (!isTrustedRendererUrl(navUrl)) {
-      event.preventDefault()
-    }
-  })
-
-  // External links (http/https) open in the user's default browser; everything
-  // else is blocked. We never open a new Electron window.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    try {
-      shell.openExternal(parseHttpUrl(url).href).catch(() => { /* ignore */ })
-    } catch { /* unsupported or malformed URL */ }
-    return { action: 'deny' }
   })
 
   if (app.isPackaged) {
@@ -380,52 +365,50 @@ ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
 // are validated individually, response time/size are bounded, and the file
 // signature is checked before bytes cross the IPC boundary.
 async function fetchRemoteDocument(rawUrl: unknown): Promise<ArrayBuffer> {
-  let url = await assertPublicHttpUrl(rawUrl)
+  let target = await assertPublicHttpUrl(rawUrl)
+  const startedSecure = target.url.protocol === 'https:'
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
-  let response: Response | null = null
+  let response: PinnedResponse | null = null
 
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
-    response = await fetch(url.href, { redirect: 'manual', signal })
+    // Connected to the address the check vetted, not to a fresh resolution.
+    response = await pinnedRequest(target, signal)
     if (![301, 302, 303, 307, 308].includes(response.status)) break
 
-    const location = response.headers.get('location')
-    await response.body?.cancel()
+    const location = response.headers.location
+    response.body.resume()
     if (!location || redirects === MAX_REDIRECTS) throw new Error('Too many redirects')
-    url = await assertPublicHttpUrl(new URL(location, url).href)
+    target = await assertPublicHttpUrl(new URL(location, target.url).href)
+    // A redirect may not step down from https to http.
+    if (startedSecure && target.url.protocol !== 'https:') throw new Error('Insecure redirect')
   }
 
-  if (!response || !response.ok) {
+  if (!response || response.status < 200 || response.status >= 300) {
     throw new Error(`Download failed (HTTP ${response?.status ?? 0})`)
   }
 
-  const contentLength = response.headers.get('content-length')
+  const contentLength = response.headers['content-length']
   if (contentLength) {
     const declaredBytes = Number(contentLength)
     if (!Number.isSafeInteger(declaredBytes) || declaredBytes < 0 || declaredBytes > MAX_FILE_SIZE) {
-      await response.body?.cancel()
+      response.body.destroy()
       throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
     }
   }
-  if (!response.body) throw new Error('Download returned an empty response')
 
   const chunks: Uint8Array[] = []
   let totalBytes = 0
-  const reader = response.body.getReader()
   try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      totalBytes += value.byteLength
+    for await (const chunk of response.body as AsyncIterable<Uint8Array>) {
+      totalBytes += chunk.byteLength
       if (totalBytes > MAX_FILE_SIZE) {
         throw new Error(`File exceeds ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB limit`)
       }
-      chunks.push(value)
+      chunks.push(chunk)
     }
   } catch (error) {
-    await reader.cancel().catch(() => { /* ignore cancellation failure */ })
+    response.body.destroy()
     throw error
-  } finally {
-    reader.releaseLock()
   }
 
   const bytes = new Uint8Array(totalBytes)
@@ -445,12 +428,29 @@ ipcMain.handle('fetch-url', async (event, rawUrl: unknown): Promise<ArrayBuffer>
   return fetchRemoteDocument(rawUrl)
 })
 
+/**
+ * Paths the operating system itself asked us to open (argv, file association,
+ * `open-file`). Only these may name a network share: a UNC path makes the main
+ * process initiate SMB/WebDAV to whatever host it names, which leaks the
+ * user's NTLM challenge-response without any interaction — so a compromised
+ * renderer must not be able to point `read-file` at `\\attacker\x.pdf`.
+ */
+const osProvidedPaths = new Set<string>()
+function rememberOsPath(filePath: string): string {
+  osProvidedPaths.add(path.resolve(filePath))
+  return filePath
+}
+const isUncPath = (p: string) => /^[\\/]{2}/.test(p)
+
 ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffer> => {
   assertTrustedIpcSender(event)
   if (typeof filePath !== 'string' || filePath.length === 0) {
     throw new Error('Invalid file path')
   }
   const resolved = path.resolve(filePath)
+  if (isUncPath(resolved) && !osProvidedPaths.has(resolved)) {
+    throw new Error('Network paths can only be opened from the file manager')
+  }
   if (!isAllowedDocumentPath(resolved.toLowerCase())) {
     throw new Error('Unsupported file type')
   }
@@ -609,6 +609,13 @@ ipcMain.handle('open-download', async (event, rawUrl?: unknown) => {
 // ── App lifecycle ───────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Electron's default is to GRANT every permission request — camera,
+  // microphone, geolocation, notifications — silently. Nothing here needs any
+  // of them, so a renderer that has been compromised must not be able to turn
+  // the webcam on.
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+  session.defaultSession.setPermissionCheckHandler(() => false)
+
   installCsp()
   if (app.isPackaged) serveAppProtocol()
   Menu.setApplicationMenu(null)
@@ -643,13 +650,13 @@ app.whenReady().then(async () => {
 
   if (argFile && win) {
     win.webContents.once('did-finish-load', () => {
-      win?.webContents.send('open-file', argFile)
+      win?.webContents.send('open-file', rememberOsPath(argFile))
     })
   } else if (pendingFile && win) {
     const filePath = pendingFile
     pendingFile = null
     win.webContents.once('did-finish-load', () => {
-      win?.webContents.send('open-file', filePath)
+      win?.webContents.send('open-file', rememberOsPath(filePath))
     })
   } else {
     // Check for a PDF embedded in this portable exe (viewer-exe mode). Runs
@@ -672,7 +679,7 @@ app.whenReady().then(async () => {
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
   if (win) {
-    win.webContents.send('open-file', filePath)
+    win.webContents.send('open-file', rememberOsPath(filePath))
   } else {
     pendingFile = filePath
   }
@@ -682,9 +689,27 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// Belt-and-suspenders: deny any webview creation app-wide. We don't use
-// <webview> tags, but this prevents abuse if one slipped in.
+// Every WebContents the app ever creates gets the same three guards. They used
+// to be attached to the main window only, which left the hidden CLI converter
+// window (pdfCliBackend.ts) free to navigate and to open new windows.
 app.on('web-contents-created', (_event, contents) => {
+  // Block in-app navigation to any URL except the renderer's own origin.
+  // Document content must not be able to navigate the host window.
+  contents.on('will-navigate', (event, navUrl) => {
+    if (!isTrustedRendererUrl(navUrl)) event.preventDefault()
+  })
+
+  // External links (http/https) open in the user's default browser; everything
+  // else is blocked. We never open a new Electron window.
+  contents.setWindowOpenHandler(({ url }) => {
+    try {
+      shell.openExternal(parseHttpUrl(url).href).catch(() => { /* ignore */ })
+    } catch { /* unsupported or malformed URL */ }
+    return { action: 'deny' }
+  })
+
+  // Belt-and-suspenders: deny any webview creation app-wide. We don't use
+  // <webview> tags, but this prevents abuse if one slipped in.
   contents.on('will-attach-webview', (event) => {
     event.preventDefault()
   })

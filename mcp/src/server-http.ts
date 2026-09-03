@@ -45,9 +45,11 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
   process.exit(1)
 }
 
-const isLoopbackHost = HOST === '127.0.0.1' || HOST === '::1' || HOST === 'localhost'
-if (!isLoopbackHost && !AUTH_TOKEN) {
-  console.error('[wz-pdf-mcp] REFUSING TO START — MCP_AUTH_TOKEN is required for non-loopback MCP_HOST')
+// Required on loopback too. A web page can rebind its own hostname to
+// 127.0.0.1 and become same-origin with this server; the token is the only
+// thing that then stands between the browser and every tool.
+if (!AUTH_TOKEN) {
+  console.error('[wz-pdf-mcp] REFUSING TO START — MCP_AUTH_TOKEN is required')
   process.exit(1)
 }
 
@@ -118,6 +120,10 @@ const mcpHandler = async (req: Request, res: Response) => {
     const server = buildServer()
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,  // stateless
+      // Reject requests whose Host header is not one of ours: the SDK's guard
+      // against DNS rebinding, which the token above backs up.
+      enableDnsRebindingProtection: true,
+      allowedHosts: ['127.0.0.1', 'localhost', '[::1]', `127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`],
     })
     res.on('close', () => {
       transport.close()

@@ -25,7 +25,7 @@ import type { Annotation, OmitId } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
 import { isFlowKind } from './types/viewerDoc'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
-import { classifyDocFile } from './utils/detectDocType'
+import { classifyDocFile, DOCUMENT_ACCEPT } from './utils/detectDocType'
 import { pickSaveTarget, saveBlobTo, stripDocExt } from './utils/download'
 import { pageSuffix } from './utils/pageSuffix'
 import { PagePanel } from './components/panel/PagePanel'
@@ -34,6 +34,7 @@ import { UpdateToast } from './components/UpdateToast'
 import { useUpdateCheck } from './hooks/useUpdateCheck'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { t } from './i18n'
+import { isVolatile } from './types/annotation'
 
 // Modals are loaded on demand to shrink the initial bundle.
 // They only render when the user actively summons them, so the round-trip
@@ -182,7 +183,7 @@ export default function App() {
     handleExportExe,
   } = useExporters({
     file, fileBytes, pdfDoc, numPages, annotations, kind, documentPassword, savePassword,
-    onSuccess: showToast,
+    onSuccess: showToast, onError: showToast,
   })
 
   // The padlock decides *what saving will do*; it does not save. Otherwise one
@@ -214,7 +215,10 @@ export default function App() {
     handleInsertBlankPage,
     handleInsertFromPdf,
     handleReorderPages,
-  } = usePageOperations({ fileBytes, documentPassword, onResult: handlePageOpResult })
+  } = usePageOperations({
+    fileBytes, documentPassword, onResult: handlePageOpResult,
+    onError: err => showToast(err instanceof Error ? err.message : String(err)),
+  })
 
   // ── Warm the viewer chunks once the shell is on screen ────────────────────
   // See prefetchViewerChunks: this is what stops "open a PDF" from paying a
@@ -242,9 +246,15 @@ export default function App() {
     }
     document.title = `WZ PDF - ${file.name}`
     let cancelled = false
-    file.arrayBuffer().then(buf => { if (!cancelled) setFileBytes(buf) })
+    file.arrayBuffer()
+      .then(buf => { if (!cancelled) setFileBytes(buf) })
+      // A file removed or rewritten after it was picked. Without this the
+      // bytes stayed null and every later save silently did nothing.
+      .catch((err: unknown) => {
+        if (!cancelled) showToast(t('error.openFailed', { error: err instanceof Error ? err.message : String(err) }))
+      })
     return () => { cancelled = true }
-  }, [file])
+  }, [file, showToast])
 
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────
   useEffect(() => {
@@ -254,8 +264,12 @@ export default function App() {
       const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP
       setZoom(z => +(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z + delta)).toFixed(2)))
     }
-    window.addEventListener('wheel', onWheel, { passive: false })
-    return () => window.removeEventListener('wheel', onWheel)
+    // On <main>, not window: a non-passive wheel listener makes every scroll
+    // wait for the handler, and only the document area needs preventDefault.
+    const el = mainRef.current
+    if (!el) return
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
   }, [pdfDoc, viewMode])
 
   // ── Scroll-pin guard ──────────────────────────────────────────────────────
@@ -320,6 +334,12 @@ export default function App() {
   // ── File loading ──────────────────────────────────────────────────────────
 
   /** Reset state and load a PDF File object into the viewer. */
+  // These hooks return a fresh object every render; only their member functions
+  // are stable. Depending on the objects re-registered the Electron open-file
+  // listeners and the global keydown listener on every render.
+  const clearSearch = search.clear
+  const clearFlowSearch = flowSearch.clear
+  const stopTts = tts.stop
   const loadPdfFile = useCallback((f: File) => {
     setFile(f)
     setActiveMode(null)
@@ -328,13 +348,13 @@ export default function App() {
     setRotation(0)
     setViewMode('single')
     setShowSearch(false)
-    search.clear()
-    flowSearch.clear()
+    clearSearch()
+    clearFlowSearch()
     // Reading belongs to the document that was open. Left running it keeps
     // speaking the old text over the new document, and the highlight hunts for
     // sentences that are no longer on screen.
-    tts.stop()
-  }, [setActiveMode, search, flowSearch, tts])
+    stopTts()
+  }, [setActiveMode, clearSearch, clearFlowSearch, stopTts])
 
   /** Main upload handler — accepts PDF and HWP/HWPX files. */
   const handleUpload = useCallback((f: File) => {
@@ -474,7 +494,7 @@ export default function App() {
   const handleAnnotationAdd = useCallback((annotation: OmitId<Annotation>) => {
     addAnnotation(annotation)
     // Pen / rectangle are volatile — stay in drawing mode for continuous strokes.
-    if (annotation.type === 'pen' || annotation.type === 'rectangle') return
+    if (isVolatile(annotation)) return
     setPendingStamp(null)
     setPendingSignature(null)
     setActiveMode('select')
@@ -592,25 +612,40 @@ export default function App() {
     await tts.speak(chunks)
   }, [tts, flowDoc, pdfDoc, kind, currentPage, numPages, showToast, ocr.ocrResults])
 
+  const reportSpeechFailure = useCallback((err: unknown) => {
+    console.error('read-aloud failed:', err)
+    showToast(t('tts.failed', { error: err instanceof Error ? err.message : String(err) }))
+  }, [showToast])
+
   const handleToggleSpeech = useCallback(async () => {
     if (tts.status !== 'idle') { tts.stop(); return }
-
-    // Checked here rather than on mount: sixteen stat() calls do not belong on
-    // the startup path for a feature most sessions never touch.
-    const status = await tts.refreshModel()
-    if (!status?.ready) { setTtsPromptOpen(true); return }
-    await startReading()
-  }, [tts, startReading])
+    try {
+      // Checked here rather than on mount: sixteen stat() calls do not belong
+      // on the startup path for a feature most sessions never touch.
+      const status = await tts.refreshModel()
+      if (!status?.ready) { setTtsPromptOpen(true); return }
+      await startReading()
+    } catch (err) {
+      // Reached from a button, a key and the bar; an IPC or chunk-load failure
+      // used to be an unhandled rejection and a button that seemed dead.
+      reportSpeechFailure(err)
+    }
+  }, [tts, startReading, reportSpeechFailure])
 
   const handleTtsDownload = useCallback(async () => {
-    await tts.download()
-    setTtsPromptOpen(false)
-    // Carry on into what the user actually asked for. Stopping here leaves them
-    // staring at a finished download with nothing happening, having to press
-    // the button a second time to get the thing they already requested.
-    const status = await tts.refreshModel()
-    if (status?.ready) await startReading()
-  }, [tts, startReading])
+    try {
+      await tts.download()
+      setTtsPromptOpen(false)
+      // Carry on into what the user actually asked for. Stopping here leaves
+      // them staring at a finished download with nothing happening, having to
+      // press the button a second time to get the thing they already requested.
+      const status = await tts.refreshModel()
+      if (status?.ready) await startReading()
+    } catch (err) {
+      setTtsPromptOpen(false)
+      reportSpeechFailure(err)
+    }
+  }, [tts, startReading, reportSpeechFailure])
 
   /**
    * Save the pages selected in the panel as a new PDF.
@@ -707,7 +742,7 @@ export default function App() {
     onWatermarkClick: handleWatermarkClick,
     onDeleteSelected: handleDeleteSelected,
     onResetMarkups: handleResetMarkups,
-    hasMarkups: annotations.some(a => a.type === 'pen' || a.type === 'rectangle'),
+    hasMarkups: annotations.some(isVolatile),
     onRunOcr: () => ocr.runPage(currentPage),
     onRunOcrAll: ocr.runAll,
     onCancelOcr: ocr.cancel,
@@ -788,7 +823,7 @@ export default function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp,.md,.markdown,text/markdown"
+        accept={DOCUMENT_ACCEPT}
         className="hidden"
         onChange={e => {
           const f = e.target.files?.[0]
@@ -853,19 +888,19 @@ export default function App() {
               path, so a screen reader had nothing to navigate by and no name for
               what it had just opened — the file name is only painted in the
               toolbar. Hidden, because the toolbar already shows it. */}
-          {file && (
+          {file && numPages > 0 && (
             <h1 className="sr-only">
-              {t('a11y.documentNamed', { name: file.name, n: numPages || 1 })}
+              {t('a11y.documentNamed', { name: file.name, n: numPages })}
             </h1>
           )}
           {error && (
             <div className="flex items-center justify-center h-full text-red-400 p-4">
-              Failed to load PDF: {error}
+              {t('error.loadFailed', { error })}
             </div>
           )}
           {isLoading && (
             <div className="flex items-center justify-center h-full text-gray-400">
-              Loading PDF…
+              {t('doc.loading')}
             </div>
           )}
           {/* Drag/Open prompt — hidden in embed mode (can't drop into an iframe;
@@ -981,6 +1016,7 @@ export default function App() {
 
       {/* Lazy-loaded modals — Suspense fallback is `null` because the user
           clicked a button, so a tiny load delay is acceptable. */}
+      <ErrorBoundary resetKey={file}>
       <Suspense fallback={null}>
         {showSignaturePad && (
           <SignaturePad onConfirm={handleSignatureConfirm} onCancel={handleSignatureCancel} />
@@ -1003,6 +1039,7 @@ export default function App() {
           />
         )}
       </Suspense>
+      </ErrorBoundary>
       {toast && (
         <Toast
           key={toast.id}

@@ -44,7 +44,7 @@ export async function deletePages(
   const total = srcDoc.getPageCount()
   const deleteSet = new Set(pageNums)
   if (deleteSet.size >= total) {
-    throw new Error(`페이지를 모두 삭제할 수 없습니다. 최소 1개 페이지는 유지해야 합니다.`)
+    throw new Error(t('pdf.cannotDeleteAll'))
   }
   const newDoc = await PDFDocument.create()
   const pageMapping = new Map<number, number>()
@@ -78,7 +78,7 @@ export async function extractPages(
   const wanted = [...new Set(pageNums)]
     .filter(n => n >= 1 && n <= total)
     .sort((a, b) => a - b)
-  if (wanted.length === 0) throw new Error('저장할 페이지를 선택하세요.')
+  if (wanted.length === 0) throw new Error(t('pdf.selectPages'))
 
   const newDoc = await PDFDocument.create()
   // copyPages를 한 번에 호출한다. 페이지마다 부르면 공유 리소스(폰트·이미지)가

@@ -68,6 +68,16 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
     }
     let cancelled = false
     let loadedDoc: ViewerDoc | null = null
+    // pdfjs 6 removed `PDFDocumentProxy.destroy()`; the loading task is what
+    // tears the worker down now. Held separately because the other engines'
+    // ViewerDocs (HWP, image) still own their own `destroy`.
+    let loadedTask: { destroy(): Promise<void> } | null = null
+    const release = () => {
+      if (loadedTask) void loadedTask.destroy().catch(() => undefined)
+      else loadedDoc?.destroy()
+      loadedTask = null
+      loadedDoc = null
+    }
     // Set when the reader closes the password prompt. Destroying the task
     // rejects it with a worker-teardown message, which is true but useless to
     // read; this turns it back into the thing that actually happened.
@@ -177,13 +187,14 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
       }
 
       const doc = await task.promise
+      loadedTask = task
       setDocumentPassword(accepted)
       markOpen('document')
       return { doc: doc as unknown as ViewerDoc, kind: 'pdf', email: null, markdown: null }
     })
       .then(({ doc, kind, email, markdown }) => {
         loadedDoc = doc
-        if (cancelled) { doc?.destroy(); return }
+        if (cancelled) { release(); return }
         setPdfDoc(doc)
         setNumPages(doc?.numPages ?? 0)
         setKind(kind)
@@ -205,8 +216,7 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
       cancelled = true
       // Release page caches, worker resources, and decoded images when a
       // document is replaced or the viewer unmounts.
-      loadedDoc?.destroy()
-      loadedDoc = null
+      release()
     }
   }, [file])
 

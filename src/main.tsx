@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 // ─── Main-thread polyfills ────────────────────────────────────────────────────
 // pdfjs-dist 5.x uses Uint8Array.prototype.toHex (Chrome 129+).
@@ -44,6 +45,10 @@ if (new URLSearchParams(window.location.search).has('cli')) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* Nothing above App caught a render error, so one meant a blank window
+        with no way out but Task Manager. */}
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )

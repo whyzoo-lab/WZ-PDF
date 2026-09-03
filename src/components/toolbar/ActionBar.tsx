@@ -5,6 +5,7 @@ import type { ActiveMode } from '../../types/annotation'
 import { STAMP_PRESETS, svgToPng } from '../../utils/stampPresets'
 import { classifyDocFile } from '../../utils/detectDocType'
 import { t } from '../../i18n'
+import { DOCUMENT_ACCEPT } from '../../utils/detectDocType'
 import {
   IconSingle, IconSpread, IconGrid, IconFullscreen, IconRotate, IconSelect,
   IconStamp, IconSignature, IconWatermark, IconDelete, IconUpload, IconLink,
@@ -838,7 +839,7 @@ export function ActionBar({
 
       {editorRow}
 
-      <input ref={fileInputRef} type="file" accept="application/pdf,.pdf,.hwp,.hwpx" className="hidden" onChange={handleFileChange} />
+      <input ref={fileInputRef} type="file" accept={DOCUMENT_ACCEPT} className="hidden" onChange={handleFileChange} />
 
       {/* Stamp dropdown portal — rendered in <body> to escape toolbar overflow */}
       {stampPortal}

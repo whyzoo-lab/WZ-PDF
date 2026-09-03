@@ -11,6 +11,17 @@
    */
   "appId": "com.wz.pdfeditor",
   "productName": "WZ PDF",
+  // Electron fuses. The defaults leave the shipped exe usable as a general
+  // Node runtime by any local process (NODE_OPTIONS=--require, --inspect) and
+  // never verify app.asar. runAsNode must stay ON: the bundled MCP server
+  // starts this very binary with ELECTRON_RUN_AS_NODE=1 (mcp/src/hwp.ts).
+  "electronFuses": {
+    "runAsNode": true,
+    "enableNodeOptionsEnvironmentVariable": false,
+    "enableNodeCliInspectArguments": false,
+    "enableEmbeddedAsarIntegrityValidation": true,
+    "onlyLoadAppFromAsar": true,
+  },
   "copyright": "WZ PDF",
 
   "directories": {

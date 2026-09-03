@@ -208,20 +208,6 @@ export const IconLockOpen = () => (
   </Icon>
 )
 
-export const IconViewer = () => (
-  <Icon>
-    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
-    <circle cx="12" cy="12" r="3" />
-  </Icon>
-)
-export const IconEditor = () => (
-  <Icon>
-    <path d="M16.5 3.5l4 4L9 19H5v-4L16.5 3.5z" />
-    <path d="M14 6l4 4" />
-  </Icon>
-)
-
-// ── Chrome ──────────────────────────────────────────────────────────────────
 export const IconChevron = () => (
   <Icon className="w-3 h-3"><path d="M6 9l6 6 6-6" /></Icon>
 )
@@ -255,11 +241,8 @@ export const IconSpeak = () => (
 )
 
 /** Stop reading — a filled square, the universal stop. */
-export const IconStopSpeak = () => (
-  <Icon>
-    <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor" stroke="none" />
-  </Icon>
-)
+/** Same square as IconStop; kept under the name the toolbar imports. */
+export const IconStopSpeak = () => <IconStop />
 
 // ── Read-aloud transport ────────────────────────────────────────────────────
 /** Play — solid triangle, so it reads as a transport control at a glance. */

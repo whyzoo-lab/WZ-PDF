@@ -2,11 +2,30 @@
  * Trigger a browser download for a Blob. Centralizes the
  * createObjectURL → anchor → click → revoke dance used by every exporter.
  */
+/**
+ * Make an attachment name safe to hand to the OS. The name comes from the
+ * message, so it can carry separators, control characters, a reserved device
+ * name (`CON.pdf`) or a trailing dot Windows silently drops.
+ */
+export function safeFilename(name: string, fallback = 'attachment'): string {
+  // Control characters by code point, so the regex below needs none of them.
+  let out = Array.from(name, ch => (ch.charCodeAt(0) < 32 ? '_' : ch)).join('')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/^[.\s]+|[.\s]+$/g, '')
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(out)) out = '_' + out
+  if (out.length > 150) {
+    const dot = out.lastIndexOf('.')
+    const ext = dot > 0 ? out.slice(dot).slice(0, 12) : ''
+    out = out.slice(0, 150 - ext.length) + ext
+  }
+  return out || fallback
+}
+
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = filename
+  a.download = safeFilename(filename)
   a.click()
   URL.revokeObjectURL(url)
 }

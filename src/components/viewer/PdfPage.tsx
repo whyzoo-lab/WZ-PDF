@@ -250,7 +250,7 @@ function PdfPageInner({
         style={{ width: pw, height: ph }}
         className="bg-gray-100 animate-pulse flex items-center justify-center"
       >
-        <span className="text-gray-400 text-sm">Loading page {pageNumber}…</span>
+        <span className="text-gray-400 text-sm">{t('page.loading', { n: pageNumber })}</span>
       </div>
     )
   }

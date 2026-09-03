@@ -174,6 +174,7 @@ export function useTts() {
     const promise = (async () => {
       const api = window.electronAPI
       if (!api?.ttsSynthesize) throw new Error('Speech is only available in the desktop app')
+      const run = runRef.current
       const { pcm, sampleRate } = await api.ttsSynthesize({
         text,
         voice: voiceRef.current,
@@ -181,6 +182,11 @@ export function useTts() {
         speed: speedRef.current,
         totalStep: TOTAL_STEP,
       })
+      // Stop pressed while this sentence was being made: `stop()` has closed
+      // the context, and `ensureContext()` here would open a fresh one that
+      // nothing ever closes. Chromium caps those at about six, after which
+      // reading aloud is dead until reload.
+      if (runRef.current !== run) throw new Error('stopped')
       const ctx = ensureContext()
       // The engine returns 44.1 kHz; a device running at another rate resamples
       // this automatically when the buffer is played.
@@ -393,6 +399,10 @@ export function useTts() {
     try {
       const result = await api.ttsDownload()
       if (!result.ok && result.error) setError(result.error)
+    } catch (err) {
+      // An IPC rejection used to escape here, which left the consent prompt
+      // open with nothing happening behind it.
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setDownloading(false)
       setDownloadProgress(null)

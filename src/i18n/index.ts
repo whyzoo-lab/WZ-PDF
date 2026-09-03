@@ -107,7 +107,10 @@ export function t(key: MessageKey, vars?: Record<string, string | number>): stri
   let str = dict[key] ?? en[key] ?? String(key)
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
-      str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v))
+      // split/join rather than replace(): a replacement *string* treats `$&`,
+      // `$'` and `` $` `` as patterns, and file names and error messages are
+      // exactly the sort of value that contains them.
+      str = str.split(`{${k}}`).join(String(v))
     }
   }
   return str

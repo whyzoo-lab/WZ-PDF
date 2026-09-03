@@ -3,6 +3,11 @@ import { t } from '../i18n'
 
 interface Props {
   children: ReactNode
+  /**
+   * When this changes the boundary lets go of its error. Without it, one bad
+   * document left the "reload" screen up for every document opened after it.
+   */
+  resetKey?: unknown
 }
 
 interface State {
@@ -24,6 +29,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('[ErrorBoundary]', error, info.componentStack)
+  }
+
+  componentDidUpdate(prev: Props): void {
+    if (this.state.hasError && prev.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false })
+    }
   }
 
   render(): ReactNode {

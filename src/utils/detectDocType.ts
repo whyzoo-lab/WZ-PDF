@@ -23,6 +23,15 @@ function startsWith(bytes: Uint8Array, sig: number[]): boolean {
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'avif', 'ico']
 const MARKDOWN_EXTS = ['md', 'markdown', 'mdown', 'mkd']
 
+/**
+ * The `accept` list for every file picker that opens a document. It lived in
+ * two places and drifted: the toolbar's "open" menu still said pdf/hwp/hwpx
+ * long after mail, Markdown and images were supported, so opening one of those
+ * from the menu filtered it out while F2 and double-click let it through.
+ */
+export const DOCUMENT_ACCEPT =
+  'application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp,.md,.markdown,text/markdown'
+
 export function classifyDocFile(file: File): {
   isPdf: boolean; isHwp: boolean; isEml: boolean; isImage: boolean; isMarkdown: boolean
   supported: boolean
