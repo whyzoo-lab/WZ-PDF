@@ -5,6 +5,11 @@ type PageOpResult = { newBytes: ArrayBuffer; pageMapping: Map<number, number> }
 
 interface UsePageOperationsArgs {
   fileBytes: ArrayBuffer | null
+  /**
+   * Why `fileBytes` is null for good rather than still loading — a document
+   * too large to hold is paged in for viewing only. Reported instead of editing.
+   */
+  bytesUnavailable: string | null
   /** Password the document was opened with, if it is encrypted. */
   documentPassword: string | null
   /** Called when an op succeeds — caller updates file state + annotations. */
@@ -21,8 +26,18 @@ interface UsePageOperationsArgs {
  * `isPageOperating` gates the panel UI while an operation is in flight,
  * preventing overlapping clicks during pdf-lib's slow re-serialization.
  */
-export function usePageOperations({ fileBytes, documentPassword, onResult, onError }: UsePageOperationsArgs) {
+export function usePageOperations({ fileBytes, bytesUnavailable, documentPassword, onResult, onError }: UsePageOperationsArgs) {
   const [isPageOperating, setIsPageOperating] = useState(false)
+
+  /**
+   * True when there are no bytes to edit. A document too large to hold says so;
+   * one whose bytes are simply still being read stays quiet, as before.
+   */
+  const blocked = useCallback((): boolean => {
+    if (fileBytes) return false
+    if (bytesUnavailable) onError(new Error(bytesUnavailable))
+    return true
+  }, [fileBytes, bytesUnavailable, onError])
 
   /**
    * Shared wrapper for the four ops — flips `isPageOperating`, awaits the
@@ -49,7 +64,7 @@ export function usePageOperations({ fileBytes, documentPassword, onResult, onErr
   )
 
   const handleDeletePages = useCallback(async (pageNums: number[]) => {
-    if (!fileBytes) return
+    if (blocked() || !fileBytes) return
     await runOp(
       async () => {
         const { deletePages } = await import('../services/pdfPageService')
@@ -57,10 +72,10 @@ export function usePageOperations({ fileBytes, documentPassword, onResult, onErr
       },
       err => { console.error('Delete pages failed:', err); onError(err) },
     )
-  }, [fileBytes, documentPassword, runOp, onError])
+  }, [fileBytes, blocked, documentPassword, runOp, onError])
 
   const handleInsertBlankPage = useCallback(async (afterPage: number) => {
-    if (!fileBytes) return
+    if (blocked() || !fileBytes) return
     await runOp(
       async () => {
         const { insertBlankPage } = await import('../services/pdfPageService')
@@ -68,10 +83,10 @@ export function usePageOperations({ fileBytes, documentPassword, onResult, onErr
       },
       err => { console.error('Insert blank page failed:', err); onError(err) },
     )
-  }, [fileBytes, documentPassword, runOp, onError])
+  }, [fileBytes, blocked, documentPassword, runOp, onError])
 
   const handleInsertFromPdf = useCallback(async (afterPage: number, srcBytes: ArrayBuffer) => {
-    if (!fileBytes) return
+    if (blocked() || !fileBytes) return
     await runOp(
       async () => {
         const { insertPagesFromPdf } = await import('../services/pdfPageService')
@@ -82,10 +97,10 @@ export function usePageOperations({ fileBytes, documentPassword, onResult, onErr
         alert(t('error.pdfInsertFailed', { error: err instanceof Error ? err.message : String(err) }))
       },
     )
-  }, [fileBytes, documentPassword, runOp])
+  }, [fileBytes, blocked, documentPassword, runOp])
 
   const handleReorderPages = useCallback(async (newOrder: number[]) => {
-    if (!fileBytes) return
+    if (blocked() || !fileBytes) return
     await runOp(
       async () => {
         const { reorderPages } = await import('../services/pdfPageService')
@@ -93,7 +108,7 @@ export function usePageOperations({ fileBytes, documentPassword, onResult, onErr
       },
       err => { console.error('Reorder pages failed:', err); onError(err) },
     )
-  }, [fileBytes, documentPassword, runOp, onError])
+  }, [fileBytes, blocked, documentPassword, runOp, onError])
 
   return {
     isPageOperating,

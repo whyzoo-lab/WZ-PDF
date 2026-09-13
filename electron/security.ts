@@ -5,10 +5,40 @@ import { isIP } from 'node:net'
 import path from 'node:path'
 import type { Readable } from 'node:stream'
 
+/** Largest document `read-file` returns whole. */
 export const MAX_DOCUMENT_BYTES = 500 * 1024 * 1024
+/**
+ * Largest document the renderer may page through by byte range.
+ *
+ * Set by what a renderer can allocate, not by what we would like. pdfjs
+ * reserves one buffer the length of the whole file for range loading
+ * (`ChunkedStream` does `new Uint8Array(length)`). It is only a reservation —
+ * pages are committed as ranges arrive, and a 1.38 GB file left the working set
+ * unchanged — but it must still fit in a single ArrayBuffer. Measured in a
+ * clean Electron 44 renderer, worker and page alike: 1.99 GiB allocates,
+ * 2 GiB − 1 byte fails with "Array buffer allocation failed". Refusing here,
+ * with a size in the message, beats pdfjs failing inside its worker.
+ */
+export const MAX_RANGED_DOCUMENT_BYTES = 2 * 1024 * 1024 * 1024 - 64 * 1024 * 1024
+/** Largest single range one `read-file-range` call may return. */
+export const MAX_RANGE_BYTES = 64 * 1024 * 1024
 export const MAX_URL_LENGTH = 2_048
 export const MAX_REDIRECTS = 5
 export const FETCH_TIMEOUT_MS = 30_000
+
+/**
+ * A byte range the renderer may ask for: whole, non-negative safe integers,
+ * inside the file, and no larger than one call is allowed to carry. The
+ * renderer is the threat model for IPC, so none of this is taken on trust.
+ */
+export function isValidByteRange(offset: unknown, length: unknown, size: number): boolean {
+  return (
+    typeof offset === 'number' && typeof length === 'number' &&
+    Number.isSafeInteger(offset) && Number.isSafeInteger(length) &&
+    offset >= 0 && length > 0 && length <= MAX_RANGE_BYTES &&
+    Number.isSafeInteger(offset + length) && offset + length <= size
+  )
+}
 
 /** Parse an external URL without relying on bypassable string-prefix checks. */
 export function parseHttpUrl(rawUrl: unknown): URL {

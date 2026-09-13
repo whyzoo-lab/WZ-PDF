@@ -100,6 +100,8 @@ export const en = {
   'error.loadFailed': 'Could not open the document: {error}',
   'doc.loading': 'Opening…',
   'page.loading': 'Rendering page {n}…',
+  'doc.tooLargeToEdit': 'This file is over {limit}, so it is open view-only: saving, exporting and page editing are unavailable.',
+  'doc.tooLargeToOpen': 'Only PDFs can be opened when a file is over {limit}.',
   'export.pdfFailed': 'Could not save the PDF: {error}',
   'print.prepareFailed': 'Could not prepare printing: {error}',
   'print.failed': 'Printing failed: {error}',

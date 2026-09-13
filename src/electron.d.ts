@@ -12,6 +12,12 @@ interface Window {
     /** Read a local file by path — avoids fetch('file://') CORS issues. */
     readFile: (filePath: string) => Promise<ArrayBuffer>
 
+    /** Size of a local document, after the same checks `readFile` makes. */
+    statFile: (filePath: string) => Promise<{ size: number }>
+
+    /** One byte range of a local document — how a file too large to hold is paged in. */
+    readFileRange: (filePath: string, offset: number, length: number) => Promise<ArrayBuffer>
+
     /** Download a PDF from an http(s) URL via the main process (bypasses CORS). */
     fetchUrl: (url: string) => Promise<ArrayBuffer>
 

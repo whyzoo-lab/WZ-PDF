@@ -6,8 +6,13 @@ import { t } from '../i18n'
 import { pickSaveTarget, saveBlobTo, stripDocExt } from '../utils/download'
 
 interface UseExportersArgs {
-  file: File | null
+  file: { readonly name: string } | null
   fileBytes: ArrayBuffer | null
+  /**
+   * Why `fileBytes` is null for good rather than still loading — a document
+   * too large to hold is paged in for viewing only. Shown instead of saving.
+   */
+  bytesUnavailable: string | null
   pdfDoc: ViewerDoc | null
   numPages: number
   annotations: Annotation[]
@@ -39,6 +44,7 @@ interface UseExportersArgs {
 export function useExporters({
   file,
   fileBytes,
+  bytesUnavailable,
   pdfDoc,
   numPages,
   annotations,
@@ -51,6 +57,12 @@ export function useExporters({
   const [isExporting, setIsExporting] = useState(false)
 
   const handleExportPdf = useCallback(async () => {
+    // Before the save picker, not inside the try: choosing where to put a file
+    // that cannot be written leaves an empty file behind.
+    if (kind === 'pdf' && !fileBytes) {
+      if (bytesUnavailable) onError(bytesUnavailable)
+      return
+    }
     const password = savePassword ?? undefined
     const baseName = file ? stripDocExt(file.name) : 'document'
     // The name says which of the three things happened, so the file is still
@@ -100,9 +112,15 @@ export function useExporters({
     } finally {
       setIsExporting(false)
     }
-  }, [fileBytes, pdfDoc, annotations, file, kind, documentPassword, savePassword, onSuccess, onError])
+  }, [fileBytes, bytesUnavailable, pdfDoc, annotations, file, kind, documentPassword, savePassword, onSuccess, onError])
 
   const handleExportHtml = useCallback(async () => {
+    // The generated page embeds the whole file, so a document too large to hold
+    // cannot become one. Checked before the picker, for the same reason as above.
+    if (kind === 'pdf' && !fileBytes) {
+      if (bytesUnavailable) onError(bytesUnavailable)
+      return
+    }
     const filename = file?.name ?? 'document.pdf'
     const outName = `${stripDocExt(filename)}.html`
     const target = await pickSaveTarget(outName, {
@@ -137,7 +155,7 @@ export function useExporters({
     } finally {
       setIsExporting(false)
     }
-  }, [fileBytes, pdfDoc, annotations, file, kind, onSuccess])
+  }, [fileBytes, bytesUnavailable, pdfDoc, annotations, file, kind, onSuccess, onError])
 
   const handleExportImages = useCallback(async () => {
     if (!pdfDoc) return
@@ -177,7 +195,10 @@ export function useExporters({
       return
     }
 
-    if (!fileBytes) return
+    if (!fileBytes) {
+      if (bytesUnavailable) onError(bytesUnavailable)
+      return
+    }
     setIsExporting(true)
     try {
       const result = await window.electronAPI.exportExe(fileBytes)
@@ -192,7 +213,7 @@ export function useExporters({
     } finally {
       setIsExporting(false)
     }
-  }, [fileBytes, onSuccess])
+  }, [fileBytes, bytesUnavailable, onSuccess, onError])
 
   return {
     isExporting,

@@ -23,7 +23,7 @@ describe('OcrTextLayer', () => {
   it('applies highlight classes by item index', () => {
     const { container } = render(
       <OcrTextLayer words={words} scale={1} width={200} height={200}
-        highlights={[{ itemStart: 1, itemEnd: 1, active: true }]} />,
+        highlights={[{ itemStart: 1, itemEnd: 1, active: true, index: 0 }]} />,
     )
     const spans = container.querySelectorAll<HTMLElement>(':scope > div > span')
     expect(spans[0].className).not.toMatch(/wz-search-hl/)

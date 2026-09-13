@@ -77,7 +77,7 @@ export function PdfViewer({
     if (!search) return map
     search.matches.forEach((m, i) => {
       const arr = map.get(m.page) ?? []
-      arr.push({ itemStart: m.itemStart, itemEnd: m.itemEnd, active: i === search.activeIndex })
+      arr.push({ itemStart: m.itemStart, itemEnd: m.itemEnd, active: i === search.activeIndex, index: i })
       map.set(m.page, arr)
     })
     return map

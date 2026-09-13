@@ -1,4 +1,8 @@
-import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+import { useState, useCallback, useEffect, useRef, lazy, Suspense, useMemo } from 'react'
+import {
+  type DocumentFile, EAGER_DOCUMENT_LIMIT_LABEL, EAGER_DOCUMENT_MAX_BYTES,
+  isLargeDocument, pathFile, readAll,
+} from './services/documentSource'
 import { ActionBar } from './components/toolbar/ActionBar'
 import type { WatermarkSettings } from './components/modals/WatermarkConfig'
 import { usePdfDocument } from './hooks/usePdfDocument'
@@ -79,7 +83,7 @@ function prefetchViewerChunks(): void {
 
 export default function App() {
   // ── Document state ────────────────────────────────────────────────────────
-  const [file, setFile] = useState<File | null>(null)
+  const [file, setFile] = useState<DocumentFile | null>(null)
   const [fileBytes, setFileBytes] = useState<ArrayBuffer | null>(null)
 
   // ── View state ────────────────────────────────────────────────────────────
@@ -141,6 +145,11 @@ export default function App() {
     clearMarkups,
   } = useAnnotations()
 
+  // Why there are no bytes to save from, when that is not just "still reading".
+  const bytesUnavailable = file && isLargeDocument(file)
+    ? t('doc.tooLargeToEdit', { limit: EAGER_DOCUMENT_LIMIT_LABEL })
+    : null
+
   // ── Hooks: feature bundles ────────────────────────────────────────────────
   const { fitWidth } = useFitZoom({ pdfDoc, viewMode, rotation, setZoom, viewportRef: mainRef })
 
@@ -183,7 +192,7 @@ export default function App() {
     handleExportExe,
   } = useExporters({
     file, fileBytes, pdfDoc, numPages, annotations, kind, documentPassword, savePassword,
-    onSuccess: showToast, onError: showToast,
+    bytesUnavailable, onSuccess: showToast, onError: showToast,
   })
 
   // The padlock decides *what saving will do*; it does not save. Otherwise one
@@ -216,7 +225,7 @@ export default function App() {
     handleInsertFromPdf,
     handleReorderPages,
   } = usePageOperations({
-    fileBytes, documentPassword, onResult: handlePageOpResult,
+    fileBytes, documentPassword, bytesUnavailable, onResult: handlePageOpResult,
     onError: err => showToast(err instanceof Error ? err.message : String(err)),
   })
 
@@ -245,8 +254,15 @@ export default function App() {
       return
     }
     document.title = `WZ PDF - ${file.name}`
+    // Too large to hold: it is paged in by range for viewing, so there are no
+    // bytes to keep for saving. Said now, rather than at the first save.
+    if (isLargeDocument(file)) {
+      setFileBytes(null)
+      showToast(t('doc.tooLargeToEdit', { limit: EAGER_DOCUMENT_LIMIT_LABEL }))
+      return
+    }
     let cancelled = false
-    file.arrayBuffer()
+    readAll(file)
       .then(buf => { if (!cancelled) setFileBytes(buf) })
       // A file removed or rewritten after it was picked. Without this the
       // bytes stayed null and every later save silently did nothing.
@@ -340,7 +356,7 @@ export default function App() {
   const clearSearch = search.clear
   const clearFlowSearch = flowSearch.clear
   const stopTts = tts.stop
-  const loadPdfFile = useCallback((f: File) => {
+  const loadPdfFile = useCallback((f: DocumentFile) => {
     setFile(f)
     setActiveMode(null)
     setPendingStamp(null)
@@ -372,7 +388,16 @@ export default function App() {
   useEffect(() => {
     const cleanup = window.electronAPI?.onOpenFile(async (filePath: string) => {
       try {
-        const data = await window.electronAPI!.readFile(filePath)
+        const api = window.electronAPI!
+        // Size first. A document too large to hold is paged in by range rather
+        // than copied whole into this process — reading it whole is what used
+        // to fail at 500 MB (see services/documentSource).
+        const { size } = await api.statFile(filePath)
+        if (size > EAGER_DOCUMENT_MAX_BYTES) {
+          loadPdfFile(pathFile(filePath, size))
+          return
+        }
+        const data = await api.readFile(filePath)
         const name = filePath.split(/[/\\]/).pop() ?? 'document.pdf'
         // No MIME type: the name carries the extension and detectDocType reads
         // the bytes anyway. Hard-coding application/pdf mislabelled every
@@ -656,7 +681,11 @@ export default function App() {
    * can easily outlive it. See utils/download.ts.
    */
   const handleSavePages = useCallback(async (pageNums: number[]) => {
-    if (!fileBytes || pageNums.length === 0) return
+    if (pageNums.length === 0) return
+    if (!fileBytes) {
+      if (bytesUnavailable) showToast(bytesUnavailable)
+      return
+    }
     const suggested = `${stripDocExt(file?.name ?? 'document')}${pageSuffix(pageNums)}.pdf`
 
     const target = await pickSaveTarget(suggested, {
@@ -673,7 +702,15 @@ export default function App() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : String(err))
     }
-  }, [fileBytes, file, documentPassword, showToast])
+  }, [fileBytes, file, documentPassword, bytesUnavailable, showToast])
+
+  // Memoised. This object used to be rebuilt on every App render, which rebuilt
+  // every page's highlight arrays and re-ran the text layer's scroll-to-match —
+  // including on the render each scroll step causes through setCurrentPage.
+  const viewerSearch = useMemo(
+    () => (showSearch ? { matches: search.matches, activeIndex: search.activeIndex } : undefined),
+    [showSearch, search.matches, search.activeIndex],
+  )
 
   // ── Global keyboard shortcuts ─────────────────────────────────────────────
   // Declared here, not with the other hooks above, because it needs the
@@ -989,7 +1026,7 @@ export default function App() {
                 onGridPageClick={handleGridPageClick}
                 onFullscreenExit={handleFullscreenExit}
                 onCurrentPageChange={setCurrentPage}
-                search={showSearch ? { matches: search.matches, activeIndex: search.activeIndex } : undefined}
+                search={viewerSearch}
                 ocrResults={ocr.ocrResults}
                 ocrActivePage={ocr.ocrActivePage}
                 onOcrRequest={ocr.runPage}

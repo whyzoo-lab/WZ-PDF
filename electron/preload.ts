@@ -24,6 +24,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFile: (filePath: string): Promise<ArrayBuffer> =>
     ipcRenderer.invoke('read-file', filePath),
 
+  /** Size of a local document, after the same checks `readFile` makes. */
+  statFile: (filePath: string): Promise<{ size: number }> =>
+    ipcRenderer.invoke('stat-file', filePath),
+
+  /**
+   * One byte range of a local document. This is how a file too large to hold
+   * reaches pdfjs: it asks for the ranges it needs instead of the whole file.
+   */
+  readFileRange: (filePath: string, offset: number, length: number): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke('read-file-range', filePath, offset, length),
+
   /** Download a PDF from an http(s) URL via the main process (bypasses CORS). */
   fetchUrl: (url: string): Promise<ArrayBuffer> =>
     ipcRenderer.invoke('fetch-url', url),

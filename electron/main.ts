@@ -10,12 +10,14 @@ import { downloadModel, isVoiceId, modelStatus } from './ttsModel'
 import {
   FETCH_TIMEOUT_MS,
   MAX_DOCUMENT_BYTES,
+  MAX_RANGED_DOCUMENT_BYTES,
   MAX_REDIRECTS,
   assertPublicHttpUrl,
   hasSupportedDocumentSignature,
   isAllowedDocumentPath,
   isTextDocumentPath,
   isTrustedRendererUrl,
+  isValidByteRange,
   isTrustedUpdateUrl,
   parseHttpUrl,
   resolveAppAssetPath,
@@ -442,8 +444,12 @@ function rememberOsPath(filePath: string): string {
 }
 const isUncPath = (p: string) => /^[\\/]{2}/.test(p)
 
-ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffer> => {
-  assertTrustedIpcSender(event)
+/**
+ * Every check a local document must pass before any of its bytes are read, in
+ * one place, so `read-file`, `stat-file` and `read-file-range` cannot drift
+ * apart. Returns an open handle the caller must close.
+ */
+async function openValidatedDocument(filePath: unknown) {
   if (typeof filePath !== 'string' || filePath.length === 0) {
     throw new Error('Invalid file path')
   }
@@ -464,24 +470,89 @@ ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffe
   }
   const handle = await fs.promises.open(real, 'r')
   try {
-    // Stat and read through the same handle. Reading exactly the validated
-    // size prevents a file that grows concurrently from bypassing the cap.
+    // Stat through the same handle the bytes will be read from.
     const stat = await handle.stat()
     if (!stat.isFile()) throw new Error('Path is not a regular file')
-    if (stat.size === 0 || stat.size > MAX_FILE_SIZE) {
+    if (stat.size === 0) throw new Error('File is empty')
+    return { handle, size: stat.size, isText: isTextDocumentPath(lowerReal) }
+  } catch (err) {
+    await handle.close()
+    throw err
+  }
+}
+
+/** Reject a binary document whose first bytes are not a format we open. */
+async function assertDocumentSignature(handle: Awaited<ReturnType<typeof fs.promises.open>>): Promise<void> {
+  const head = Buffer.alloc(16)
+  const { bytesRead } = await handle.read(head, 0, head.length, 0)
+  if (!hasSupportedDocumentSignature(head.subarray(0, bytesRead))) {
+    throw new Error('File content does not match a supported document format')
+  }
+}
+
+ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffer> => {
+  assertTrustedIpcSender(event)
+  const doc = await openValidatedDocument(filePath)
+  try {
+    if (doc.size > MAX_FILE_SIZE) {
       throw new Error(`File must be between 1 byte and ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`)
     }
-    const data = Buffer.allocUnsafe(stat.size)
-    await readExactly(handle, data, 0)
+    // Reading exactly the validated size prevents a file that grows
+    // concurrently from bypassing the cap.
+    const data = Buffer.allocUnsafe(doc.size)
+    await readExactly(doc.handle, data, 0)
     // Markdown and mail are plain text and have no signature to verify —
     // see TEXT_DOCUMENT_EXTENSIONS in security.ts for why that is sound here.
-    if (!isTextDocumentPath(lowerReal) && !hasSupportedDocumentSignature(data)) {
+    if (!doc.isText && !hasSupportedDocumentSignature(data)) {
       throw new Error('File content does not match a supported document format')
     }
     // Return a fresh ArrayBuffer slice (Buffer view → standalone ArrayBuffer)
     return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
   } finally {
-    await handle.close()
+    await doc.handle.close()
+  }
+})
+
+// ── IPC: large documents, by range ─────────────────────────────────────────
+// A document over MAX_DOCUMENT_BYTES is never read whole: the renderer asks
+// for its size, then pdfjs asks for the ranges it needs (the cross-reference
+// table, then whatever the visible pages draw). Opening a 1.38 GB, 223-page
+// PDF this way read 1.7 MB. Both handlers repeat every check `read-file`
+// makes, and only binary documents qualify — the text formats are small and
+// are parsed whole anyway.
+ipcMain.handle('stat-file', async (event, filePath: unknown): Promise<{ size: number }> => {
+  assertTrustedIpcSender(event)
+  const doc = await openValidatedDocument(filePath)
+  try {
+    if (doc.size > MAX_RANGED_DOCUMENT_BYTES) {
+      throw new Error(`File exceeds ${Math.round(MAX_RANGED_DOCUMENT_BYTES / 1024 / 1024)}MB limit`)
+    }
+    if (!doc.isText) await assertDocumentSignature(doc.handle)
+    return { size: doc.size }
+  } finally {
+    await doc.handle.close()
+  }
+})
+
+ipcMain.handle('read-file-range', async (
+  event, filePath: unknown, offset: unknown, length: unknown,
+): Promise<ArrayBuffer> => {
+  assertTrustedIpcSender(event)
+  const doc = await openValidatedDocument(filePath)
+  try {
+    if (doc.isText) throw new Error('Text documents are read whole')
+    if (doc.size > MAX_RANGED_DOCUMENT_BYTES) {
+      throw new Error(`File exceeds ${Math.round(MAX_RANGED_DOCUMENT_BYTES / 1024 / 1024)}MB limit`)
+    }
+    if (!isValidByteRange(offset, length, doc.size)) throw new Error('Invalid byte range')
+    // Checked on every call, not once: a renamed binary must not become
+    // readable a range at a time just because it was never asked for whole.
+    await assertDocumentSignature(doc.handle)
+    const data = Buffer.allocUnsafe(length as number)
+    await readExactly(doc.handle, data, offset as number)
+    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+  } finally {
+    await doc.handle.close()
   }
 })
 

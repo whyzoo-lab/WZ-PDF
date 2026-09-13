@@ -34,7 +34,9 @@ The renderer never uses Node APIs directly. All IPC calls go through `window.ele
 |---|---|
 | `onOpenFile(cb)` | File path from OS open-file event, CLI arg, or `.pdf` file-association entry point |
 | `onOpenPdfBytes(cb)` | PDF bytes when launched as a viewer-exe (portable build only) |
-| `readFile(path)` | Read a local file via main process (avoids CORS on `http://localhost`) |
+| `readFile(path)` | Read a local file via main process (avoids CORS on `http://localhost`) — at most 500 MB |
+| `statFile(path)` | Size of a document, validated like `readFile`; decides whole read vs range loading |
+| `readFileRange(path, offset, length)` | One byte range of a large PDF (see "Large documents") |
 | `exportExe(pdfData)` | Save current PDF embedded into a copy of the portable exe |
 
 ### Rendering pipeline
@@ -110,6 +112,16 @@ rhwp itself is never patched (see "Never patch a dependency in place"): 0.7.17 �
 for removals, then run the same document through both and check page count, ink
 coverage and `getPageTextLayout` output — 0.8.2 kept text layout identical but
 did shift pagination.
+
+**0.8.6 was tried and rejected (v1.19.0).** Across seven real Korean RFP/business
+documents page counts matched and four were character-identical, but one lost
+a whole table row: the requirements summary table on page 17 of a 122-page RFP
+dropped `제약사항(COR, Constraint Requirement) 11` (33 characters, gone from the
+document, not moved). The other differences were text crossing a page break.
+Losing content is disqualifying, so the pin stayed on 0.8.2. Re-run that
+comparison — whole-document character multiset, not just per-page equality,
+since pagination shifts make every page after a break look different — before
+trying a later version.
 
 **Korean fonts** — rhwp resolves each HWP font through a CSS fallback chain, e.g.
 for 바탕: `"바탕", Batang, 바탕, Nanum Myeongjo, …, Noto Serif KR, …, serif`. On
@@ -611,6 +623,37 @@ reader can act on. It deliberately does **not** follow that error's own advice:
 `ignoreEncryption: true` parses the document but leaves the content streams
 encrypted, so the output would have the right page count and unreadable
 contents — worse than failing.
+
+### Large documents (over 500 MB)
+
+A 1.38 GB PDF used to fail at the door with `File must be between 1 byte and
+500MB`: `read-file` copies the whole file into the renderer, and that cap exists
+for a reason. Such a file is now **paged in by byte range** instead
+(`services/documentSource.ts`):
+
+- `App` asks `statFile` first. At or under `EAGER_DOCUMENT_MAX_BYTES` nothing
+  changes. Over it, the document is a `RangedFile` (`pathFile`) whose
+  `readRange` goes through `read-file-range`.
+- `usePdfDocument` reads the first 1 MiB, checks it is a PDF, and hands pdfjs a
+  `PDFDataRangeTransport` with `disableAutoFetch` and `disableStream` — without
+  those pdfjs goes on to fetch the entire file in the background, which is
+  exactly the copy we are avoiding. Only PDFs: every other format needs its
+  bytes whole, so a large HWP/image says so (`doc.tooLargeToOpen`).
+- **View-only.** Every save path works from `fileBytes`, which a ranged document
+  never has. `bytesUnavailable` tells `useExporters`, `usePageOperations` and
+  the page-selection save to say why — *before* the save picker opens — and a
+  toast says it once on open. Silence would read as a broken button.
+
+Measured on that 1.38 GB, 223-page file in the app: open 8 s to first paint,
+pages 100 and 223 rendered in ~1.8 s each, whole-app working set 778 → 904 MB.
+
+**The ceiling is ~2 GB, and it is Chromium's, not ours.** pdfjs's
+`ChunkedStream` reserves `new Uint8Array(fileLength)` up front. It is only
+address space (the working set does not move), but it must be one ArrayBuffer,
+and in an Electron 44 renderer 1.99 GiB allocates while 2 GiB − 1 fails. Hence
+`MAX_RANGED_DOCUMENT_BYTES` refuses above 2 GiB − 64 MiB with a size in the
+message, rather than pdfjs dying inside its worker. Lifting it would mean a
+different loader, not a bigger constant.
 
 ### Saving a selection of pages
 
@@ -1184,7 +1227,7 @@ Renderer is sandboxed and IPC inputs are validated. Notable measures:
 - `setWindowOpenHandler` denies new Electron windows; external `http(s)://` URLs are handed to `shell.openExternal`.
 - `web-contents-created` denies `<webview>` attachments app-wide.
 - **Production-only CSP** is injected via `session.defaultSession.webRequest.onHeadersReceived`. Dev mode skips this (Vite HMR needs `unsafe-eval` and a WebSocket connect, which would weaken the policy).
-- Every IPC handler rejects non-renderer senders. `read-file` resolves symlinks, accepts only `DOCUMENT_EXTENSIONS` (see "File associations"), refuses UNC paths unless the OS itself handed them over, verifies the file signature, and reads at most 500 MB through the validated handle.
+- Every IPC handler rejects non-renderer senders. `read-file` resolves symlinks, accepts only `DOCUMENT_EXTENSIONS` (see "File associations"), refuses UNC paths unless the OS itself handed them over, verifies the file signature, and reads at most 500 MB through the validated handle. `stat-file` and `read-file-range` share that validation (`openValidatedDocument`); a range must be whole safe integers inside the file and at most 64 MB (`isValidByteRange`), text formats are refused, and the signature is re-checked on every call so a file swapped after opening is not read.
 - `fetch-url` rejects private/link-local targets (including redirects), applies a timeout and streaming size limit, and verifies the downloaded document signature.
   **It connects to the address it vetted.** `assertPublicHttpUrl` used to return
   the URL and `fetch()` then resolved the hostname a second time — the
@@ -1231,6 +1274,19 @@ and inside the blob worker string (`src/services/pdfjsWorker.ts`). Removing
 either breaks PDF rendering in Electron. The two files are separate on purpose —
 `pdfjsWorker.ts` deliberately does not import pdfjs, so requiring it costs a few
 bytes instead of pulling the ~400 KB chunk into the entry bundle.
+
+### Find must scroll to a match once, not on every render
+With find open, a multi-page PDF could not be scrolled away from the active
+match: the wheel moved the view and it snapped straight back. `App` built the
+`search` prop inline, so every render rebuilt each page's highlight arrays, and
+`PdfTextLayer`'s highlight effect called `scrollIntoView` every time it ran —
+and scrolling sets the current page, which renders `App`. Measured: one wheel
+gesture moved 4800 px with find closed and 0 px with it open, with 6
+`scrollIntoView` calls. Two fixes, both needed: `viewerSearch` is memoised, and
+the layer remembers which match index it last scrolled to (`scrolledToRef`,
+`TextLayerHighlight.index`). After the fix both cases keep 4800 px with zero
+programmatic scrolls. Anything that scrolls from an effect needs the same
+"only when the target changes" guard.
 
 ### Annotation coordinates
 Everything stored and exported uses the `effectiveZoom = PDF_RENDER_SCALE * zoom` divisor. If you pass plain `zoom` instead of `effectiveZoom` to `toStoredCoords`, annotations will be placed at the wrong position relative to the PDF.

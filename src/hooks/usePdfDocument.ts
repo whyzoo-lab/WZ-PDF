@@ -3,6 +3,10 @@ import type { ViewerDoc, DocKind } from '../types/viewerDoc'
 import type { ParsedEmail } from '../services/emlParser'
 import { detectDocType } from '../utils/detectDocType'
 import { markOpen, resetOpenMarks } from '../services/openPerf'
+import {
+  type DocumentFile, EAGER_DOCUMENT_LIMIT_LABEL, RANGE_CHUNK_BYTES, RANGE_INITIAL_BYTES,
+  isLargeDocument, readAll, readRange,
+} from '../services/documentSource'
 import { t } from '../i18n'
 
 interface UsePdfDocumentReturn {
@@ -31,7 +35,21 @@ interface UsePdfDocumentReturn {
   cancelPassword: () => void
 }
 
-export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
+type PdfjsModule = typeof import('pdfjs-dist')
+
+/** How pdfjs gets the bytes: all of them, or the ranges it asks for. */
+type PdfSource =
+  | { data: ArrayBuffer }
+  | {
+      range: InstanceType<PdfjsModule['PDFDataRangeTransport']>
+      rangeChunkSize: number
+      // Without this pdfjs keeps fetching the rest of the file in the
+      // background once it has opened — reading the whole thing after all.
+      disableAutoFetch: true
+      disableStream: true
+    }
+
+export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn {
   const [pdfDoc, setPdfDoc] = useState<ViewerDoc | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
@@ -93,7 +111,132 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
       doc: ViewerDoc | null; kind: DocKind
       email: ParsedEmail | null; markdown: string | null
     }
-    file.arrayBuffer().then(async (buffer): Promise<Loaded> => {
+
+    /**
+     * Hand pdfjs a document, whole or by range, and wait for it to open.
+     * `makeSource` gets a `fail` to call when a range cannot be read.
+     */
+    const openPdf = async (
+      makeSource: (pdfjs: PdfjsModule, fail: (err: unknown) => void) => PdfSource,
+    ): Promise<Loaded> => {
+      // pdfjs is imported HERE rather than at module scope so its ~400 KB chunk
+      // is fetched on first document open instead of during app startup.
+      const [pdfjs, { getPdfWorkerUrl }] = await Promise.all([
+        import('pdfjs-dist'),
+        import('../services/pdfjsWorker'),
+      ])
+      markOpen('engine')
+      if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+        pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl()
+      }
+
+      let opening = true
+      let rangeError: unknown = null
+      let loading: ReturnType<PdfjsModule['getDocument']> | null = null
+      const source = makeSource(pdfjs, err => {
+        // While opening, a range that cannot be read would leave pdfjs waiting
+        // forever for bytes that are not coming — so stop it and report why.
+        // Once open, the damage is one page; say so and leave the rest alone.
+        if (opening) {
+          rangeError = err
+          void loading?.destroy()
+        } else {
+          console.error('[usePdfDocument] reading a byte range failed:', err)
+        }
+      })
+
+      loading = pdfjs.getDocument({
+        ...source,
+        // Disable CSS @font-face / FontFace API for embedded fonts.
+        // pdfjs's FontFace.loaded path can hang in Electron because the browser
+        // never auto-triggers font loading for canvas-only contexts (no HTML
+        // text elements reference these fonts). With this flag, pdfjs draws
+        // glyphs as canvas paths instead — same visual quality for our PNG output.
+        disableFontFace: true,
+        // Location of pdfjs's WASM image decoders (jbig2 / openjpeg / qcms).
+        // pdfjs 5.x decodes JBIG2, CCITT-Fax and JPEG2000 images in WASM; without
+        // this it silently drops those images. Korean scanner (MRC) PDFs store
+        // their text as CCITT/JBIG2 ImageMasks, so omitting wasmUrl makes the
+        // text vanish and only the background layer renders. Bundled offline at
+        // public/wasm/ (copied by npm run setup:pdfjs); resolved against the
+        // document so it works over http(s) and Electron file://.
+        wasmUrl: new URL('wasm/', new URL('./', document.baseURI)).href,
+        // Glyph sources for fonts the PDF references but does NOT embed.
+        // `disableFontFace: true` above also disables pdfjs's system-font
+        // fallback, so a non-embedded font has no glyph source at all and every
+        // character renders as a .notdef box (▯) — e.g. the account-number /
+        // date / phone fields of a bank passbook printout, while the surrounding
+        // embedded-font body text renders fine. standardFontDataUrl supplies the
+        // substitute font programs; cMapUrl supplies the predefined CJK CMaps a
+        // Korean CID font needs. Bundled offline alongside the wasm decoders.
+        standardFontDataUrl: new URL('standard_fonts/', new URL('./', document.baseURI)).href,
+        cMapUrl: new URL('cmaps/', new URL('./', document.baseURI)).href,
+        cMapPacked: true, // pdfjs ships .bcmap (packed) CMaps
+      })
+      const task = loading
+
+      // An encrypted PDF is not a failure, it is a question. Without this
+      // handler pdfjs rejects with "No password given" and the viewer showed
+      // that as an error, with no way to answer it.
+      task.onPassword = (updatePassword: (password: string) => void, reason: number) => {
+        if (cancelled) return
+        // 1 = NEED_PASSWORD, 2 = INCORRECT_PASSWORD. Asking a second time means
+        // the last answer was wrong, which the prompt should say rather than
+        // looking as though the click did nothing.
+        setPasswordPrompt({ wrong: reason === 2 })
+        answerRef.current = (password) => {
+          answerRef.current = null
+          setPasswordPrompt(null)
+          if (password === null) {
+            passwordAbandoned = true
+            void task.destroy()
+            return
+          }
+          accepted = password
+          updatePassword(password)
+        }
+      }
+
+      let doc: Awaited<typeof task.promise>
+      try {
+        doc = await task.promise
+      } catch (err) {
+        // The teardown message pdfjs rejects with says nothing; the failed
+        // read that caused it does.
+        throw rangeError ?? err
+      } finally {
+        opening = false
+      }
+      loadedTask = task
+      setDocumentPassword(accepted)
+      markOpen('document')
+      return { doc: doc as unknown as ViewerDoc, kind: 'pdf', email: null, markdown: null }
+    }
+
+    const load = async (): Promise<Loaded> => {
+      if (isLargeDocument(file)) {
+        // Too large to hold — see services/documentSource. Only pdfjs can work
+        // from ranges, so the first megabyte decides whether this opens at all.
+        const initial = await readRange(file, 0, Math.min(RANGE_INITIAL_BYTES, file.size))
+        markOpen('bytes')
+        if (detectDocType(file.name, initial.slice(0, 2048).buffer as ArrayBuffer) !== 'pdf') {
+          throw new Error(t('doc.tooLargeToOpen', { limit: EAGER_DOCUMENT_LIMIT_LABEL }))
+        }
+        return openPdf((pdfjs, fail) => {
+          const transport = new pdfjs.PDFDataRangeTransport(file.size, initial)
+          transport.requestDataRange = (begin: number, end: number) => {
+            readRange(file, begin, end).then(chunk => transport.onDataRange(begin, chunk), fail)
+          }
+          return {
+            range: transport,
+            rangeChunkSize: RANGE_CHUNK_BYTES,
+            disableAutoFetch: true,
+            disableStream: true,
+          }
+        })
+      }
+
+      const buffer = await readAll(file)
       markOpen('bytes')
       const type = detectDocType(file.name, buffer)
       if (type === 'eml') {
@@ -125,73 +268,10 @@ export function usePdfDocument(file: File | null): UsePdfDocumentReturn {
         return { doc: createHwpViewerDoc(await loadHwp(buffer)), kind: 'hwp', email: null, markdown: null }
       }
       // PDF (or unknown → try pdfjs, which errors clearly on non-PDF).
-      // pdfjs is imported HERE rather than at module scope so its ~400 KB chunk
-      // is fetched on first document open instead of during app startup.
-      const [pdfjs, { getPdfWorkerUrl }] = await Promise.all([
-        import('pdfjs-dist'),
-        import('../services/pdfjsWorker'),
-      ])
-      markOpen('engine')
-      if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-        pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl()
-      }
-      const task = pdfjs.getDocument({
-        data: buffer,
-        // Disable CSS @font-face / FontFace API for embedded fonts.
-        // pdfjs's FontFace.loaded path can hang in Electron because the browser
-        // never auto-triggers font loading for canvas-only contexts (no HTML
-        // text elements reference these fonts). With this flag, pdfjs draws
-        // glyphs as canvas paths instead — same visual quality for our PNG output.
-        disableFontFace: true,
-        // Location of pdfjs's WASM image decoders (jbig2 / openjpeg / qcms).
-        // pdfjs 5.x decodes JBIG2, CCITT-Fax and JPEG2000 images in WASM; without
-        // this it silently drops those images. Korean scanner (MRC) PDFs store
-        // their text as CCITT/JBIG2 ImageMasks, so omitting wasmUrl makes the
-        // text vanish and only the background layer renders. Bundled offline at
-        // public/wasm/ (copied by npm run setup:pdfjs); resolved against the
-        // document so it works over http(s) and Electron file://.
-        wasmUrl: new URL('wasm/', new URL('./', document.baseURI)).href,
-        // Glyph sources for fonts the PDF references but does NOT embed.
-        // `disableFontFace: true` above also disables pdfjs's system-font
-        // fallback, so a non-embedded font has no glyph source at all and every
-        // character renders as a .notdef box (▯) — e.g. the account-number /
-        // date / phone fields of a bank passbook printout, while the surrounding
-        // embedded-font body text renders fine. standardFontDataUrl supplies the
-        // substitute font programs; cMapUrl supplies the predefined CJK CMaps a
-        // Korean CID font needs. Bundled offline alongside the wasm decoders.
-        standardFontDataUrl: new URL('standard_fonts/', new URL('./', document.baseURI)).href,
-        cMapUrl: new URL('cmaps/', new URL('./', document.baseURI)).href,
-        cMapPacked: true, // pdfjs ships .bcmap (packed) CMaps
-      })
+      return openPdf(() => ({ data: buffer }))
+    }
 
-      // An encrypted PDF is not a failure, it is a question. Without this
-      // handler pdfjs rejects with "No password given" and the viewer showed
-      // that as an error, with no way to answer it.
-      task.onPassword = (updatePassword: (password: string) => void, reason: number) => {
-        if (cancelled) return
-        // 1 = NEED_PASSWORD, 2 = INCORRECT_PASSWORD. Asking a second time means
-        // the last answer was wrong, which the prompt should say rather than
-        // looking as though the click did nothing.
-        setPasswordPrompt({ wrong: reason === 2 })
-        answerRef.current = (password) => {
-          answerRef.current = null
-          setPasswordPrompt(null)
-          if (password === null) {
-            passwordAbandoned = true
-            void task.destroy()
-            return
-          }
-          accepted = password
-          updatePassword(password)
-        }
-      }
-
-      const doc = await task.promise
-      loadedTask = task
-      setDocumentPassword(accepted)
-      markOpen('document')
-      return { doc: doc as unknown as ViewerDoc, kind: 'pdf', email: null, markdown: null }
-    })
+    load()
       .then(({ doc, kind, email, markdown }) => {
         loadedDoc = doc
         if (cancelled) { release(); return }

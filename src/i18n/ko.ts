@@ -100,6 +100,8 @@ export const ko = {
   'error.loadFailed': '문서를 열 수 없습니다: {error}',
   'doc.loading': '여는 중…',
   'page.loading': '{n}쪽을 그리는 중…',
+  'doc.tooLargeToEdit': '{limit}가 넘는 파일이라 보기 전용으로 열었습니다. 저장·내보내기·페이지 편집은 할 수 없습니다.',
+  'doc.tooLargeToOpen': '{limit}가 넘는 파일은 PDF만 열 수 있습니다.',
   'export.pdfFailed': 'PDF를 저장하지 못했습니다: {error}',
   'print.prepareFailed': '인쇄 준비 실패: {error}',
   'print.failed': '인쇄 실패: {error}',

@@ -20,6 +20,12 @@ export interface TextLayerHighlight {
   itemStart: number
   itemEnd: number
   active: boolean
+  /**
+   * Which match this is in the whole document. Scrolling keys on it, so the
+   * layer brings a match into view once — not again every time the same
+   * highlights are re-applied.
+   */
+  index: number
 }
 
 interface PdfTextLayerProps {
@@ -123,6 +129,16 @@ export function PdfTextLayer({
   // span index. We background the matched spans (text is transparent, so the
   // background shows as a highlight aligned with the glyphs) and scroll the
   // active match into view.
+  //
+  // **Once per match.** This effect re-runs far more often than the active
+  // match changes — whenever the highlight arrays are rebuilt and whenever the
+  // layer re-renders (a zoom) — and it used to scroll on every run. Scrolling
+  // updates the current page, which re-rendered App, which rebuilt the arrays,
+  // which scrolled back: with a match open, a reader could not scroll away from
+  // it at all. Measured before the fix: one wheel gesture that moved the view
+  // 4800 px with find closed moved it 0 px with find open, while
+  // `scrollIntoView` fired 6 times from here.
+  const scrolledToRef = useRef<number | null>(null)
   useEffect(() => {
     const el = ref.current
     if (!el) return
@@ -130,10 +146,15 @@ export function PdfTextLayer({
 
     // Clear any previous highlight classes.
     spans.forEach(s => s.classList.remove('wz-search-hl', 'wz-search-hl-active'))
-    if (!highlights || highlights.length === 0) return
+    if (!highlights || highlights.length === 0) {
+      scrolledToRef.current = null
+      return
+    }
 
     let activeSpan: HTMLElement | null = null
+    let activeIndex: number | null = null
     for (const h of highlights) {
+      if (h.active) activeIndex = h.index
       for (let i = h.itemStart; i <= h.itemEnd && i < spans.length; i++) {
         const span = spans[i]
         if (!span) continue
@@ -144,9 +165,20 @@ export function PdfTextLayer({
         }
       }
     }
-    // Bring the active match into view (the inner PDF scroll container scrolls;
-    // App's scroll-pin guard absorbs any stray window scroll).
-    activeSpan?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    // The active match is on another page now: forget, so coming back to this
+    // one scrolls again.
+    if (activeIndex === null) {
+      scrolledToRef.current = null
+      return
+    }
+    // No span yet means the layer has not rendered; renderNonce re-runs this
+    // once it has, and the scroll happens then.
+    if (activeSpan && scrolledToRef.current !== activeIndex) {
+      scrolledToRef.current = activeIndex
+      // Bring the active match into view (the inner PDF scroll container
+      // scrolls; App's scroll-pin guard absorbs any stray window scroll).
+      activeSpan.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
   }, [highlights, renderNonce])
 
   // ── Editor mode: double-click a span to start editing ─────────────────────
