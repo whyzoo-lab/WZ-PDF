@@ -30,7 +30,7 @@ export function initOcr(): Promise<OcrInstance> {
       //     dynamically-imported module (ort imports its `.mjs` glue), so we load
       //     the runtime from the version-matched jsDelivr CDN instead. Dev needs
       //     internet for OCR; the shipped app is fully offline.
-      const ORT_VERSION = '1.26.0' // keep in sync with the onnxruntime-web dependency
+      const ORT_VERSION = '1.29.0' // keep in sync with the onnxruntime-web dependency
       const wasmPaths = import.meta.env.DEV
         ? `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`
         : `${assetBase}ocr/wasm/`
