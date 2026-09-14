@@ -32,7 +32,10 @@ export function SearchBar({
   const handleChange = (v: string) => {
     setValue(v)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => onChange(v), 220)
+    // Cleared when it fires: a spent timer id left in the ref read as "still
+    // pending", so every Enter after typing re-ran the search from match 1
+    // instead of moving to the next one.
+    debounceRef.current = setTimeout(() => { debounceRef.current = null; onChange(v) }, 220)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -41,6 +44,7 @@ export function SearchBar({
       // Run immediately if a debounce is pending, otherwise navigate.
       if (debounceRef.current) {
         clearTimeout(debounceRef.current)
+        debounceRef.current = null
         onChange(value)
       } else if (e.shiftKey) {
         onPrev()

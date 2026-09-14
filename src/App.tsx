@@ -344,6 +344,15 @@ export default function App() {
     // to the same page), so repeated matches on one page still re-scroll.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setViewMode(v => (v === 'single' ? v : 'single'))
+    // One scroller per navigation. When the match's page is already rendered in
+    // single view, PdfTextLayer has just started a smooth scroll to the match
+    // itself (child effects run before this one). Jumping to the page as well
+    // started a second smooth scroll 50 ms later that cancelled it — traced:
+    // scrollIntoView at 4 ms, scrollBy at 62 ms, view back at the page top. Zoomed
+    // in, 27 of 40 "next" presses left the match off screen. Only a page whose
+    // text layer is not there yet needs the jump; once it mounts, the layer
+    // scrolls to the match.
+    if (document.querySelector(`#pdf-single-container #pdf-page-${activeMatchPage} .wz-search-hl-active`)) return
     setScrollToPage(activeMatchPage)
   }, [activeMatchPage, search.activeIndex])
 

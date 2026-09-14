@@ -62,7 +62,13 @@ export function useSearch(
 
     const pg = await doc.getPage(page)
     const content = await pg.getTextContent()
-    let items = content.items.map(it => (it && typeof it === 'object' && 'str' in it ? (it as Record<string, unknown>).str as string : ''))
+    // String items only. Marked-content markers (`beginMarkedContent` …) have no
+    // `str`, and pdfjs's TextLayer creates no text element for them — counting
+    // them as '' put every later match index past the element it names, so the
+    // highlight and the scroll landed on the wrong words (or on nothing).
+    let items = content.items
+      .filter(it => it && typeof it === 'object' && 'str' in it)
+      .map(it => (it as { str: string }).str)
     // Scanned page (no pdfjs text) → use OCR words if available.
     if (items.join('').trim().length === 0) {
       const ocrItems = ocrProvider?.(page)

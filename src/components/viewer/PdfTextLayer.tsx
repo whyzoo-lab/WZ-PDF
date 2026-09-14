@@ -84,6 +84,11 @@ export function PdfTextLayer({
   // Bumped after each TextLayer render so the highlight effect re-applies
   // once the spans actually exist in the DOM.
   const [renderNonce, setRenderNonce] = useState(0)
+  // One element per text item that has a string, in item order — pdfjs's own
+  // `textDivs`. Search indexes the same items, so this is the only reliable way
+  // from a match to its element: the layer's children also hold <br>s, skip
+  // empty strings, and nest text inside marked-content wrapper spans.
+  const textDivsRef = useRef<HTMLElement[]>([])
 
   // ── Render the pdfjs TextLayer ────────────────────────────────────────────
   useEffect(() => {
@@ -93,6 +98,7 @@ export function PdfTextLayer({
 
     // Clear any previous render (rotation / scale changes re-render).
     el.replaceChildren()
+    textDivsRef.current = []
 
     ;(async () => {
       try {
@@ -114,7 +120,9 @@ export function PdfTextLayer({
           viewport,
         })
         await layer.render()
-        if (!cancelled) setRenderNonce(n => n + 1)
+        if (cancelled) return
+        textDivsRef.current = layer.textDivs
+        setRenderNonce(n => n + 1)
       } catch (err) {
         // Text layer is a nice-to-have — never crash the viewer if it fails.
         console.warn(`[PdfTextLayer] page ${pageNumber} render failed:`, err)
@@ -125,8 +133,9 @@ export function PdfTextLayer({
   }, [pdfDoc, pageNumber, scale, rotation, onTextPresence])
 
   // ── Search highlights ─────────────────────────────────────────────────────
-  // pdfjs renders one <span> per text item, in order, so item index maps to
-  // span index. We background the matched spans (text is transparent, so the
+  // A match's item indices name elements in `textDivsRef` (see there — it is
+  // NOT the nth child span; that assumption put every highlight on the wrong
+  // words). We background the matched elements (text is transparent, so the
   // background shows as a highlight aligned with the glyphs) and scroll the
   // active match into view.
   //
@@ -142,7 +151,7 @@ export function PdfTextLayer({
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const spans = el.querySelectorAll<HTMLElement>(':scope > span')
+    const spans = textDivsRef.current
 
     // Clear any previous highlight classes.
     spans.forEach(s => s.classList.remove('wz-search-hl', 'wz-search-hl-active'))
@@ -157,7 +166,8 @@ export function PdfTextLayer({
       if (h.active) activeIndex = h.index
       for (let i = h.itemStart; i <= h.itemEnd && i < spans.length; i++) {
         const span = spans[i]
-        if (!span) continue
+        // pdfjs never attaches an empty-string item's element.
+        if (!span || !span.isConnected) continue
         span.classList.add('wz-search-hl')
         if (h.active) {
           span.classList.add('wz-search-hl-active')

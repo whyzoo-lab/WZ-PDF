@@ -1288,6 +1288,35 @@ the layer remembers which match index it last scrolled to (`scrolledToRef`,
 programmatic scrolls. Anything that scrolls from an effect needs the same
 "only when the target changes" guard.
 
+That fix exposed three older bugs, which the constant re-scrolling had been
+papering over (measured on `text.pdf`, query "the", 83 matches):
+
+- **A match index is not a child-span index.** pdfjs's TextLayer creates an
+  element for every item that has a `str` but *attaches* only non-empty ones,
+  appends a `<br>` after `hasEOL`, and (with marked content) nests text in
+  wrapper spans. Counting `:scope > span` therefore put every highlight on the
+  wrong words: match 1 of "the" lit "⌨", match 2 "F2", and a page's later
+  matches lit nothing. The layer now keeps pdfjs's own `layer.textDivs`, and
+  `useSearch` indexes string items only — the same set. After: 12/12 active
+  highlights contain the query, 40/40 steps highlighted.
+- **Enter never moved to the next match.** `SearchBar` left the fired debounce
+  timer id in its ref, so every Enter looked like "search still pending" and
+  re-ran the search from match 1. The ref is cleared when the timer fires.
+- **Two scrollers raced for one "next".** `PdfTextLayer` smooth-scrolls to the
+  match, and App's scroll-to-page effect started a second smooth `scrollBy` to
+  the page top 50 ms later, cancelling the first (traced: `scrollIntoView` at
+  4 ms, `scrollBy` at 62 ms). Zoomed in, 27 of 40 presses left the match off
+  screen. App now jumps to the page only when the match is not already rendered
+  in single view; once that page mounts, the layer scrolls to the match. Zoomed:
+  40/40 visible.
+
+Verify search in the app, not only in jsdom: the scroll race and the element
+mapping both depend on real pdfjs output and real layout. The CDP scripts that
+found these drove the real find bar (`Input.insertText`, real clicks on ↓) and
+checked that `.wz-search-hl-active` both contains the query and is inside the
+scroll container's viewport. Note the counter shows `결과 없음` for the ~220 ms
+before the debounced search runs — read it after it settles.
+
 ### Annotation coordinates
 Everything stored and exported uses the `effectiveZoom = PDF_RENDER_SCALE * zoom` divisor. If you pass plain `zoom` instead of `effectiveZoom` to `toStoredCoords`, annotations will be placed at the wrong position relative to the PDF.
 
