@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readdir, rename, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdtemp, readdir, rename, rm, stat, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -84,6 +84,21 @@ export interface ConvertResult {
  * both "next to the input" and "somewhere specific", and means a failed run
  * never leaves a half-written file at the destination.
  */
+/**
+ * Rename, falling back to copy + delete: the scratch folder is on the system
+ * drive, and `rename` cannot cross to another one (EXDEV) — an output on D:
+ * failed after the conversion had already succeeded.
+ */
+async function moveFile(from: string, to: string): Promise<void> {
+  try {
+    await rename(from, to)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+    await copyFile(from, to)
+    await unlink(from)
+  }
+}
+
 export async function convertHwpToPdf(
   inputPath: string,
   outputPath: string,
@@ -98,7 +113,7 @@ export async function convertHwpToPdf(
       const detail = (run.stderr || run.stdout).trim().split('\n').slice(-3).join(' ')
       throw new Error(`conversion failed${detail ? `: ${detail}` : ` (exit ${run.code})`}`)
     }
-    await rename(join(scratch, produced[0]), outputPath)
+    await moveFile(join(scratch, produced[0]), outputPath)
     return { outputPath, bytes: (await stat(outputPath)).size }
   } finally {
     await rm(scratch, { recursive: true, force: true }).catch(() => undefined)

@@ -62,6 +62,10 @@ Claude Desktop에 위 설정을 추가한 뒤 채팅에서:
 > 📌 "D:/docs/manual.pdf에서 'AI 윤리'가 언급된 곳 다 찾아"
 > → `pdf_search({ query: "AI 윤리" })`
 
+> ⚠️ 저장하는 도구는 `.pdf`로만 쓰고, 호출에 `overwrite: true`가 없으면 이미 있는
+> 파일을 덮어쓰지 않습니다. 에이전트가 PDF에서 읽은 글은 믿을 수 없는 입력이라,
+> 그 글에 속아 기존 문서를 덮어쓰는 일이 없어야 하기 때문입니다.
+
 ## 좌표 시스템
 
 `pdf-lib`은 **왼쪽 아래 원점** (PDF 표준). WZ PDF 앱의 좌표(왼쪽 위 원점)와 반대예요. 도장이나 텍스트 오버레이의 `y` 좌표를 지정할 때 주의:
@@ -108,7 +112,8 @@ MCP_HOST=0.0.0.0 MCP_SANDBOX_DIR=/trusted/workspace MCP_AUTH_TOKEN=replace-with-
 Installing WZ PDF puts a ready-to-run server at:
 
 ```
-<install folder>esources\mcp\wz-pdf-mcp.mjs
+<install folder>
+esources\mcp\wz-pdf-mcp.mjs
 ```
 
 **No Node.js install is required.** The app's own binary doubles as the Node

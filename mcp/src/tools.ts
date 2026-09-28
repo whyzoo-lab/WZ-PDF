@@ -73,19 +73,30 @@ async function readInputFile(p: string, maxBytes = MAX_DOCUMENT_BYTES): Promise<
   return readFile(canonical)
 }
 
-/** Validate an output and its real parent to prevent sandbox symlink escapes. */
-async function resolveOutputPath(p: string): Promise<string> {
+/**
+ * Validate an output and its real parent to prevent sandbox symlink escapes.
+ *
+ * Outputs must be `.pdf`, and an existing file is only replaced when the caller
+ * says so. Without the sandbox (the stdio server the installer ships) any path
+ * was writable: text an agent read out of a hostile PDF could steer it into
+ * "saving" over a user's thesis.docx, destroying it — the same
+ * never-overwrite-silently rule the console converters keep with `-f`.
+ */
+async function resolveOutputPath(p: string, overwrite = false): Promise<string> {
+  if (extname(p).toLowerCase() !== '.pdf') throw new Error(`output must be a .pdf file: ${p}`)
   const candidate = lexicalSafePath(p)
+  let canonical: string
   try {
-    const canonical = await realpath(candidate)
-    assertInsideSandbox(canonical, p)
-    return canonical
+    canonical = await realpath(candidate)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     const parent = await realpath(dirname(candidate))
     assertInsideSandbox(parent, p)
     return resolve(parent, basename(candidate))
   }
+  assertInsideSandbox(canonical, p)
+  if (!overwrite) throw new Error(`output already exists (pass overwrite: true to replace it): ${p}`)
+  return canonical
 }
 
 // pdfjs needs `workerSrc` pointed at the legacy worker file. In Node it's not
@@ -124,9 +135,9 @@ async function loadPdf(file: string): Promise<{ doc: PDFDocument; bytes: Uint8Ar
   return { doc, bytes }
 }
 
-async function savePdf(doc: PDFDocument, out: string): Promise<string> {
+async function savePdf(doc: PDFDocument, out: string, overwrite?: boolean): Promise<string> {
+  const abs = await resolveOutputPath(out, overwrite === true)
   const bytes = await doc.save()
-  const abs = await resolveOutputPath(out)
   await writeFile(abs, bytes)
   return abs
 }
@@ -252,6 +263,7 @@ async function pdfSearch(args: {
 async function pdfAddWatermark(args: {
   file: string
   output: string
+  overwrite?: boolean
   text: string
   fontSize?: number
   color?: string
@@ -279,7 +291,7 @@ async function pdfAddWatermark(args: {
       rotate: degrees(rot),
     })
   }
-  const path = await savePdf(doc, args.output)
+  const path = await savePdf(doc, args.output, args.overwrite)
   return `Watermarked ${doc.getPageCount()} page(s) → ${path}`
 }
 
@@ -288,6 +300,7 @@ async function pdfAddWatermark(args: {
 async function pdfAddStamp(args: {
   file: string
   output: string
+  overwrite?: boolean
   image: string // path to PNG/JPG
   page: number
   x: number // PDF points from left
@@ -317,7 +330,7 @@ async function pdfAddStamp(args: {
     height: args.height,
     rotate: degrees(args.rotation ?? 0),
   })
-  const path = await savePdf(doc, args.output)
+  const path = await savePdf(doc, args.output, args.overwrite)
   return `Stamped page ${args.page} → ${path}`
 }
 
@@ -326,6 +339,7 @@ async function pdfAddStamp(args: {
 async function pdfAddTextOverlay(args: {
   file: string
   output: string
+  overwrite?: boolean
   page: number
   x: number
   y: number // pdf-lib bottom-up origin
@@ -358,7 +372,7 @@ async function pdfAddTextOverlay(args: {
     font,
     color: rgb(fr, fg, fb),
   })
-  const path = await savePdf(doc, args.output)
+  const path = await savePdf(doc, args.output, args.overwrite)
   return `Text overlay added on page ${args.page} → ${path}`
 }
 
@@ -367,6 +381,7 @@ async function pdfAddTextOverlay(args: {
 async function pdfSplit(args: {
   file: string
   outputDir: string
+  overwrite?: boolean
   ranges?: string // "1-3,5,10-12" — if omitted, splits each page into its own file
 }): Promise<string> {
   const { doc } = await loadPdf(args.file)
@@ -409,7 +424,7 @@ async function pdfSplit(args: {
     )
     copied.forEach(p => out.addPage(p))
     const bytes = await out.save()
-    const path = await resolveOutputPath(`${args.outputDir}/${r.name}`)
+    const path = await resolveOutputPath(`${args.outputDir}/${r.name}`, args.overwrite === true)
     await writeFile(path, bytes)
     written.push(path)
   }
@@ -418,7 +433,7 @@ async function pdfSplit(args: {
 
 // ── Tool: pdf_merge ─────────────────────────────────────────────────────────
 
-async function pdfMerge(args: { files: string[]; output: string }): Promise<string> {
+async function pdfMerge(args: { files: string[]; output: string; overwrite?: boolean }): Promise<string> {
   if (!args.files?.length) throw new Error('files[] is empty')
   const out = await PDFDocument.create()
   for (const f of args.files) {
@@ -427,7 +442,7 @@ async function pdfMerge(args: { files: string[]; output: string }): Promise<stri
     const copied = await out.copyPages(src, src.getPageIndices())
     copied.forEach(p => out.addPage(p))
   }
-  const path = await savePdf(out, args.output)
+  const path = await savePdf(out, args.output, args.overwrite)
   return `Merged ${args.files.length} file(s) (${out.getPageCount()} pages) → ${path}`
 }
 
@@ -436,6 +451,7 @@ async function pdfMerge(args: { files: string[]; output: string }): Promise<stri
 async function pdfDeletePages(args: {
   file: string
   output: string
+  overwrite?: boolean
   pages: number[]
 }): Promise<string> {
   const { doc } = await loadPdf(args.file)
@@ -444,7 +460,7 @@ async function pdfDeletePages(args: {
   for (const p of sorted) {
     if (p >= 1 && p <= doc.getPageCount()) doc.removePage(p - 1)
   }
-  const path = await savePdf(doc, args.output)
+  const path = await savePdf(doc, args.output, args.overwrite)
   return `Deleted ${args.pages.length} page(s) → ${path} (${doc.getPageCount()} remaining)`
 }
 
@@ -453,6 +469,7 @@ async function pdfDeletePages(args: {
 async function pdfReorderPages(args: {
   file: string
   output: string
+  overwrite?: boolean
   newOrder: number[]
 }): Promise<string> {
   const { doc } = await loadPdf(args.file)
@@ -466,7 +483,7 @@ async function pdfReorderPages(args: {
     args.newOrder.map(p => p - 1),
   )
   copied.forEach(p => fresh.addPage(p))
-  const path = await savePdf(fresh, args.output)
+  const path = await savePdf(fresh, args.output, args.overwrite)
   return `Reordered ${total} pages → ${path}`
 }
 
@@ -475,6 +492,7 @@ async function pdfReorderPages(args: {
 async function pdfInsertBlank(args: {
   file: string
   output: string
+  overwrite?: boolean
   afterPage: number // 0 to prepend
   width?: number // PDF points; defaults to A4
   height?: number
@@ -483,7 +501,7 @@ async function pdfInsertBlank(args: {
   const w = args.width ?? 595
   const h = args.height ?? 842
   doc.insertPage(args.afterPage, [w, h])
-  const path = await savePdf(doc, args.output)
+  const path = await savePdf(doc, args.output, args.overwrite)
   return `Inserted blank page after position ${args.afterPage} → ${path}`
 }
 
@@ -706,11 +724,22 @@ async function hwpToPdf(args: Record<string, unknown>): Promise<string> {
   const requested = args.output
     ? String(args.output)
     : join(dirname(input), pdfNameFor(input))
-  const output = await resolveOutputPath(requested)
+  const output = await resolveOutputPath(requested, args.overwrite === true)
 
   const result = await convertHwpToPdf(input, output)
   return `Converted ${basename(input)} -> ${result.outputPath} `
     + `(${Math.round(result.bytes / 1024)} KB, selectable text)`
+}
+
+// Every tool that writes gets the same opt-in to replace an existing file.
+for (const tool of tools) {
+  const props = tool.inputSchema.properties as Record<string, unknown>
+  if ('output' in props || 'outputDir' in props) {
+    props.overwrite = {
+      type: 'boolean',
+      description: 'Replace the output if it already exists. Default false: an existing file is never overwritten.',
+    }
+  }
 }
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<string>
