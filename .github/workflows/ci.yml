@@ -20,11 +20,16 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      # The MCP server's tests run with everyone else's (vitest picks up
+      # mcp/src/*.test.ts), and they import its own dependencies.
+      - name: Install MCP dependencies
+        run: npm ci --prefix mcp
 
       - name: Lint
         run: npm run lint
@@ -48,7 +53,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: mcp/package-lock.json
 
