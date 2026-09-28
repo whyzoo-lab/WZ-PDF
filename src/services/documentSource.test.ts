@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
-  EAGER_DOCUMENT_MAX_BYTES, isLargeDocument, isRangedFile, readAll, readRange,
+  EAGER_DOCUMENT_MAX_BYTES, isLargeDocument, isRangedFile, pathFile, readAll, readRange,
   type RangedFile,
 } from './documentSource'
 
@@ -45,5 +45,28 @@ describe('reading a range', () => {
   it('tells a File from a ranged file', () => {
     expect(isRangedFile(new File([], 'a.pdf'))).toBe(false)
     expect(isRangedFile(ranged(1))).toBe(true)
+  })
+})
+
+describe('pathFile', () => {
+  it('splits a range larger than one IPC call may carry, and reassembles it', async () => {
+    const MB = 1024 * 1024
+    const calls: [number, number][] = []
+    const readFileRange = vi.fn(async (_p: string, offset: number, length: number) => {
+      calls.push([offset, length])
+      const chunk = new Uint8Array(length)
+      chunk[0] = offset / MB // mark where each piece came from
+      return chunk.buffer
+    })
+    vi.stubGlobal('electronAPI', { readFileRange })
+    try {
+      const file = pathFile('C:/big.pdf', 200 * MB)
+      const bytes = await file.readRange(10 * MB, 150 * MB)
+      expect(bytes.length).toBe(140 * MB)
+      expect(calls).toEqual([[10 * MB, 64 * MB], [74 * MB, 64 * MB], [138 * MB, 12 * MB]])
+      expect([bytes[0], bytes[64 * MB], bytes[128 * MB]]).toEqual([10, 74, 138])
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

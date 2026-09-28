@@ -17,6 +17,13 @@ export interface OcrPageResult {
   durationMs: number
 }
 
+/** The words of every page whose recognition finished, by page. */
+export function doneOcrWords(results: ReadonlyMap<number, OcrPageResult> | undefined): Map<number, OcrWord[]> {
+  const out = new Map<number, OcrWord[]>()
+  for (const [page, r] of results ?? []) if (r.status === 'done') out.set(page, r.words)
+  return out
+}
+
 /** Normalized single line from the SDK: box = 4 [x,y] points in CANVAS pixels. */
 export interface RawOcrLine {
   box: [number, number][]

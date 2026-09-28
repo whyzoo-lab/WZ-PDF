@@ -1,3 +1,9 @@
+interface RecentFileEntry {
+  path: string
+  /** When it was last opened, ms since the epoch. */
+  openedAt: number
+}
+
 interface Window {
   electronAPI?: {
     /** Called when the OS asks the app to open a file (CLI / file association). */
@@ -17,6 +23,15 @@ interface Window {
 
     /** One byte range of a local document — how a file too large to hold is paged in. */
     readFileRange: (filePath: string, offset: number, length: number) => Promise<ArrayBuffer>
+
+    /** Path of a picked or dropped file; empty when it did not come from disk. */
+    pathForFile?: (file: File) => string
+
+    /** Recent documents for the start screen (paths and times only). */
+    recentFiles?: () => Promise<RecentFileEntry[]>
+    addRecentFile?: (filePath: string) => Promise<RecentFileEntry[]>
+    removeRecentFile?: (filePath: string) => Promise<RecentFileEntry[]>
+    clearRecentFiles?: () => Promise<RecentFileEntry[]>
 
     /** Download a PDF from an http(s) URL via the main process (bypasses CORS). */
     fetchUrl: (url: string) => Promise<ArrayBuffer>

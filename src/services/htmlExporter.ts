@@ -7,18 +7,32 @@
  */
 
 import { stripDocExt } from '../utils/download'
+import { t } from '../i18n'
+
+import { HTML_EXPORT_MAX_BYTES } from '../utils/constants'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Convert ArrayBuffer → base64 string (chunked to avoid call-stack overflow). */
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
+/**
+ * Base64 in pieces. Each piece encodes a whole multiple of 3 bytes, so the
+ * pieces join into exactly the base64 of the whole — without ever holding the
+ * whole file as one binary string plus its base64 plus a JSON copy plus the
+ * page around it, which was four full copies at once.
+ */
+function base64Pieces(buffer: ArrayBuffer): string[] {
   const bytes = new Uint8Array(buffer)
-  let binary = ''
-  const CHUNK = 32_768
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)))
+  const PIECE = 3 * 256 * 1024 // 768 KB of input per piece
+  const CHUNK = 32_768         // fromCharCode argument limit
+  const pieces: string[] = []
+  for (let at = 0; at < bytes.length; at += PIECE) {
+    const piece = bytes.subarray(at, Math.min(at + PIECE, bytes.length))
+    let binary = ''
+    for (let i = 0; i < piece.length; i += CHUNK) {
+      binary += String.fromCharCode(...piece.subarray(i, Math.min(i + CHUNK, piece.length)))
+    }
+    pieces.push(btoa(binary))
   }
-  return btoa(binary)
+  return pieces
 }
 
 function escapeHtml(str: string): string {
@@ -31,11 +45,12 @@ function escapeHtml(str: string): string {
 
 // ── HTML template ────────────────────────────────────────────────────────────
 
-function buildHtml(title: string, base64Pdf: string): string {
+/** The page, split around its payload: `[before, after]`. */
+function buildHtml(title: string): [string, string] {
   // The PDF is decoded from base64 at runtime → Blob URL → iframe src.
   // This avoids the "data:application/pdf" URL scheme which some browsers
   // block for iframes due to CSP / mixed-content policies.
-  return `<!DOCTYPE html>
+  const before = `<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -59,7 +74,8 @@ function buildHtml(title: string, base64Pdf: string): string {
 </div>
 <script>
 (function(){
-  var d=${JSON.stringify(base64Pdf)};
+  var d="`
+  const after = `";
   try{
     var s=atob(d),a=new Uint8Array(s.length);
     for(var i=0;i<s.length;i++)a[i]=s.charCodeAt(i);
@@ -81,6 +97,7 @@ function buildHtml(title: string, base64Pdf: string): string {
 </script>
 </body>
 </html>`
+  return [before, after]
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -91,9 +108,13 @@ function buildHtml(title: string, base64Pdf: string): string {
  * @param filename   Source filename — used to derive the .html download name
  */
 export function buildHtmlExport(fileBytes: ArrayBuffer, filename: string): { blob: Blob; filename: string } {
-  const title   = stripDocExt(filename)
-  const base64  = arrayBufferToBase64(fileBytes)
-  const html    = buildHtml(title, base64)
-  const blob    = new Blob([html], { type: 'text/html;charset=utf-8' })
+  if (fileBytes.byteLength > HTML_EXPORT_MAX_BYTES) {
+    throw new Error(t('export.htmlTooLarge', { limit: `${HTML_EXPORT_MAX_BYTES / (1024 * 1024)}MB` }))
+  }
+  const title = stripDocExt(filename)
+  const [before, after] = buildHtml(title)
+  // Base64 contains no quote or backslash, so it goes into the string literal
+  // as is — no JSON.stringify copy of the whole payload.
+  const blob = new Blob([before, ...base64Pieces(fileBytes), after], { type: 'text/html;charset=utf-8' })
   return { blob, filename: `${title}.html` }
 }

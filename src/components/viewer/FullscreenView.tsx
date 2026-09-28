@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { ViewerDoc, DocKind } from '../../types/viewerDoc'
 import { PdfPage } from './PdfPage'
+import { t } from '../../i18n'
 import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
 import { PresentationOverlay } from './PresentationOverlay'
 import { PresentationHud } from './PresentationHud'
@@ -18,6 +19,8 @@ interface FullscreenViewProps {
   selectedId: string | null
   /** 'single' shows one page; 'spread' shows two pages side-by-side. */
   layout: 'single' | 'spread'
+  /** Page to open on. Defaults to the first. */
+  startPage?: number
   rotation?: number
   /** Active editing/drawing mode (e.g. 'pen', 'rectangle'). Defaults to 'select'. */
   activeMode?: ActiveMode
@@ -37,6 +40,7 @@ export function FullscreenView({
   annotations,
   selectedId,
   layout,
+  startPage = 1,
   rotation = 0,
   activeMode = 'select',
   onAnnotationSelect,
@@ -45,7 +49,12 @@ export function FullscreenView({
   onExit,
   onCurrentPageChange,
 }: FullscreenViewProps) {
-  const [currentPage, setCurrentPage] = useState(1)
+  // Spreads step through odd pages (1–2, 3–4, …), so a start on an even page
+  // opens the spread that contains it rather than a pairing seen nowhere else.
+  const [currentPage, setCurrentPage] = useState(() => {
+    const page = Math.min(Math.max(1, Math.floor(startPage)), numPages || 1)
+    return layout === 'spread' && page % 2 === 0 ? page - 1 : page
+  })
   const [showOverlay, setShowOverlay] = useState(true)
   const [tool, setTool] = useState<PresentToolState>(DEFAULT_TOOL_STATE)
   const [strokes, setStrokes] = useState<PresentStroke[]>([])
@@ -137,8 +146,8 @@ export function FullscreenView({
   }, [currentPage, resetOverlay])
 
   const overlayText = rightPage !== null
-    ? `Pages ${currentPage}–${rightPage} / ${numPages}`
-    : `Page ${currentPage} / ${numPages}`
+    ? t('present.pages', { a: currentPage, b: rightPage, total: numPages })
+    : t('present.page', { n: currentPage, total: numPages })
 
   const pageProps = {
     pdfDoc,

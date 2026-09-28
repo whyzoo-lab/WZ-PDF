@@ -17,6 +17,7 @@
 //                      URLs by the parser, so normal mail still looks right.
 
 import DOMPurify from 'dompurify'
+import { openLinksOutside } from './links'
 
 export interface RenderedEmailHtml {
   html: string
@@ -121,10 +122,7 @@ export function renderEmailHtml(rawHtml: string, showRemoteImages = false): Rend
   // Links leave the app rather than navigating it. The main process already
   // refuses in-app navigation and hands http(s) to the OS browser; this makes
   // the intent explicit and stops the opened page reaching back via window.opener.
-  for (const a of Array.from(doc.querySelectorAll('a[href]'))) {
-    a.setAttribute('target', '_blank')
-    a.setAttribute('rel', 'noopener noreferrer')
-  }
+  openLinksOutside(doc)
 
   return { html: doc.body.innerHTML, blockedImages }
 }

@@ -1,8 +1,8 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 import { LANG } from '../i18n'
 import type { ViewMode, AppMode } from '../types/viewModes'
 import type { ViewerDoc } from '../types/viewerDoc'
-import type { Annotation, ActiveMode } from '../types/annotation'
+import { isVolatile, type Annotation, type ActiveMode } from '../types/annotation'
 
 interface GlobalShortcutsDeps {
   pdfDoc: ViewerDoc | null
@@ -14,10 +14,12 @@ interface GlobalShortcutsDeps {
   activeMode: ActiveMode
   annotations: Annotation[]
   selectedId: string | null
+  /** Page in view — where Alt+F5 starts the presentation. */
+  currentPage: number
   setViewMode: (mode: ViewMode) => void
   setShowSearch: (show: boolean) => void
-  setFullscreenLayout: (layout: 'single' | 'spread') => void
-  prevViewModeRef: RefObject<ViewMode>
+  /** Enter presentation mode, opening on `startPage`. Shared with the toolbar. */
+  onEnterFullscreen: (startPage: number) => void
   fileInputRef: RefObject<HTMLInputElement | null>
   removeAnnotation: (id: string) => void
   clearMarkups: () => void
@@ -32,6 +34,11 @@ interface GlobalShortcutsDeps {
   onSpeechPrevious?: () => void
   onSpeechNext?: () => void
   onSpeechPlayPause?: () => void
+  /** Undo / redo annotation and page edits. Absent where there is no history. */
+  onUndo?: () => void
+  onRedo?: () => void
+  /** Ctrl+S — save the open document. Absent where there is nothing to save. */
+  onSave?: () => void
 }
 
 /**
@@ -50,26 +57,37 @@ const DOUBLE_PRESS_MS = 350
  * `window.addEventListener` calls — and, crucially, so `stopImmediatePropagation`
  * on the ESC two-step actually blocks FullscreenView's own window listener.
  *
- * Shortcuts: F1 help, Ctrl+P print, Ctrl+F find, F2 open, F5 fullscreen,
+ * Shortcuts: F1 help, Ctrl+P print, Ctrl+F find, F2 open, F5 fullscreen from
+ * the first page (Alt+F5 from the page in view),
  * Delete/Backspace remove selection, ESC (two-step: clear markups → exit
  * fullscreen), 1 pen, 2 rectangle, R OCR this page (RR the whole document),
  * S read aloud, and while reading Alt+← / Alt+→ / Alt+Space to move through it.
  */
-export function useGlobalShortcuts({
-  pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
-  setViewMode, setShowSearch, setFullscreenLayout,
-  prevViewModeRef, fileInputRef,
-  removeAnnotation, clearMarkups, setActiveMode,
-  onRunOcr, onRunOcrAll, onToggleSpeech,
-  onSpeechPrevious, onSpeechNext, onSpeechPlayPause,
-}: GlobalShortcutsDeps) {
+export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
   // Set while waiting to see whether an `r` becomes `rr`.
   const ocrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => () => { if (ocrTimer.current) clearTimeout(ocrTimer.current) }, [])
 
+  // The listener is registered ONCE and reads the latest values from here.
+  // It used to be an effect keyed on the handler's inputs — which include
+  // callbacks App rebuilds on every render and the page in view, which changes
+  // on every scroll — so the capture-phase keydown listener was torn down and
+  // re-added constantly, and the deps it did list were incomplete (hidden
+  // behind an exhaustive-deps disable). Updated in a layout effect so it is
+  // current before any key event can arrive.
+  const latest = useRef(deps)
+  useLayoutEffect(() => { latest.current = deps })
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      const {
+        pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId, currentPage,
+        setViewMode, setShowSearch, onEnterFullscreen, fileInputRef,
+        removeAnnotation, clearMarkups, setActiveMode,
+        onRunOcr, onRunOcrAll, onToggleSpeech,
+        onSpeechPrevious, onSpeechNext, onSpeechPlayPause, onUndo, onRedo, onSave,
+      } = latest.current
       const tgt = e.target as HTMLElement | null
       const inInput = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)
 
@@ -100,18 +118,30 @@ export function useGlobalShortcuts({
         setShowSearch(true)
         return
       }
+      // Ctrl+S saves — also from inside the Markdown editor's text area, which
+      // is where a writer's hand goes for it. The toolbar button says so.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's' && onSave && viewMode !== 'fullscreen') {
+        e.preventDefault()
+        onSave()
+        return
+      }
+      // Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes — not while typing, where
+      // the field's own undo applies, and not while presenting.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !inInput && viewMode !== 'fullscreen') {
+        const k = e.key.toLowerCase()
+        if (k === 'z' && !e.shiftKey && onUndo) { e.preventDefault(); onUndo(); return }
+        if (((k === 'z' && e.shiftKey) || k === 'y') && onRedo) { e.preventDefault(); onRedo(); return }
+      }
       if (e.key === 'F2' && viewMode !== 'fullscreen') {
         e.preventDefault()
         fileInputRef.current?.click()
         return
       }
       if (e.key === 'F5' && (pdfDoc || flowDoc) && viewMode !== 'fullscreen') {
-        // Inline the fullscreen-entry logic (it's also in handleViewModeChange
-        // but that's declared further down — avoid the temporal-dead-zone issue).
         e.preventDefault()
-        prevViewModeRef.current = viewMode
-        setFullscreenLayout(viewMode === 'spread' ? 'spread' : 'single')
-        setViewMode('fullscreen')
+        // F5 starts from the beginning, Alt+F5 from where the reader is — a
+        // presenter who stopped on slide 12 to take a question resumes there.
+        onEnterFullscreen(e.altKey ? currentPage : 1)
         return
       }
       // ── Moving through what is being read ────────────────────────────────
@@ -189,7 +219,7 @@ export function useGlobalShortcuts({
       // auto-exiting fullscreen on ESC, giving this handler first crack.
       if (e.key === 'Escape' && !inPresentation) {
         const drawingMode = activeMode === 'pen' || activeMode === 'rectangle'
-        const hasMarkups  = annotations.some(a => a.type === 'pen' || a.type === 'rectangle')
+        const hasMarkups  = annotations.some(isVolatile)
         if (drawingMode || hasMarkups) {
           e.preventDefault()
           e.stopImmediatePropagation()
@@ -213,8 +243,5 @@ export function useGlobalShortcuts({
     // listener, so stopImmediatePropagation() above actually blocks it.
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-    // Setters/refs are stable; re-run only on the reactive values the handler
-    // reads. Exact dep list preserved from the original inline effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, removeAnnotation, appMode, viewMode, pdfDoc, flowDoc, activeMode, annotations, clearMarkups, setActiveMode, onRunOcr, onRunOcrAll, onToggleSpeech])
+  }, [])
 }

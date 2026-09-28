@@ -25,6 +25,8 @@ interface PdfViewerProps {
   viewMode: ViewMode
   /** Layout to use when entering fullscreen: mirrors the pre-fullscreen view mode. */
   fullscreenLayout: 'single' | 'spread'
+  /** First page shown when fullscreen opens (Alt+F5 passes the page in view). */
+  fullscreenStartPage?: number
   pendingStamp: { src: string; presetId?: string } | null
   pendingSignature: string | null
   onAnnotationSelect: (id: string | null) => void
@@ -45,7 +47,7 @@ interface PdfViewerProps {
   onRegionCopy?: (text: string) => void
 }
 
-export function PdfViewer({
+function PdfViewerImpl({
   pdfDoc,
   numPages,
   zoom,
@@ -57,6 +59,7 @@ export function PdfViewer({
   activeMode,
   viewMode,
   fullscreenLayout,
+  fullscreenStartPage,
   pendingStamp,
   pendingSignature,
   onAnnotationSelect,
@@ -72,16 +75,30 @@ export function PdfViewer({
   ocrResults,
 }: PdfViewerProps) {
   // Group search hits by page → highlight descriptors, marking the active one.
-  const highlightsByPage = React.useMemo(() => {
+  //
+  // Built in two steps so moving to the next match re-renders only the pages
+  // it touches. Every page keeps the same array (so its memoised page skips
+  // the render) except the one holding the active match; the page that held
+  // it before gets its plain array back. Rebuilding every array on each Enter
+  // re-rendered every page with a match — its Konva stage and text layer.
+  const matches = search?.matches
+  const activeIndex = search?.activeIndex ?? -1
+  const plainByPage = React.useMemo(() => {
     const map = new Map<number, TextLayerHighlight[]>()
-    if (!search) return map
-    search.matches.forEach((m, i) => {
+    matches?.forEach((m, i) => {
       const arr = map.get(m.page) ?? []
-      arr.push({ itemStart: m.itemStart, itemEnd: m.itemEnd, active: i === search.activeIndex, index: i })
+      arr.push({ itemStart: m.itemStart, itemEnd: m.itemEnd, active: false, index: i })
       map.set(m.page, arr)
     })
     return map
-  }, [search])
+  }, [matches])
+  const activePage = matches?.[activeIndex]?.page
+  const highlightsByPage = React.useMemo(() => {
+    if (activePage === undefined) return plainByPage
+    const map = new Map(plainByPage)
+    map.set(activePage, (plainByPage.get(activePage) ?? []).map(h => (h.index === activeIndex ? { ...h, active: true } : h)))
+    return map
+  }, [plainByPage, activePage, activeIndex])
 
   const sharedAnnotationProps = {
     pdfDoc,
@@ -170,6 +187,7 @@ export function PdfViewer({
         annotations={annotations}
         selectedId={selectedId}
         layout={fullscreenLayout}
+        startPage={fullscreenStartPage}
         rotation={rotation}
         activeMode={activeMode}
         onAnnotationSelect={onAnnotationSelect}
@@ -199,3 +217,11 @@ export function PdfViewer({
     </div>
   )
 }
+
+/**
+ * Memoised: every prop App passes is already stable (memoised callbacks, the
+ * memoised search), so this skips re-rendering the whole page list — one
+ * wrapper per page — on everything in App that has nothing to do with it:
+ * the page in view changing, read-aloud ticking, toasts, OCR progress.
+ */
+export const PdfViewer = React.memo(PdfViewerImpl)

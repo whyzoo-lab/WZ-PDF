@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import { TextLayer } from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { ViewerDoc } from '../../types/viewerDoc'
@@ -89,16 +89,27 @@ export function PdfTextLayer({
   // from a match to its element: the layer's children also hold <br>s, skip
   // empty strings, and nest text inside marked-content wrapper spans.
   const textDivsRef = useRef<HTMLElement[]>([])
+  // The rendered layer and its page, kept so a zoom can re-lay it out.
+  const layerRef = useRef<{ layer: TextLayer; page: { getViewport: (o: { scale: number; rotation: number }) => unknown } } | null>(null)
+  // Read by the render effect without making it depend on the zoom.
+  const scaleRef = useRef(scale)
+  useLayoutEffect(() => { scaleRef.current = scale })
 
   // ── Render the pdfjs TextLayer ────────────────────────────────────────────
+  // Only when the page itself changes (or its rotation). A zoom does NOT
+  // rebuild it: that used to throw the spans away, fetch the page's text from
+  // the worker again and lay it all out anew — for every mounted page, on
+  // every zoom step, and the page on screen queued behind all of them. It also
+  // dropped the reader's text selection. See the update effect below.
   useEffect(() => {
     let cancelled = false
     const el = ref.current
     if (!el) return
 
-    // Clear any previous render (rotation / scale changes re-render).
+    // Clear any previous render (a new page or rotation re-renders).
     el.replaceChildren()
     textDivsRef.current = []
+    layerRef.current = null
 
     ;(async () => {
       try {
@@ -112,7 +123,7 @@ export function PdfTextLayer({
         onTextPresence?.(textContent.items.some(
           item => 'str' in item && item.str.trim().length > 0,
         ))
-        const viewport = page.getViewport({ scale, rotation })
+        const viewport = page.getViewport({ scale: scaleRef.current, rotation })
 
         const layer = new TextLayer({
           textContentSource: textContent,
@@ -122,6 +133,7 @@ export function PdfTextLayer({
         await layer.render()
         if (cancelled) return
         textDivsRef.current = layer.textDivs
+        layerRef.current = { layer, page }
         setRenderNonce(n => n + 1)
       } catch (err) {
         // Text layer is a nice-to-have — never crash the viewer if it fails.
@@ -130,7 +142,17 @@ export function PdfTextLayer({
     })()
 
     return () => { cancelled = true }
-  }, [pdfDoc, pageNumber, scale, rotation, onTextPresence])
+  }, [pdfDoc, pageNumber, rotation, onTextPresence])
+
+  // ── Zoom: re-lay out the spans that are already there ─────────────────────
+  // Position and font size follow the zoom through CSS (percentages and
+  // --total-scale-factor); `update` recomputes the one thing that does not,
+  // each span's horizontal stretch to match its glyphs.
+  useEffect(() => {
+    const current = layerRef.current
+    if (!current) return
+    current.layer.update({ viewport: current.page.getViewport({ scale, rotation }) as never })
+  }, [scale, rotation])
 
   // ── Search highlights ─────────────────────────────────────────────────────
   // A match's item indices name elements in `textDivsRef` (see there — it is

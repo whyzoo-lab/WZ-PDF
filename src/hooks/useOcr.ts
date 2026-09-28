@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { ViewerDoc } from '../types/viewerDoc'
-import { getOrRenderPage } from './usePdfPage'
+import { getOrRenderPage } from '../services/pageRender'
 import { lineToWord } from '../utils/ocrCoords'
 import { computeOcrScale, ocrMaxDimension } from '../utils/ocrInput'
 import type { OcrPageResult } from '../types/ocr'

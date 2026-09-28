@@ -108,18 +108,22 @@ export function useSearch(
       } catch {
         continue
       }
+      // Map each [idx, end) char range → item index range. Matches come in
+      // increasing order, so the two cursors only ever move forward: one pass
+      // over the items per page. Scanning every item for every match made a
+      // one-letter query on a dense document hundreds of thousands of steps
+      // per page, with the main thread never yielding once pages were cached.
+      const { offsets } = pt
+      let itemStart = 0
+      let itemEnd = 0
       let from = 0
       while (true) {
         const idx = pt.concat.indexOf(needle, from)
         if (idx < 0) break
         const end = idx + needle.length
-        // Map [idx, end) char range → item index range.
-        let itemStart = 0
-        let itemEnd = 0
-        for (let i = 0; i < pt.offsets.length; i++) {
-          if (pt.offsets[i] <= idx) itemStart = i
-          if (pt.offsets[i] < end) itemEnd = i
-        }
+        while (itemStart + 1 < offsets.length && offsets[itemStart + 1] <= idx) itemStart++
+        if (itemEnd < itemStart) itemEnd = itemStart
+        while (itemEnd + 1 < offsets.length && offsets[itemEnd + 1] < end) itemEnd++
         found.push({ page, itemStart, itemEnd })
         from = end
       }

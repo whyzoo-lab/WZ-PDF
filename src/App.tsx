@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, lazy, Suspense, useMemo } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, lazy, Suspense, useMemo } from 'react'
 import {
   type DocumentFile, EAGER_DOCUMENT_LIMIT_LABEL, EAGER_DOCUMENT_MAX_BYTES,
   isLargeDocument, pathFile, readAll,
@@ -17,7 +17,6 @@ import { useOpenUrl } from './hooks/useOpenUrl'
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import { useFlowSearch } from './hooks/useFlowSearch'
 import { useTts } from './hooks/useTts'
-import { useSpeechHighlight } from './hooks/useSpeechHighlight'
 import { SpeechHighlight } from './components/SpeechHighlight'
 import { TtsBar } from './components/TtsBar'
 import { planSpeech } from './services/ttsText'
@@ -39,6 +38,10 @@ import { useUpdateCheck } from './hooks/useUpdateCheck'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { t } from './i18n'
 import { isVolatile } from './types/annotation'
+import { useEditHistory } from './hooks/useEditHistory'
+import { UnsavedChangesDialog } from './components/modals/UnsavedChangesDialog'
+import { StartScreen } from './components/StartScreen'
+import { errorMessage } from './utils/errors'
 
 // Modals are loaded on demand to shrink the initial bundle.
 // They only render when the user actively summons them, so the round-trip
@@ -97,6 +100,9 @@ export default function App() {
   })
   const [viewMode, setViewMode] = useState<ViewMode>('single')
   const [fullscreenLayout, setFullscreenLayout] = useState<'single' | 'spread'>('single')
+  // First page shown in presentation mode: 1 for F5 and the toolbar button, the
+  // page in view for Alt+F5.
+  const [fullscreenStartPage, setFullscreenStartPage] = useState(1)
   const [scrollToPage, setScrollToPage] = useState<number | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [isPanelOpen, setIsPanelOpen] = useState(false)
@@ -136,14 +142,63 @@ export default function App() {
     annotations,
     selectedId,
     activeMode,
-    addAnnotation,
-    updateAnnotation,
-    removeAnnotation,
+    addAnnotation: addAnnotationRaw,
+    updateAnnotation: updateAnnotationRaw,
+    removeAnnotation: removeAnnotationRaw,
     selectAnnotation,
     setActiveMode,
     remapAnnotations,
-    clearMarkups,
+    clearMarkups: clearMarkupsRaw,
+    replaceAnnotations,
   } = useAnnotations()
+
+  // ── Undo / redo ───────────────────────────────────────────────────────────
+  // One history over annotations and the document itself: a page edit swaps
+  // `file` for the edited bytes, so restoring the old `file` undoes it. Every
+  // change goes through the wrappers below, which record the state first.
+  const editSnapshot = useMemo(() => ({ annotations, file }), [annotations, file])
+  const restoreSnapshot = useCallback((snap: { annotations: Annotation[]; file: DocumentFile | null }) => {
+    replaceAnnotations(snap.annotations)
+    setFile(snap.file)
+  }, [replaceAnnotations])
+  const history = useEditHistory(editSnapshot, restoreSnapshot)
+  const { record: recordEdit, reset: resetHistory } = history
+
+  const addAnnotation = useCallback((a: OmitId<Annotation>) => {
+    recordEdit()
+    return addAnnotationRaw(a)
+  }, [recordEdit, addAnnotationRaw])
+  const updateAnnotation = useCallback((id: string, updates: Partial<Annotation>) => {
+    recordEdit()
+    updateAnnotationRaw(id, updates)
+  }, [recordEdit, updateAnnotationRaw])
+  const removeAnnotation = useCallback((id: string) => {
+    recordEdit()
+    removeAnnotationRaw(id)
+  }, [recordEdit, removeAnnotationRaw])
+  const clearMarkups = useCallback(() => {
+    if (!annotations.some(isVolatile)) return
+    recordEdit()
+    clearMarkupsRaw()
+  }, [annotations, recordEdit, clearMarkupsRaw])
+
+  // ── Unsaved changes ───────────────────────────────────────────────────────
+  // What was last opened or saved, compared by identity: annotations are
+  // immutable and a page edit replaces `file`, so "changed" is a reference
+  // comparison. Pen and rectangle never reach a saved file, so they don't count.
+  const [savedState, setSavedState] = useState<{ file: DocumentFile | null; annotations: readonly Annotation[] }>({ file: null, annotations: [] })
+  const lastingAnnotations = useMemo(() => annotations.filter(a => !isVolatile(a)), [annotations])
+  const [markdownDirty, setMarkdownDirty] = useState(false)
+  const unsaved = file !== null && (
+    markdownDirty
+    || file !== savedState.file
+    || lastingAnnotations.length !== savedState.annotations.length
+    || lastingAnnotations.some((a, i) => a !== savedState.annotations[i])
+  )
+  const markSaved = useCallback(() => {
+    setSavedState({ file, annotations: lastingAnnotations })
+  }, [file, lastingAnnotations])
+  const markdownSaveRef = useRef<(() => Promise<boolean>) | null>(null)
 
   // Why there are no bytes to save from, when that is not just "still reading".
   const bytesUnavailable = file && isLargeDocument(file)
@@ -183,7 +238,7 @@ export default function App() {
   // items for pages, live DOM for the reflowing formats. `findBar` picks the one
   // that matches what is open, so the SearchBar itself stays format-agnostic.
   const flowSearch = useFlowSearch(flowDoc)
-  const { handlePrint, isPrinting, printProgress, previewPages, confirmPrint, cancelPrint } = usePrint({ pdfDoc, numPages, annotations })
+  const { handlePrint, isPrinting, printProgress, previewPages, confirmPrint, cancelPrint } = usePrint({ pdfDoc, numPages, annotations, onError: showToast })
   const {
     isExporting,
     handleExportPdf,
@@ -192,7 +247,8 @@ export default function App() {
     handleExportExe,
   } = useExporters({
     file, fileBytes, pdfDoc, numPages, annotations, kind, documentPassword, savePassword,
-    bytesUnavailable, onSuccess: showToast, onError: showToast,
+    ocrResults: ocr.ocrResults,
+    bytesUnavailable, onSuccess: showToast, onError: showToast, onPdfSaved: markSaved,
   })
 
   // The padlock decides *what saving will do*; it does not save. Otherwise one
@@ -211,12 +267,13 @@ export default function App() {
   // and jump the viewer back to page 1 (the user's edits change the layout
   // so previous scroll position is meaningless).
   const handlePageOpResult = useCallback((newBytes: ArrayBuffer, pageMapping: Map<number, number>) => {
+    recordEdit()
     remapAnnotations(pageMapping)
     const name = file?.name ?? 'document.pdf'
     setFile(new File([newBytes], name, { type: 'application/pdf' }))
     setCurrentPage(1)
     setScrollToPage(1)
-  }, [remapAnnotations, file])
+  }, [recordEdit, remapAnnotations, file])
 
   const {
     isPageOperating,
@@ -226,7 +283,7 @@ export default function App() {
     handleReorderPages,
   } = usePageOperations({
     fileBytes, documentPassword, bytesUnavailable, onResult: handlePageOpResult,
-    onError: err => showToast(err instanceof Error ? err.message : String(err)),
+    onError: err => showToast(errorMessage(err)),
   })
 
   // ── Warm the viewer chunks once the shell is on screen ────────────────────
@@ -253,7 +310,6 @@ export default function App() {
       document.title = 'WZ PDF'
       return
     }
-    document.title = `WZ PDF - ${file.name}`
     // Too large to hold: it is paged in by range for viewing, so there are no
     // bytes to keep for saving. Said now, rather than at the first save.
     if (isLargeDocument(file)) {
@@ -271,6 +327,11 @@ export default function App() {
       })
     return () => { cancelled = true }
   }, [file, showToast])
+
+  // Window title — marked while there are unsaved changes, as editors do.
+  useEffect(() => {
+    document.title = file ? `${unsaved ? '● ' : ''}WZ PDF - ${file.name}` : 'WZ PDF'
+  }, [file, unsaved])
 
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────
   useEffect(() => {
@@ -365,8 +426,18 @@ export default function App() {
   const clearSearch = search.clear
   const clearFlowSearch = flowSearch.clear
   const stopTts = tts.stop
-  const loadPdfFile = useCallback((f: DocumentFile) => {
+  const openDocument = useCallback((f: DocumentFile, filePath?: string) => {
     setFile(f)
+    // Listed on the start screen next time. Paths only, and only files that
+    // came from disk (not URLs, attachments or an embedded viewer's bytes).
+    if (filePath) void window.electronAPI?.addRecentFile?.(filePath).catch(() => {})
+    // A new document starts clean: no annotations carried over from the last
+    // one (they used to be — the previous file's stamps landed on the same
+    // page numbers of the next), no history to undo into it, nothing unsaved.
+    replaceAnnotations([])
+    resetHistory()
+    setSavedState({ file: f, annotations: [] })
+    setMarkdownDirty(false)
     setActiveMode(null)
     setPendingStamp(null)
     setPendingSignature(null)
@@ -379,47 +450,66 @@ export default function App() {
     // speaking the old text over the new document, and the highlight hunts for
     // sentences that are no longer on screen.
     stopTts()
-  }, [setActiveMode, clearSearch, clearFlowSearch, stopTts])
+  }, [setActiveMode, clearSearch, clearFlowSearch, stopTts, replaceAnnotations, resetHistory])
+
+  // Opening another document over unsaved changes asks first. Read through a
+  // ref so the open-file listeners registered with this callback don't have to
+  // be re-registered every time the document is edited.
+  const unsavedRef = useRef(unsaved)
+  useLayoutEffect(() => { unsavedRef.current = unsaved })
+  const [pendingOpen, setPendingOpen] = useState<{ file: DocumentFile; path?: string } | null>(null)
+  const loadPdfFile = useCallback((f: DocumentFile, filePath?: string) => {
+    if (unsavedRef.current) setPendingOpen({ file: f, path: filePath })
+    else openDocument(f, filePath)
+  }, [openDocument])
 
   /** Main upload handler — accepts PDF and HWP/HWPX files. */
   const handleUpload = useCallback((f: File) => {
     if (!classifyDocFile(f).supported) {
-      alert(t('error.pdfOnly'))
+      showToast(t('error.pdfOnly'))
       return
     }
-    loadPdfFile(f)
-  }, [loadPdfFile])
+    loadPdfFile(f, window.electronAPI?.pathForFile?.(f) || undefined)
+  }, [loadPdfFile, showToast])
+
+  /**
+   * Open a document by path — the OS handing one over, or a recent document on
+   * the start screen. Resolves false when it could not be opened.
+   */
+  const openPath = useCallback(async (filePath: string): Promise<boolean> => {
+    const api = window.electronAPI
+    if (!api) return false
+    try {
+      // Size first. A document too large to hold is paged in by range rather
+      // than copied whole into this process — reading it whole is what used
+      // to fail at 500 MB (see services/documentSource).
+      const { size } = await api.statFile(filePath)
+      if (size > EAGER_DOCUMENT_MAX_BYTES) {
+        loadPdfFile(pathFile(filePath, size), filePath)
+        return true
+      }
+      const data = await api.readFile(filePath)
+      const name = filePath.split(/[/\\]/).pop() ?? 'document.pdf'
+      // No MIME type: the name carries the extension and detectDocType reads
+      // the bytes anyway. Hard-coding application/pdf mislabelled every
+      // non-PDF the OS handed us.
+      loadPdfFile(new File([data], name), filePath)
+      return true
+    } catch (err) {
+      console.error('Failed to open file:', err)
+      showToast(t('error.openFailed', { error: errorMessage(err) }))
+      return false
+    }
+  }, [loadPdfFile, showToast])
 
   // ── Open from URL (+ embed ?url= auto-open) ───────────────────────────────
   const { showUrlModal, setShowUrlModal, urlLoading, urlError, handleOpenUrl } = useOpenUrl(loadPdfFile, showToast)
 
   // ── Electron: open-file (file association / CLI arg) ──────────────────────
   useEffect(() => {
-    const cleanup = window.electronAPI?.onOpenFile(async (filePath: string) => {
-      try {
-        const api = window.electronAPI!
-        // Size first. A document too large to hold is paged in by range rather
-        // than copied whole into this process — reading it whole is what used
-        // to fail at 500 MB (see services/documentSource).
-        const { size } = await api.statFile(filePath)
-        if (size > EAGER_DOCUMENT_MAX_BYTES) {
-          loadPdfFile(pathFile(filePath, size))
-          return
-        }
-        const data = await api.readFile(filePath)
-        const name = filePath.split(/[/\\]/).pop() ?? 'document.pdf'
-        // No MIME type: the name carries the extension and detectDocType reads
-        // the bytes anyway. Hard-coding application/pdf mislabelled every
-        // non-PDF the OS handed us.
-        const f = new File([data], name)
-        loadPdfFile(f)
-      } catch (err) {
-        console.error('Failed to open file from Electron:', err)
-        alert(t('error.openFailed', { error: err instanceof Error ? err.message : String(err) }))
-      }
-    })
+    const cleanup = window.electronAPI?.onOpenFile(filePath => { void openPath(filePath) })
     return () => { cleanup?.() }
-  }, [loadPdfFile])
+  }, [openPath])
 
   // ── Electron: open-pdf-bytes (viewer-exe mode — PDF embedded in the exe) ──
   useEffect(() => {
@@ -463,13 +553,18 @@ export default function App() {
     }
   }, [])
 
-  const handleViewModeChange = useCallback((mode: ViewMode) => {
-    if (mode === 'fullscreen') {
-      prevViewModeRef.current = viewMode
-      setFullscreenLayout(viewMode === 'spread' ? 'spread' : 'single')
-    }
-    setViewMode(mode)
+  /** Presentation mode, opening on `startPage` in the layout the reader was in. */
+  const enterFullscreen = useCallback((startPage: number) => {
+    prevViewModeRef.current = viewMode
+    setFullscreenLayout(viewMode === 'spread' ? 'spread' : 'single')
+    setFullscreenStartPage(startPage)
+    setViewMode('fullscreen')
   }, [viewMode])
+
+  const handleViewModeChange = useCallback((mode: ViewMode) => {
+    if (mode === 'fullscreen') enterFullscreen(1)
+    else setViewMode(mode)
+  }, [enterFullscreen])
 
   const handleGridPageClick = useCallback((pageNumber: number) => {
     setScrollToPage(pageNumber)
@@ -583,9 +678,13 @@ export default function App() {
     setActiveMode('select')
   }, [setActiveMode])
 
+  // Double-clicking the empty viewer opens a file — but only when nothing is
+  // open. It used to test `pdfDoc` alone, and Markdown and mail have none, so a
+  // double-click meant to select a word in them threw up the file picker.
+  const nothingOpen = !pdfDoc && !email && markdown === null && !isLoading && !error && !embed
   const handleMainDoubleClick = useCallback(() => {
-    if (!pdfDoc) fileInputRef.current?.click()
-  }, [pdfDoc])
+    if (nothingOpen) fileInputRef.current?.click()
+  }, [nothingOpen])
 
   // Ctrl+drag region OCR (in PdfPage) hands back the recognized text → clipboard.
   const handleRegionCopy = useCallback((text: string) => {
@@ -612,8 +711,6 @@ export default function App() {
 
   // ── Read aloud ───────────────────────────────────────────────────────────
   const [ttsPromptOpen, setTtsPromptOpen] = useState(false)
-  // Where the sentence being spoken is, as screen rectangles.
-  const speechRects = useSpeechHighlight({ text: tts.currentText, index: tts.index })
 
   /** Read from the page in view to the end — where the reader actually is. */
   const startReading = useCallback(async () => {
@@ -725,10 +822,38 @@ export default function App() {
   // Declared here, not with the other hooks above, because it needs the
   // read-aloud toggle — and hoisting that instead would put the whole speech
   // wiring above the state it reads.
+  // Undo / redo, from the keyboard or the editing toolbar. Page documents only:
+  // a Markdown edit happens in a textarea, which has its own undo.
+  const canEditHistory = !!pdfDoc && !flowDoc
+  const handleUndo = useCallback(() => {
+    if (history.undo()) showToast(t('history.undone'))
+  }, [history, showToast])
+  const handleRedo = useCallback(() => {
+    if (history.redo()) showToast(t('history.redone'))
+  }, [history, showToast])
+
+  // Closing the window (or reloading) with unsaved changes. In a browser this
+  // raises its own "leave site?" prompt; in the desktop app the main process
+  // turns it into a dialog (see will-prevent-unload in electron/main.ts).
+  useEffect(() => {
+    if (!unsaved) return
+    const hold = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', hold)
+    return () => window.removeEventListener('beforeunload', hold)
+  }, [unsaved])
+
+  // Ctrl+S: the document's own save — PDF for pages, the source for Markdown
+  // (only while editing it; the reading view has nothing to save).
+  const handleSaveShortcut = useMemo(() => {
+    if (markdown !== null) {
+      return appMode === 'editor' ? () => { void markdownSaveRef.current?.() } : undefined
+    }
+    return pdfDoc && !embed ? () => { void handleExportPdf() } : undefined
+  }, [markdown, appMode, pdfDoc, embed, handleExportPdf])
+
   useGlobalShortcuts({
-    pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
-    setViewMode, setShowSearch, setFullscreenLayout,
-    prevViewModeRef, fileInputRef,
+    pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId, currentPage,
+    setViewMode, setShowSearch, onEnterFullscreen: enterFullscreen, fileInputRef,
     removeAnnotation, clearMarkups, setActiveMode,
     onRunOcr: () => ocr.runPage(currentPage),
     onRunOcrAll: ocr.runAll,
@@ -739,6 +864,9 @@ export default function App() {
     onSpeechNext: tts.status === 'idle' ? undefined : tts.next,
     onSpeechPlayPause: tts.status === 'idle' ? undefined
       : () => { void (tts.status === 'paused' ? tts.resume() : tts.pause()) },
+    onUndo: canEditHistory ? handleUndo : undefined,
+    onRedo: canEditHistory ? handleRedo : undefined,
+    onSave: handleSaveShortcut,
   })
 
   const actionBarProps = {
@@ -772,6 +900,11 @@ export default function App() {
     onToggleSpeech: window.electronAPI?.ttsSynthesize ? handleToggleSpeech : undefined,
     isSpeaking: tts.status !== 'idle',
     fileName: file?.name,
+    unsaved,
+    onUndo: canEditHistory ? handleUndo : undefined,
+    onRedo: canEditHistory ? handleRedo : undefined,
+    canUndo: history.canUndo,
+    canRedo: history.canRedo,
     onPrint: handlePrintAny,
     onAppModeChange: handleAppModeChange,
     onViewModeChange: handleViewModeChange,
@@ -845,6 +978,20 @@ export default function App() {
         />
       )}
 
+      {pendingOpen && file && (
+        <UnsavedChangesDialog
+          fileName={file.name}
+          onSave={async () => {
+            const saved = flowDoc && markdown !== null
+              ? await (markdownSaveRef.current?.() ?? Promise.resolve(false))
+              : await handleExportPdf()
+            if (saved) { const next = pendingOpen; setPendingOpen(null); openDocument(next.file, next.path) }
+            return saved
+          }}
+          onDiscard={() => { const next = pendingOpen; setPendingOpen(null); openDocument(next.file, next.path) }}
+          onCancel={() => setPendingOpen(null)}
+        />
+      )}
       {passwordPrompt && (
         <PasswordPrompt
           wrong={passwordPrompt.wrong}
@@ -861,7 +1008,7 @@ export default function App() {
 
       <SpeechAnnouncer status={tts.status} />
 
-      <SpeechHighlight rects={speechRects} />
+      <SpeechHighlight text={tts.currentText} index={tts.index} />
 
 
 
@@ -898,6 +1045,7 @@ export default function App() {
               currentPage={currentPage}
               isOperating={isPageOperating}
               readOnly={appMode === 'viewer'}
+              onError={showToast}
               onClose={() => setIsPanelOpen(false)}
               // Only for PDFs: extraction is pdf-lib's job, and it has nothing
               // to say about a HWP page or an image.
@@ -911,7 +1059,9 @@ export default function App() {
                   setIsPanelOpen(false)
                 }
               }}
-              onDeletePages={handleDeletePages}
+              onDeletePages={async pages => {
+                if (await handleDeletePages(pages)) showToast(t('panel.deleted', { n: pages.length }))
+              }}
               onInsertBlankPage={handleInsertBlankPage}
               onInsertFromPdf={handleInsertFromPdf}
               onReorderPages={handleReorderPages}
@@ -951,19 +1101,8 @@ export default function App() {
           )}
           {/* Drag/Open prompt — hidden in embed mode (can't drop into an iframe;
               the PDF auto-loads from ?url). */}
-          {!pdfDoc && !email && markdown === null && !isLoading && !error && !embed && (
-            <div
-              className="flex flex-col items-center justify-center h-full gap-3 text-gray-400 select-none cursor-pointer px-6 text-center"
-              onClick={handleMainDoubleClick}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 sm:w-16 sm:h-16 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className="text-sm sm:text-lg">
-                <span className="hidden sm:inline">{t('empty.desktop')}</span>
-                <span className="sm:hidden">{t('empty.mobile')}</span>
-              </p>
-            </div>
+          {nothingOpen && (
+            <StartScreen onOpenFile={() => fileInputRef.current?.click()} onOpenRecent={openPath} />
           )}
           {/* Embed mode placeholder: error (if the ?url fetch failed) or a
               spinner while it loads. */}
@@ -990,6 +1129,9 @@ export default function App() {
                   fullscreen={viewMode === 'fullscreen'}
                   onExitFullscreen={handleFullscreenExit}
                   onSaved={showToast}
+                  onError={showToast}
+                  onDirtyChange={setMarkdownDirty}
+                  saveRef={markdownSaveRef}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -1027,6 +1169,7 @@ export default function App() {
                 activeMode={activeMode}
                 viewMode={viewMode}
                 fullscreenLayout={fullscreenLayout}
+                fullscreenStartPage={fullscreenStartPage}
                 pendingStamp={pendingStamp}
                 pendingSignature={pendingSignature}
                 onAnnotationSelect={selectAnnotation}

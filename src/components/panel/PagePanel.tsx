@@ -2,10 +2,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import type { ViewerDoc } from '../../types/viewerDoc'
-import { useThumbnails } from '../../hooks/useThumbnails'
+import { THUMB_PAGE_ATTR, useThumbnails } from '../../hooks/useThumbnails'
 import { t } from '../../i18n'
+import { errorMessage } from '../../utils/errors'
 
 export interface PagePanelProps {
+  /** Where a failure is reported (the toast). */
+  onError?: (message: string) => void
   pdfDoc: ViewerDoc
   numPages: number
   currentPage: number
@@ -34,6 +37,7 @@ export function PagePanel({
   currentPage,
   isOperating,
   readOnly = false,
+  onError,
   onClose,
   onScrollToPage,
   onDeletePages,
@@ -51,7 +55,7 @@ export function PagePanel({
   const [contextAt, setContextAt]       = useState<{ x: number; y: number } | null>(null)
   const addMenuRef   = useRef<HTMLDivElement>(null)
   const listRef      = useRef<HTMLDivElement>(null)
-  const thumbnails   = useThumbnails(pdfDoc, numPages)
+  const thumbnailOf  = useThumbnails(pdfDoc, numPages, listRef)
 
   // 패널 바깥 클릭 시 추가 메뉴 닫기
   useEffect(() => {
@@ -142,7 +146,9 @@ export function PagePanel({
   const handleDelete = () => {
     if (readOnly) return
     if (selected.size === 0 || numPages - selected.size < 1) return
-    if (!confirm(t('panel.confirmDelete', { n: selected.size }))) return
+    // No "are you sure?" — a delete can be taken back with Ctrl+Z, which the
+    // app says as soon as the pages are gone. A blocking confirm on every
+    // delete taught people to click through it anyway.
     onDeletePages([...selected].sort((a, b) => a - b))
     setSelected(new Set())
     setLastSelected(null)
@@ -186,7 +192,7 @@ export function PagePanel({
     if (!f) return
     f.arrayBuffer()
       .then(bytes => onInsertFromPdf(insertAfterPage, bytes))
-      .catch(err => alert(t('panel.readError', { error: err instanceof Error ? err.message : String(err) })))
+      .catch(err => onError?.(t('panel.readError', { error: errorMessage(err) })))
     e.target.value = ''
     setAddMenuOpen(false)
   }
@@ -236,9 +242,9 @@ export function PagePanel({
     >
       {/* 헤더 */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
-        <span className="text-xs font-semibold text-gray-300">Pages</span>
+        <span className="text-xs font-semibold text-gray-300">{t('panel.title')}</span>
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-gray-500">{numPages}p</span>
+          <span className="text-[11px] text-gray-400">{t('panel.count', { n: numPages })}</span>
           {/* Close button — only on mobile (md:hidden). Desktop uses ActionBar's Pages toggle. */}
           {onClose && (
             <button
@@ -293,7 +299,11 @@ export function PagePanel({
         <button
           disabled={!canDelete || isOperating}
           onClick={handleDelete}
-          className="flex items-center gap-0.5 px-2 py-1 text-[11px] bg-red-800 hover:bg-red-700 text-white rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          // Red only when it would delete something. Disabled it was still dark
+          // red, which read as danger with nothing selected.
+          className={`flex items-center gap-0.5 px-2 py-1 text-[11px] rounded transition-colors disabled:cursor-not-allowed ${
+            canDelete && !isOperating ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-gray-700 text-gray-400'
+          }`}
           title={canDelete ? t('panel.deleteN', { n: selected.size }) : t('panel.selectFirst')}
         >
           🗑{selected.size > 0 ? ` (${selected.size})` : ''}
@@ -311,6 +321,7 @@ export function PagePanel({
           return (
             <div
               key={pageNum}
+              {...{ [THUMB_PAGE_ATTR]: pageNum }}
               draggable={!readOnly}
               onDragStart={readOnly ? undefined : e => handleDragStart(e, pageNum)}
               onDragOver={readOnly ? undefined : e => handleDragOver(e, pageNum)}
@@ -325,17 +336,17 @@ export function PagePanel({
                 isDragTarget ? 'border-t-2 border-blue-400' : '',
               ].filter(Boolean).join(' ')}
             >
-              {thumbnails[pageNum - 1] ? (
+              {thumbnailOf(pageNum) ? (
                 <img
-                  src={thumbnails[pageNum - 1]!}
-                  alt={`Page ${pageNum}`}
+                  src={thumbnailOf(pageNum)!}
+                  alt={t('panel.thumbAlt', { n: pageNum })}
                   className="w-full rounded shadow-sm pointer-events-none"
                   draggable={false}
                 />
               ) : (
                 <div className="w-full aspect-[3/4] bg-gray-700 rounded animate-pulse" />
               )}
-              <span className={`text-[10px] tabular-nums ${isCurrent ? 'text-blue-400 font-medium' : 'text-gray-500'}`}>
+              <span className={`text-[11px] tabular-nums ${isCurrent ? 'text-blue-400 font-medium' : 'text-gray-400'}`}>
                 {pageNum}
               </span>
             </div>

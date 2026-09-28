@@ -498,15 +498,21 @@ function PdfPageInner({
               height={renderedH}
             />
           </Layer>
-          <AnnotationLayer
-            annotations={pageAnnotations}
-            selectedId={selectedId}
-            effectiveZoom={effectiveZoom}
-            stageWidth={renderedW}
-            stageHeight={renderedH}
-            onSelect={onAnnotationSelect}
-            onUpdate={onAnnotationUpdate}
-          />
+          {/* Only on pages that have annotations. Every Konva layer allocates a
+              scene canvas (page size × dpr) and a hit canvas, whether or not
+              anything is drawn on it — ~3.5 MB per A4 page at fit-page and
+              ~22 MB at fit-width, for the many pages that have none. */}
+          {pageAnnotations.length > 0 && (
+            <AnnotationLayer
+              annotations={pageAnnotations}
+              selectedId={selectedId}
+              effectiveZoom={effectiveZoom}
+              stageWidth={renderedW}
+              stageHeight={renderedH}
+              onSelect={onAnnotationSelect}
+              onUpdate={onAnnotationUpdate}
+            />
+          )}
           {/* In-progress drawing preview */}
           {draft && (
             <Layer listening={false}>

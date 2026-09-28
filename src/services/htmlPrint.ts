@@ -58,7 +58,7 @@ async function decodeImages(root: HTMLElement): Promise<void> {
 }
 
 /** One frame, so the print stylesheet is applied before the dialog opens. */
-function nextFrame(): Promise<void> {
+export function nextFrame(): Promise<void> {
   return withDeadline(
     new Promise(resolve => requestAnimationFrame(() => resolve(null))),
     FRAME_DEADLINE_MS,

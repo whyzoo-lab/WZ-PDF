@@ -5,7 +5,7 @@ const predictMock = vi.fn()
 vi.mock('../services/ocrEngine', () => ({ predict: (...a: unknown[]) => predictMock(...a) }))
 
 const getOrRenderPageMock = vi.fn()
-vi.mock('./usePdfPage', () => ({ getOrRenderPage: (...a: unknown[]) => getOrRenderPageMock(...a) }))
+vi.mock('../services/pageRender', () => ({ getOrRenderPage: (...a: unknown[]) => getOrRenderPageMock(...a) }))
 
 import { useOcr } from './useOcr'
 

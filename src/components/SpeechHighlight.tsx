@@ -1,4 +1,4 @@
-import type { SpeechRect } from '../hooks/useSpeechHighlight'
+import { useSpeechHighlight } from '../hooks/useSpeechHighlight'
 
 /**
  * The highlighter over the sentence being read.
@@ -12,8 +12,14 @@ import type { SpeechRect } from '../hooks/useSpeechHighlight'
  *
  * Translucent and drawn on top, like a real highlighter: the glyphs stay
  * legible through it, so it does not matter that it is not behind them.
+ *
+ * It measures for itself. The rectangles are re-measured on every scroll frame
+ * while something is being read, and when that state lived in App each frame
+ * re-rendered the whole app — toolbar, page panel, every page wrapper — about
+ * sixty times a second.
  */
-export function SpeechHighlight({ rects }: { rects: readonly SpeechRect[] }) {
+export function SpeechHighlight({ text, index }: { text: string | null; index: number }) {
+  const rects = useSpeechHighlight({ text, index })
   if (rects.length === 0) return null
   return (
     <div className="no-print fixed inset-0 z-30 pointer-events-none" aria-hidden="true">

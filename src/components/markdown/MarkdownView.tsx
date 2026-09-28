@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { renderMarkdown, type RenderedMarkdown } from '../../services/markdownDoc'
 import { pickSaveTarget, saveBlobTo } from '../../utils/download'
+import { errorMessage } from '../../utils/errors'
 import { FLOW_PRINT_ATTR } from '../../services/htmlPrint'
 import { ReaderFullscreen } from '../reader/ReaderFullscreen'
 import type { AppMode } from '../../types/viewModes'
@@ -21,6 +22,15 @@ interface MarkdownViewProps {
   onExitFullscreen: () => void
   /** Reports a completed save so the app can show its toast. */
   onSaved: (message: string) => void
+  /** A save that failed. Silence here read as a save that worked. */
+  onError: (message: string) => void
+  /** Whether the text differs from what was last opened or saved. */
+  onDirtyChange?: (dirty: boolean) => void
+  /**
+   * Filled with this view's save, so the app can offer "save" when another
+   * document is about to replace this one. Resolves true once written.
+   */
+  saveRef?: { current: (() => Promise<boolean>) | null }
 }
 
 /** Long documents get a contents rail; short ones would just look cluttered. */
@@ -38,7 +48,8 @@ const BASE_FONT_PX = 15
  * searchable text for nothing.
  */
 export function MarkdownView({
-  source, filename, appMode, zoom, fullscreen, onExitFullscreen, onSaved,
+  source, filename, appMode, zoom, fullscreen, onExitFullscreen, onSaved, onError,
+  onDirtyChange, saveRef,
 }: MarkdownViewProps) {
   const editing = appMode === 'editor'
 
@@ -47,7 +58,15 @@ export function MarkdownView({
   // re-render). Same trick as `result` below.
   const [draft, setDraft] = useState<{ base: string; text: string } | null>(null)
   const text = draft && draft.base === source ? draft.text : source
-  const dirty = text !== source
+  // What is on disk: the file as opened, or what was last saved. Keyed the same
+  // way. A save used to record itself by re-keying the *draft* to the new text,
+  // which no longer matched `source` — so the editor fell back to the file as
+  // opened and the reader's edits vanished from the screen the moment they
+  // were saved.
+  const [savedCopy, setSavedCopy] = useState<{ base: string; text: string } | null>(null)
+  const onDisk = savedCopy && savedCopy.base === source ? savedCopy.text : source
+  const dirty = text !== onDisk
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   const [saving, setSaving] = useState(false)
 
   // Rendered output is stored with the text it came from, so a change reads as
@@ -141,25 +160,36 @@ export function MarkdownView({
     setActive(prev => (prev?.id === id && prev.key === next.key ? prev : next))
   }, [])
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (): Promise<boolean> => {
     const target = await pickSaveTarget(filename, {
       description: 'Markdown document', accept: { 'text/markdown': ['.md', '.markdown'] },
     })
-    if (target.kind === 'canceled') return
+    if (target.kind === 'canceled') return false
     setSaving(true)
     try {
       const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
       if (await saveBlobTo(target, blob, filename)) {
-        // The buffer now matches what is on disk, so the "edited" flag clears.
-        setDraft({ base: text, text })
+        // What is on disk now matches the buffer, so the "edited" flag clears
+        // — and the buffer itself stays as it is.
+        setSavedCopy({ base: source, text })
         onSaved(t('md.saved', { name: filename }))
+        return true
       }
+      return false
     } catch (err) {
       console.error('Markdown save failed:', err)
+      onError(t('md.saveFailed', { error: errorMessage(err) }))
+      return false
     } finally {
       setSaving(false)
     }
-  }, [filename, text, onSaved])
+  }, [filename, source, text, onSaved, onError])
+
+  useEffect(() => {
+    if (!saveRef) return
+    saveRef.current = handleSave
+    return () => { saveRef.current = null }
+  }, [saveRef, handleSave])
 
   // ── Edit mode: the source, exactly as written ────────────────────────────
   // Checked before `failed` so a document the renderer chokes on can still be
@@ -168,7 +198,7 @@ export function MarkdownView({
     return (
       <div className="flex h-full flex-col bg-gray-300">
         <div className="flex items-center gap-3 border-b border-gray-400/50 bg-gray-200 px-4 py-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+          <span className="text-xs font-semibold text-gray-600">
             {t('md.source')}
           </span>
           {dirty && (
@@ -190,7 +220,10 @@ export function MarkdownView({
           onChange={e => setDraft({ base: source, text: e.target.value })}
           spellCheck={false}
           aria-label={t('md.source')}
-          className="min-h-0 flex-1 resize-none bg-white px-6 py-5 font-mono text-[13px] leading-6 text-gray-900 outline-none"
+          className="min-h-0 flex-1 resize-none bg-white px-6 py-5 text-[13px] leading-6 text-gray-900 outline-none"
+          // A monospace stack that has Korean in it. The generic one fell back to
+          // a fixed-width Hangul face that spaced every syllable apart.
+          style={{ fontFamily: "D2Coding, 'Cascadia Mono', Consolas, 'Malgun Gothic', 'Apple SD Gothic Neo', monospace" }}
         />
       </div>
     )

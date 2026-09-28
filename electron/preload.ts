@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // ── File opening ────────────────────────────────────────────────────────
@@ -34,6 +34,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   readFileRange: (filePath: string, offset: number, length: number): Promise<ArrayBuffer> =>
     ipcRenderer.invoke('read-file-range', filePath, offset, length),
+
+  /**
+   * The path of a file the user picked or dropped, so it can be listed under
+   * recent documents. Empty for files that did not come from disk.
+   */
+  pathForFile: (file: File): string => {
+    try { return webUtils.getPathForFile(file) } catch { return '' }
+  },
+
+  /** Recent documents for the start screen: list, record one, forget one or all. */
+  recentFiles: (): Promise<{ path: string; openedAt: number }[]> => ipcRenderer.invoke('recent:list'),
+  addRecentFile: (filePath: string): Promise<{ path: string; openedAt: number }[]> => ipcRenderer.invoke('recent:add', filePath),
+  removeRecentFile: (filePath: string): Promise<{ path: string; openedAt: number }[]> => ipcRenderer.invoke('recent:remove', filePath),
+  clearRecentFiles: (): Promise<{ path: string; openedAt: number }[]> => ipcRenderer.invoke('recent:clear'),
 
   /** Download a PDF from an http(s) URL via the main process (bypasses CORS). */
   fetchUrl: (url: string): Promise<ArrayBuffer> =>

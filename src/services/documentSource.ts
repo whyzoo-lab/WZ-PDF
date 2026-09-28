@@ -81,6 +81,9 @@ export async function readAll(file: DocumentFile): Promise<ArrayBuffer> {
  * time. `read-file-range` repeats every check `read-file` makes — extension,
  * real path, network paths, signature — on each call.
  */
+/** Largest range one `read-file-range` call may return (electron MAX_RANGE_BYTES). */
+export const MAX_RANGE_CALL_BYTES = 64 * 1024 * 1024
+
 export function pathFile(filePath: string, size: number): RangedFile {
   const api = window.electronAPI
   if (!api?.readFileRange) throw new Error('Reading by range is only available in the desktop app')
@@ -93,7 +96,18 @@ export function pathFile(filePath: string, size: number): RangedFile {
       const from = Math.max(0, begin)
       const to = Math.min(size, end)
       if (to <= from) return new Uint8Array(0)
-      return new Uint8Array(await api.readFileRange(filePath, from, to - from))
+      if (to - from <= MAX_RANGE_CALL_BYTES) {
+        return new Uint8Array(await api.readFileRange(filePath, from, to - from))
+      }
+      // pdfjs merges adjacent missing chunks into one request with no upper
+      // bound, so a single large stream (a full-page scan) asks for more than
+      // one IPC call may carry, and the main process rightly refuses it.
+      const out = new Uint8Array(to - from)
+      for (let at = from; at < to; at += MAX_RANGE_CALL_BYTES) {
+        const len = Math.min(MAX_RANGE_CALL_BYTES, to - at)
+        out.set(new Uint8Array(await api.readFileRange(filePath, at, len)), at - from)
+      }
+      return out
     },
   }
 }

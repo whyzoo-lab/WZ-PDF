@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { t } from '../i18n'
+import { errorMessage } from '../utils/errors'
 
 type PageOpResult = { newBytes: ArrayBuffer; pageMapping: Map<number, number> }
 
@@ -48,14 +49,16 @@ export function usePageOperations({ fileBytes, bytesUnavailable, documentPasswor
     async (
       op: () => Promise<PageOpResult>,
       onError: (err: unknown) => void,
-    ) => {
-      if (!fileBytes) return
+    ): Promise<boolean> => {
+      if (!fileBytes) return false
       setIsPageOperating(true)
       try {
         const { newBytes, pageMapping } = await op()
         onResult(newBytes, pageMapping)
+        return true
       } catch (err) {
         onError(err)
+        return false
       } finally {
         setIsPageOperating(false)
       }
@@ -63,9 +66,10 @@ export function usePageOperations({ fileBytes, bytesUnavailable, documentPasswor
     [fileBytes, onResult],
   )
 
-  const handleDeletePages = useCallback(async (pageNums: number[]) => {
-    if (blocked() || !fileBytes) return
-    await runOp(
+  /** Resolves true once the pages are gone. */
+  const handleDeletePages = useCallback(async (pageNums: number[]): Promise<boolean> => {
+    if (blocked() || !fileBytes) return false
+    return runOp(
       async () => {
         const { deletePages } = await import('../services/pdfPageService')
         return deletePages(fileBytes, pageNums, documentPassword ?? undefined)
@@ -94,10 +98,10 @@ export function usePageOperations({ fileBytes, bytesUnavailable, documentPasswor
       },
       err => {
         console.error('Insert from PDF failed:', err)
-        alert(t('error.pdfInsertFailed', { error: err instanceof Error ? err.message : String(err) }))
+        onError(new Error(t('error.pdfInsertFailed', { error: errorMessage(err) })))
       },
     )
-  }, [fileBytes, blocked, documentPassword, runOp])
+  }, [fileBytes, blocked, documentPassword, runOp, onError])
 
   const handleReorderPages = useCallback(async (newOrder: number[]) => {
     if (blocked() || !fileBytes) return

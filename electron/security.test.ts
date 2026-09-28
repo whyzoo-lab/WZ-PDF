@@ -18,10 +18,20 @@ describe('Electron security helpers', () => {
     expect(isTrustedRendererUrl('app://bundle/app.html')).toBe(true)
     expect(isTrustedRendererUrl('app://attacker/app.html')).toBe(false)
     expect(isTrustedRendererUrl('app://bundle:1234/app.html')).toBe(false)
-    expect(isTrustedRendererUrl('http://localhost:5173/app.html')).toBe(true)
-    expect(isTrustedRendererUrl('http://localhost:5173.evil.test/app.html')).toBe(false)
-    expect(isTrustedRendererUrl('https://localhost:5173/app.html')).toBe(false)
-    expect(isTrustedRendererUrl('http://user@localhost:5173/app.html')).toBe(false)
+    const dev = { devServer: true }
+    expect(isTrustedRendererUrl('http://localhost:5173/app.html', dev)).toBe(true)
+    expect(isTrustedRendererUrl('http://localhost:5173.evil.test/app.html', dev)).toBe(false)
+    expect(isTrustedRendererUrl('https://localhost:5173/app.html', dev)).toBe(false)
+    expect(isTrustedRendererUrl('http://user@localhost:5173/app.html', dev)).toBe(false)
+  })
+
+  it('does not trust the dev server in a packaged build', () => {
+    // Any process on the machine can listen on localhost:5173 — on a shared
+    // Windows host, another user's. A document link that navigated the window
+    // there got the preload, and with it every IPC handler.
+    expect(isTrustedRendererUrl('http://localhost:5173/app.html')).toBe(false)
+    expect(isTrustedRendererUrl('http://localhost:5173/app.html', { devServer: false })).toBe(false)
+    expect(isTrustedRendererUrl('app://bundle/app.html', { devServer: false })).toBe(true)
   })
 
   it('keeps app protocol paths inside dist', () => {

@@ -4,6 +4,7 @@ import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import path from 'path'
 import fs from 'fs'
+import { RecentFilesStore, isRecentCandidate } from './recentFiles'
 import { cliToolName, hasCliFlag, runCli } from './cliRunner'
 import { shutdown as shutdownTts, synthesize as synthesizeSpeech } from './ttsEngine'
 import { downloadModel, isVoiceId, modelStatus } from './ttsModel'
@@ -16,6 +17,7 @@ import {
   hasSupportedDocumentSignature,
   isAllowedDocumentPath,
   isTextDocumentPath,
+  allowsPermission,
   isTrustedRendererUrl,
   isValidByteRange,
   isTrustedUpdateUrl,
@@ -44,8 +46,13 @@ function findFileArgument(argv: readonly string[]): string | undefined {
   return argv.slice(1).find(arg => !arg.startsWith('-') && isAllowedDocumentPath(arg.toLowerCase()))
 }
 
+/** Whether a URL is our renderer. The Vite dev server counts only when not packaged. */
+function isOurRenderer(rawUrl: string): boolean {
+  return isTrustedRendererUrl(rawUrl, { devServer: !app.isPackaged })
+}
+
 function assertTrustedIpcSender(event: IpcMainInvokeEvent): void {
-  if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url)) {
+  if (!event.senderFrame || !isOurRenderer(event.senderFrame.url)) {
     throw new Error('Untrusted IPC sender')
   }
 }
@@ -194,6 +201,30 @@ function createWindow() {
   }
 
   win.on('closed', () => { win = null })
+
+  // The renderer holds `beforeunload` while there are unsaved changes (stamps,
+  // signatures, page edits, a Markdown edit). Electron does not show a prompt
+  // for that — it cancels the close and emits this — so ask here. Not saving
+  // lets the window go; Cancel keeps it open so the reader can save first.
+  const owner = win
+  win.webContents.on('will-prevent-unload', event => {
+    const target = owner.isDestroyed() ? null : owner
+    const ko = app.getLocale().toLowerCase().startsWith('ko')
+    const options = {
+      type: 'warning' as const,
+      buttons: ko ? ['취소', '저장하지 않고 닫기'] : ['Cancel', 'Close without saving'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: 'WZ PDF',
+      message: ko ? '저장하지 않은 변경 내용이 있습니다' : 'You have unsaved changes',
+      detail: ko
+        ? '지금 닫으면 도장·서명·페이지 편집 같은 변경 내용이 사라집니다. 저장하려면 취소를 누른 뒤 저장하세요.'
+        : 'Closing now discards changes such as stamps, signatures and page edits. To keep them, cancel and save first.',
+    }
+    const choice = target ? dialog.showMessageBoxSync(target, options) : dialog.showMessageBoxSync(options)
+    if (choice === 1) event.preventDefault() // preventDefault here means: unload anyway
+  })
 }
 
 // ── Embedded PDF (viewer-exe mode) ─────────────────────────────────────────
@@ -210,7 +241,7 @@ const EMBED_FOOTER  = 4 + EMBED_MARKER.length          // UInt32LE length + mark
 
 async function readExactly(
   handle: Awaited<ReturnType<typeof fs.promises.open>>,
-  buffer: Buffer,
+  buffer: Uint8Array,
   position: number,
 ): Promise<void> {
   let offset = 0
@@ -499,15 +530,19 @@ ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffe
     }
     // Reading exactly the validated size prevents a file that grows
     // concurrently from bypassing the cap.
-    const data = Buffer.allocUnsafe(doc.size)
+    // Its own ArrayBuffer of exactly this size, returned as is. Reading into a
+    // Buffer and then slicing a "fresh" ArrayBuffer out of it copied the whole
+    // document once more — up to 500 MB extra at peak. (Not allocUnsafe +
+    // returning `.buffer`: small allocUnsafe buffers share a pool, and the
+    // whole pool would go to the renderer.)
+    const data = new Uint8Array(doc.size)
     await readExactly(doc.handle, data, 0)
     // Markdown and mail are plain text and have no signature to verify —
     // see TEXT_DOCUMENT_EXTENSIONS in security.ts for why that is sound here.
     if (!doc.isText && !hasSupportedDocumentSignature(data)) {
       throw new Error('File content does not match a supported document format')
     }
-    // Return a fresh ArrayBuffer slice (Buffer view → standalone ArrayBuffer)
-    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+    return data.buffer
   } finally {
     await doc.handle.close()
   }
@@ -520,6 +555,33 @@ ipcMain.handle('read-file', async (event, filePath: unknown): Promise<ArrayBuffe
 // PDF this way read 1.7 MB. Both handlers repeat every check `read-file`
 // makes, and only binary documents qualify — the text formats are small and
 // are parsed whole anyway.
+// ── Recent documents ────────────────────────────────────────────────────────
+// Listed on the start screen. Paths and times only, in userData; opening one
+// goes back through read-file's full validation like any other path.
+let recentStore: RecentFilesStore | null = null
+function recent(): RecentFilesStore {
+  recentStore ??= new RecentFilesStore(path.join(app.getPath('userData'), 'recent-files.json'))
+  return recentStore
+}
+ipcMain.handle('recent:list', async event => {
+  assertTrustedIpcSender(event)
+  return recent().list()
+})
+ipcMain.handle('recent:add', async (event, filePath: unknown) => {
+  assertTrustedIpcSender(event)
+  if (!isRecentCandidate(filePath)) throw new Error('Invalid path')
+  return recent().add(filePath)
+})
+ipcMain.handle('recent:remove', async (event, filePath: unknown) => {
+  assertTrustedIpcSender(event)
+  if (typeof filePath !== 'string') throw new Error('Invalid path')
+  return recent().remove(filePath)
+})
+ipcMain.handle('recent:clear', async event => {
+  assertTrustedIpcSender(event)
+  return recent().clear()
+})
+
 ipcMain.handle('stat-file', async (event, filePath: unknown): Promise<{ size: number }> => {
   assertTrustedIpcSender(event)
   const doc = await openValidatedDocument(filePath)
@@ -548,9 +610,9 @@ ipcMain.handle('read-file-range', async (
     // Checked on every call, not once: a renamed binary must not become
     // readable a range at a time just because it was never asked for whole.
     await assertDocumentSignature(doc.handle)
-    const data = Buffer.allocUnsafe(length as number)
+    const data = new Uint8Array(length as number) // see read-file: no extra copy
     await readExactly(doc.handle, data, offset as number)
-    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+    return data.buffer
   } finally {
     await doc.handle.close()
   }
@@ -681,11 +743,13 @@ ipcMain.handle('open-download', async (event, rawUrl?: unknown) => {
 
 app.whenReady().then(async () => {
   // Electron's default is to GRANT every permission request — camera,
-  // microphone, geolocation, notifications — silently. Nothing here needs any
-  // of them, so a renderer that has been compromised must not be able to turn
-  // the webcam on.
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
-  session.defaultSession.setPermissionCheckHandler(() => false)
+  // microphone, geolocation, notifications — silently. Only what the viewer
+  // itself uses is granted, and only to our own renderer (see
+  // `allowsPermission`); refusing everything also refused presentation mode.
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) =>
+    callback(allowsPermission(permission, details.requestingUrl || wc.getURL(), { devServer: !app.isPackaged })))
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin) =>
+    allowsPermission(permission, requestingOrigin, { devServer: !app.isPackaged }))
 
   installCsp()
   if (app.isPackaged) serveAppProtocol()
@@ -767,7 +831,11 @@ app.on('web-contents-created', (_event, contents) => {
   // Block in-app navigation to any URL except the renderer's own origin.
   // Document content must not be able to navigate the host window.
   contents.on('will-navigate', (event, navUrl) => {
-    if (!isTrustedRendererUrl(navUrl)) event.preventDefault()
+    if (!isOurRenderer(navUrl)) event.preventDefault()
+  })
+  // A navigation that was allowed must not be bounced elsewhere by a redirect.
+  contents.on('will-redirect', (event, navUrl) => {
+    if (!isOurRenderer(navUrl)) event.preventDefault()
   })
 
   // External links (http/https) open in the user's default browser; everything

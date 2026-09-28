@@ -7,9 +7,9 @@ import { classifyDocFile } from '../../utils/detectDocType'
 import { t } from '../../i18n'
 import { DOCUMENT_ACCEPT } from '../../utils/detectDocType'
 import {
-  IconSingle, IconSpread, IconGrid, IconFullscreen, IconRotate, IconSelect,
-  IconStamp, IconSignature, IconWatermark, IconDelete, IconUpload, IconLink,
-  IconDownload, IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
+  IconSingle, IconSpread, IconGrid, IconFullscreen, IconRotate, IconSelect, IconUndo, IconRedo, IconFolderOpen, IconSave,
+  IconStamp, IconSignature, IconWatermark, IconDelete, IconLink,
+  IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
   IconExe, IconLock, IconLockOpen, IconPencil, IconMenu, IconMore, IconFitWidth,
   IconSpeak, IconStopSpeak, IconRotateLeft,
 } from './icons'
@@ -87,6 +87,13 @@ export interface ActionBarProps {
   isSpeaking?: boolean
   /** Shown centred in the title bar. Absent when no document is open. */
   fileName?: string
+  /** There are changes the saved file does not have — marked beside the name. */
+  unsaved?: boolean
+  /** Undo / redo for annotation and page edits. Absent where nothing is undoable. */
+  onUndo?: () => void
+  onRedo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
 }
 
 export function ActionBar({
@@ -137,13 +144,30 @@ export function ActionBar({
   onToggleSpeech,
   isSpeaking = false,
   fileName,
+  unsaved = false,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
 }: ActionBarProps) {
+  // An amber dot before the name while there are unsaved changes — the same
+  // cue editors use, and the one hint that closing now would lose something.
+  const nameLabel = fileName ? (
+    <>
+      {unsaved && (
+        <span className="mr-1 text-amber-300" title={t('doc.unsaved')}>●<span className="sr-only">{t('doc.unsaved')}</span></span>
+      )}
+      {fileName}
+    </>
+  ) : null
   const [stampPanelOpen, setStampPanelOpen] = useState(false)
   const [stampMenuRect, setStampMenuRect] = useState<DOMRect | null>(null)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [openMenuOpen, setOpenMenuOpen] = useState(false)
   const [leftMenuOpen, setLeftMenuOpen] = useState(false)
   const [rightMenuOpen, setRightMenuOpen] = useState(false)
+  const [ocrMenuOpen, setOcrMenuOpen] = useState(false)
+  const ocrRef        = useRef<HTMLDivElement>(null)
   const fileInputRef  = useRef<HTMLInputElement>(null)
   const stampBtnRef   = useRef<HTMLButtonElement>(null)
   const stampPortalRef = useRef<HTMLDivElement>(null)
@@ -182,6 +206,7 @@ export function ActionBar({
       [openMenuOpen, openRef, setOpenMenuOpen],
       [leftMenuOpen, leftMenuRef, setLeftMenuOpen],
       [rightMenuOpen, rightMenuRef, setRightMenuOpen],
+      [ocrMenuOpen, ocrRef, setOcrMenuOpen],
     ]
     const active = menus.filter(([open]) => open)
     if (active.length === 0) return
@@ -192,7 +217,7 @@ export function ActionBar({
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [exportMenuOpen, openMenuOpen, leftMenuOpen, rightMenuOpen])
+  }, [exportMenuOpen, openMenuOpen, leftMenuOpen, rightMenuOpen, ocrMenuOpen])
 
   // Switching between the inline and collapsed layouts hides the other mode's
   // dropdowns; reset them so a stale-open menu doesn't reappear on switch back.
@@ -300,8 +325,12 @@ export function ActionBar({
   // ── Button style helpers ──────────────────────────────────────────────────
   const viewBtn = (mode: ViewMode) =>
     `${BTN_BASE} ${viewMode === mode ? BTN_ACTIVE : BTN_IDLE}`
-  const toolBtn = (mode: ActiveMode) =>
-    `${BTN_BASE} ${activeMode === mode ? BTN_ARMED : BTN_IDLE}`
+  // The editing tools carry their names beside the icons where there is room:
+  // a stamp, a signature and a watermark glyph are not self-explanatory, and
+  // this row is only on screen for the job of editing, so the space is there.
+  const labelledToolBtn = (mode: ActiveMode) =>
+    `flex items-center justify-center gap-1.5 h-9 min-w-9 px-2 md:px-3 rounded-full transition-colors shrink-0 ${activeMode === mode ? BTN_ARMED : BTN_IDLE}`
+  const toolLabel = (text: string) => <span className="hidden md:inline text-xs">{text}</span>
   const iconBtn = (extra = '') => `${BTN_BASE} ${BTN_IDLE} ${extra}`
 
   // ── Reusable control clusters (shared by the bar and the collapsed menus) ──
@@ -311,10 +340,10 @@ export function ActionBar({
       <span className="text-lg font-bold tracking-tight bg-gradient-to-br from-sky-400 to-violet-400 bg-clip-text text-transparent leading-none">
         WZ PDF
       </span>
-      <span className="hidden sm:inline text-xs text-gray-500 ml-1">{t('app.tagline')}</span>
+      <span className="hidden sm:inline text-xs text-gray-400 ml-1">{t('app.tagline')}</span>
       <span
-        className="ml-1 rounded-full border border-gray-700 px-2 py-px text-[10px] font-medium text-gray-400 tabular-nums"
-        title="App version"
+        className="ml-1 rounded-full border border-gray-700 px-2 py-px text-[11px] font-medium text-gray-400 tabular-nums"
+        title={t('app.version')}
       >
         v{__APP_VERSION__}
       </span>
@@ -393,34 +422,55 @@ export function ActionBar({
     </button>
   ) : null
 
+  const historyButtons = (onUndo || onRedo) ? (
+    <>
+      <button
+        className={iconBtn('disabled:opacity-30 disabled:pointer-events-none')}
+        onClick={onUndo}
+        disabled={!canUndo}
+        title={t('tool.undo')}
+        aria-label={t('tool.undo')}
+      ><IconUndo /></button>
+      <button
+        className={iconBtn('disabled:opacity-30 disabled:pointer-events-none')}
+        onClick={onRedo}
+        disabled={!canRedo}
+        title={t('tool.redo')}
+        aria-label={t('tool.redo')}
+      ><IconRedo /></button>
+      <span className="mx-1 h-4 w-px bg-gray-700" aria-hidden />
+    </>
+  ) : null
+
   const editorCluster = (
     <div className="flex items-center gap-0.5 shrink-0">
+      {historyButtons}
       <button
-        className={toolBtn('select')}
+        className={labelledToolBtn('select')}
         onClick={() => { onModeChange('select'); setStampPanelOpen(false) }}
         title={t('tool.select')}
         aria-label={t('tool.select')}
-      ><IconSelect /></button>
+      ><IconSelect />{toolLabel(t('tool.select'))}</button>
       <button
         ref={stampBtnRef}
-        className={toolBtn('stamp')}
+        className={labelledToolBtn('stamp')}
         onClick={openStampMenu}
         title={t('tool.stamp')}
         aria-label={t('tool.stamp')}
         aria-expanded={stampPanelOpen}
-      ><IconStamp /></button>
+      ><IconStamp />{toolLabel(t('tool.stamp'))}</button>
       <button
-        className={toolBtn('signature')}
+        className={labelledToolBtn('signature')}
         onClick={() => { onModeChange('signature'); onSignatureClick(); setStampPanelOpen(false) }}
         title={t('tool.signature')}
         aria-label={t('tool.signature')}
-      ><IconSignature /></button>
+      ><IconSignature />{toolLabel(t('tool.signature'))}</button>
       <button
-        className={toolBtn('watermark')}
+        className={labelledToolBtn('watermark')}
         onClick={() => { onModeChange('watermark'); onWatermarkClick(); setStampPanelOpen(false) }}
         title={t('tool.watermark')}
         aria-label={t('tool.watermark')}
-      ><IconWatermark /></button>
+      ><IconWatermark />{toolLabel(t('tool.watermark'))}</button>
       {selectedId && (
         <button
           onClick={onDeleteSelected}
@@ -439,7 +489,8 @@ export function ActionBar({
   // The glyph is a pencil in both states and the amber wash carries on/off,
   // because a padlock now means what it says everywhere else in this app: a
   // password. Two different locks in one bar was the confusing part.
-  const modeToggleCluster = !embed ? (
+  // Nothing to edit with nothing open, so no switch then.
+  const modeToggleCluster = !embed && (hasPdf || flowDoc) ? (
     <button
       role="switch"
       aria-checked={appMode === 'editor'}
@@ -503,20 +554,37 @@ export function ActionBar({
         title={t('ocr.runCurrent')}
         className="p-2 rounded hover:bg-gray-700 disabled:opacity-40 text-gray-200"
       ><IconOcr /></button>
-      <button
-        type="button"
-        onClick={onRunOcrAll}
-        disabled={isOcrRunning || numPages === 0}
-        aria-label={t('ocr.runAll')}
-        title={t('ocr.runAll')}
-        className="px-1 text-[10px] rounded hover:bg-gray-700 disabled:opacity-40 text-gray-300"
-      >ALL</button>
+      {/* The range is a menu, not a second button labelled "ALL": the label
+          meant nothing until hovered, and two adjacent triggers for one tool
+          read as two tools. The main button still does the common case. */}
+      <div ref={ocrRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setOcrMenuOpen(v => !v)}
+          disabled={isOcrRunning || numPages === 0}
+          aria-expanded={ocrMenuOpen}
+          aria-haspopup="menu"
+          aria-label={t('ocr.menu')}
+          title={t('ocr.menu')}
+          className="flex h-9 items-center rounded-full px-0.5 text-gray-400 hover:bg-white/10 hover:text-white disabled:opacity-40"
+        ><IconChevron /></button>
+        {ocrMenuOpen && (
+          <div role="menu" className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[190px]">
+            <button role="menuitem" onClick={() => { onRunOcr(); setOcrMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+              <IconOcr /><span>{t('ocr.menuCurrent')}</span><kbd className="ml-auto text-[11px] text-gray-400 font-sans">{t('ocr.keyCurrent')}</kbd>
+            </button>
+            <button role="menuitem" onClick={() => { onRunOcrAll(); setOcrMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+              <IconOcr /><span>{t('ocr.menuAll')}</span><kbd className="ml-auto text-[11px] text-gray-400 font-sans">{t('ocr.keyAll')}</kbd>
+            </button>
+          </div>
+        )}
+      </div>
       {/* Recognising a scanned document takes minutes, and the only sign of it
           was this bare "12/30". For a reader who cannot see it that was minutes
           of silence with no way to tell progress from a hang. */}
       <OcrAnnouncer progress={ocrProgress} />
       {ocrProgress && (
-        <span className="ml-1 text-[10px] text-gray-400 tabular-nums" aria-hidden>
+        <span className="ml-1 text-[11px] text-gray-400 tabular-nums" aria-hidden>
           {ocrProgress.done}/{ocrProgress.total}
         </span>
       )}
@@ -560,19 +628,19 @@ export function ActionBar({
   const exportMenuItems = (onDone: () => void) => (
     <>
       <button onClick={() => { onExportPdf(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-        <IconDownload /><span>{t('export.pdf')}</span><span className="ml-auto text-gray-500 text-[10px]">.pdf</span>
+        <IconSave /><span>{t('export.pdf')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
       </button>
       <button onClick={() => { onExportHtml(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-        <IconHtml /><span>{t('export.html')}</span><span className="ml-auto text-gray-500 text-[10px]">.html</span>
+        <IconHtml /><span>{t('export.html')}</span><span className="ml-auto text-gray-400 text-[11px]">.html</span>
       </button>
       <button onClick={() => { onExportImages(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-        <IconImage /><span>{t('export.images')}</span><span className="ml-auto text-gray-500 text-[10px]">.zip</span>
+        <IconImage /><span>{t('export.images')}</span><span className="ml-auto text-gray-400 text-[11px]">.zip</span>
       </button>
       {onExportExe && (
         <>
           <div className="my-1 border-t border-gray-600" />
           <button onClick={() => { onExportExe(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-300 hover:bg-gray-700 transition-colors">
-            <IconExe /><span>{t('export.exe')}</span><span className="ml-auto text-gray-500 text-[10px]">.exe</span>
+            <IconExe /><span>{t('export.exe')}</span><span className="ml-auto text-gray-400 text-[11px]">.exe</span>
           </button>
         </>
       )}
@@ -582,7 +650,10 @@ export function ActionBar({
   // ── Expanded (inline) sections ─────────────────────────────────────────────
   const expandedLeft = (
     <div ref={leftClusterRef} className="relative flex items-center gap-0.5 px-2 py-1.5 min-w-0 shrink-0">
-      {!hasPdf && brandingCluster}
+      {/* The name and tagline are for the start screen. Every open document —
+          PDF, Markdown or mail — shows its own name in the middle instead;
+          Markdown and mail used to keep the logo, PDF did not. */}
+      {!hasPdf && !flowDoc && brandingCluster}
       {flowDoc && !isFullscreen && (<><Sep />{fullscreenButton}<Sep />{zoomCluster}</>)}
       {hasPdf && (
         <>
@@ -610,11 +681,11 @@ export function ActionBar({
             className={`${BTN_BASE} ${openMenuOpen ? BTN_ACTIVE : BTN_IDLE}`}
             title={t('tool.open')}
             aria-label={t('tool.open')}
-          ><IconUpload /></button>
+          ><IconFolderOpen /></button>
           {openMenuOpen && (
             <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[170px]">
               <button onClick={() => { fileInputRef.current?.click(); setOpenMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-                <IconUpload /><span>{t('tool.openFile')}</span>
+                <IconFolderOpen /><span>{t('tool.openFile')}</span>
               </button>
               <button onClick={() => { onOpenUrl(); setOpenMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
                 <IconLink /><span>{t('tool.openUrl')}</span>
@@ -638,7 +709,7 @@ export function ActionBar({
             className="flex items-center justify-center w-9 h-9 rounded-l bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 transition-all"
             title={isExporting ? t('tool.exporting') : t('tool.exportPdf')}
             aria-label={t('tool.exportPdf')}
-          ><IconDownload /></button>
+          ><IconSave /></button>
           <button
             onClick={() => setExportMenuOpen(v => !v)}
             disabled={isExporting}
@@ -698,10 +769,10 @@ export function ActionBar({
   const collapsedCenter = (
     <div className="flex flex-1 min-w-0 items-center justify-center gap-1.5 px-1">
       {fileName && (
-        <span className="truncate text-xs text-gray-400 min-w-0">{fileName}</span>
+        <span className="truncate text-xs text-gray-400 min-w-0">{nameLabel}</span>
       )}
       {hasPdf && !isFullscreen && (
-        <span className="shrink-0 text-xs text-gray-500 tabular-nums">
+        <span className="shrink-0 text-xs text-gray-400 tabular-nums">
           {currentPage} / {numPages}
         </span>
       )}
@@ -730,7 +801,7 @@ export function ActionBar({
               >
                 <IconPencil />
                 <span className="flex-1 text-left">{t('tool.editLock')}</span>
-                <span className={`text-[10px] font-semibold ${appMode === 'editor' ? 'text-amber-300' : 'text-gray-500'}`}>
+                <span className={`text-[11px] font-semibold ${appMode === 'editor' ? 'text-amber-300' : 'text-gray-400'}`}>
                   {appMode === 'editor' ? 'ON' : 'OFF'}
                 </span>
               </button>
@@ -743,7 +814,7 @@ export function ActionBar({
                 </button>
               )}
               <div className="my-1 border-t border-gray-600" />
-              <button onClick={() => { fileInputRef.current?.click(); setRightMenuOpen(false) }} className={menuItem}><IconUpload /><span>{t('tool.openFile')}</span></button>
+              <button onClick={() => { fileInputRef.current?.click(); setRightMenuOpen(false) }} className={menuItem}><IconFolderOpen /><span>{t('tool.openFile')}</span></button>
               <button onClick={() => { onOpenUrl(); setRightMenuOpen(false) }} className={menuItem}><IconLink /><span>{t('tool.openUrl')}</span></button>
             </>
           )}
@@ -788,7 +859,7 @@ export function ActionBar({
       // the only thing that knows how much room the two clusters have left.
       style={{ visibility: 'hidden' }}
     >
-      <span className="truncate text-xs text-gray-400">{fileName}</span>
+      <span className="truncate text-xs text-gray-400">{nameLabel}</span>
     </div>
   ) : null
 

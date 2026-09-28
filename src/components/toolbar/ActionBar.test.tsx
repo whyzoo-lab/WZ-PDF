@@ -73,13 +73,24 @@ describe('ActionBar OCR control', () => {
   it('fires onRunOcr for the current page', () => {
     const onRunOcr = vi.fn()
     render(<ActionBar {...baseProps({ onRunOcr })} />)
-    fireEvent.click(screen.getByRole('button', { name: /OCR \(current page\)|OCR \(현재 페이지\)/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Recognize text — this page|글자 인식 — 이 페이지/i }))
     expect(onRunOcr).toHaveBeenCalledTimes(1)
   })
 
   it('disables the OCR control while running', () => {
     render(<ActionBar {...baseProps({ isOcrRunning: true })} />)
-    expect(screen.getByRole('button', { name: /OCR \(current page\)|OCR \(현재 페이지\)/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Recognize text — this page|글자 인식 — 이 페이지/i })).toBeDisabled()
+  })
+
+  it('offers the range as a menu: this page or the whole document', () => {
+    const onRunOcr = vi.fn()
+    const onRunOcrAll = vi.fn()
+    render(<ActionBar {...baseProps({ onRunOcr, onRunOcrAll })} />)
+    expect(screen.queryByText('ALL')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Choose what to recognize|글자 인식 범위 선택/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /whole document|전체 문서/i }))
+    expect(onRunOcrAll).toHaveBeenCalledTimes(1)
+    expect(onRunOcr).not.toHaveBeenCalled()
   })
 
   it('shows a cancel button during a whole-doc run and fires onCancelOcr', () => {

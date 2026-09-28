@@ -1,7 +1,10 @@
-import { PDFDocument, PDFFont, rgb, degrees, StandardFonts } from '@cantoo/pdf-lib'
+import { PDFDocument, PDFFont, PDFPage, rgb, degrees, StandardFonts } from '@cantoo/pdf-lib'
 import { loadPdfForWriting } from './pdfLoad'
-import type { Annotation, WatermarkAnnotation } from '../types/annotation'
+import { BASELINE_RATIO, type PlacedRun } from './ocrTextLayer'
+import type { OcrWord } from '../types/ocr'
+import type { Annotation } from '../types/annotation'
 import { annotationsForPage } from '../types/annotation'
+import { drawAnnotations } from './annotationCanvas'
 import { toPdfLibY, hexToRgb } from '../utils/coordinates'
 import type { ViewerDoc } from '../types/viewerDoc'
 
@@ -17,7 +20,8 @@ export function base64ToUint8Array(dataUrl: string): Uint8Array {
 // ── Korean font (lazy) ──────────────────────────────────────────────────────
 // Helvetica covers only Latin-1; any CJK text drawn through it would silently
 // fall back to glyph 0 (.notdef) and look broken in the exported PDF.
-// We ship Noto Sans KR (OFL) and embed it via @pdf-lib/fontkit on demand.
+// We ship Noto Sans KR (OFL) and embed it via fontkit on demand
+// (fontkit v2, see ./fontkit — not @pdf-lib/fontkit, which drops glyphs).
 //
 // Fetched at most once per session and cached as a Uint8Array so repeated
 // exports don't re-download. Vite serves it from /fonts/.
@@ -52,6 +56,61 @@ function needsKoreanFont(s: string): boolean {
 }
 
 /**
+ * A canvas as JPEG bytes. `toBlob` encodes off the main thread; `toDataURL`
+ * blocked it, then the base64 had to be decoded back by hand — twice the memory
+ * for every page of a long document. Falls back where `toBlob` is missing
+ * (jsdom).
+ */
+async function canvasJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Uint8Array> {
+  const blob = typeof canvas.toBlob === 'function'
+    ? await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
+    : null
+  if (blob) return new Uint8Array(await blob.arrayBuffer())
+  return base64ToUint8Array(canvas.toDataURL('image/jpeg', quality))
+}
+
+/** Noto Sans KR, embedded once per document and subsetted to the glyphs used. */
+async function embedTextFont(pdfDoc: PDFDocument): Promise<PDFFont> {
+  const { loadFontkit } = await import('./fontkit')
+  pdfDoc.registerFontkit(await loadFontkit())
+  // Subset, or the whole CJK face would be embedded once per export.
+  return pdfDoc.embedFont(await loadKoreanFontBytes(), { subset: true })
+}
+
+/**
+ * Write text that can be selected, copied and searched but is never painted —
+ * the technique OCR layers use, over pixels that already show the words.
+ *
+ * Each run is sized from its measured **width**, not its height: the text is
+ * invisible, so vertical distortion never shows, while matching the width keeps
+ * selection highlights aligned with the glyphs underneath.
+ */
+function drawInvisibleRuns(page: PDFPage, font: PDFFont, runs: PlacedRun[]): void {
+  for (const run of runs) {
+    // Drop control characters — they have no glyph and abort encoding.
+    const text = stripControlChars(run.text).trim()
+    if (!text || run.height <= 0) continue
+    try {
+      const unit = font.widthOfTextAtSize(text, 100)
+      const size = unit > 0
+        ? Math.min(Math.max((run.width / unit) * 100, 1), run.height * 2)
+        : run.height * 0.8
+      page.drawText(text, {
+        x: run.x,
+        y: run.y,
+        size,
+        font,
+        rotate: degrees(run.angle),
+        opacity: 0, // present and selectable, but never painted
+      })
+    } catch {
+      // A glyph the font lacks (emoji, rare CJK) must not fail the export —
+      // that run simply stays unselectable.
+    }
+  }
+}
+
+/**
  * 요청이 있었으면 문서를 암호로 잠근다.
  *
  * owner 암호를 user 암호와 같은 값으로 함께 건다. owner 암호를 비워 두면 어떤
@@ -79,24 +138,27 @@ export async function exportPdf(
   originalBytes: ArrayBuffer,
   annotations: Annotation[],
   save: PdfSaveOptions = {},
+  /**
+   * Recognized text to keep, by page (see `placeOcrWords`). OCR lives only in
+   * the app's memory; without this a scanned document came back out of Save as
+   * the same image-only PDF it went in as, and the recognition was lost.
+   */
+  textLayer?: Map<number, PlacedRun[]>,
 ): Promise<Blob> {
   const { sourcePassword, password } = save
   const pdfDoc = await loadPdfForWriting(originalBytes, sourcePassword)
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
 
-  // Embed the Korean font lazily — only when a watermark or textEdit needs it.
-  // Avoids the ~4MB fontkit + font overhead for stamps-only exports.
+  // Noto Sans KR, embedded at most once and only when something needs it: a
+  // Korean watermark or text edit, or OCR text. One embedding for all of them
+  // — two would put the font in the file twice.
   let koFont: PDFFont | null = null
+  const koreanFont = async () => (koFont ??= await embedTextFont(pdfDoc))
   const koNeeded = annotations.some(a =>
     (a.type === 'watermark' && needsKoreanFont(a.text)) ||
     (a.type === 'textEdit' && needsKoreanFont(a.text)),
   )
-  if (koNeeded) {
-    const { default: fontkit } = await import('@pdf-lib/fontkit')
-    pdfDoc.registerFontkit(fontkit)
-    const bytes = await loadKoreanFontBytes()
-    koFont = await pdfDoc.embedFont(bytes, { subset: true })
-  }
+  if (koNeeded) await koreanFont()
   const fontFor = (text: string): PDFFont =>
     needsKoreanFont(text) && koFont ? koFont : helvetica
 
@@ -134,7 +196,7 @@ export async function exportPdf(
       }
 
       if (annotation.type === 'watermark') {
-        const wm = annotation as WatermarkAnnotation
+        const wm = annotation
         const [r, g, b] = hexToRgb(wm.color)
         const font = fontFor(wm.text)
         const textWidth = font.widthOfTextAtSize(wm.text, wm.fontSize)
@@ -177,6 +239,14 @@ export async function exportPdf(
     }
   }
 
+  if (textLayer && textLayer.size > 0) {
+    const font = await koreanFont()
+    for (const [pageNum, runs] of textLayer) {
+      const page = pages[pageNum - 1]
+      if (page) drawInvisibleRuns(page, font, runs)
+    }
+  }
+
   lock(pdfDoc, password)
   const pdfBytes = await pdfDoc.save()
   // pdfBytes is a Uint8Array; BlobPart accepts it, but its backing buffer may
@@ -201,8 +271,14 @@ export async function exportHwpToPdf(
   doc: ViewerDoc,
   annotations: Annotation[],
   password?: string,
+  /**
+   * Words OCR recognized, by page. Used where the source has no text of its
+   * own — an image, or a scanned page inside a HWP — so the recognition
+   * survives the save instead of leaving an image-only PDF.
+   */
+  ocrWords?: Map<number, OcrWord[]>,
 ): Promise<Uint8Array> {
-  const { getOrRenderPage } = await import('../hooks/usePdfPage')
+  const { getOrRenderPage } = await import('./pageRender')
 
   const pdfDoc = await PDFDocument.create()
   // Embedded on first use — a document with no extractable text pays nothing.
@@ -224,57 +300,12 @@ export async function exportHwpToPdf(
       compositedCanvas = out
       ctx.drawImage(canvas, 0, 0)
 
-      const pageAnnotations = annotationsForPage(annotations, pageNum)
       // Annotation coords are in PDF points; the canvas is at renderScale px/pt.
-      const scale = renderScale
-
-      for (const ann of pageAnnotations) {
-        if (ann.type === 'pen' || ann.type === 'rectangle') continue  // volatile
-
-        if (ann.type === 'stamp' || ann.type === 'signature') {
-          try {
-            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-              const el = new Image()
-              el.onload = () => resolve(el)
-              el.onerror = () => reject(new Error('image load failed'))
-              el.src = ann.src
-            })
-            const cx = (ann.x + ann.width / 2) * scale
-            const cy = (ann.y + ann.height / 2) * scale
-            ctx.save()
-            ctx.translate(cx, cy)
-            ctx.rotate((ann.rotation * Math.PI) / 180)
-            ctx.drawImage(img, -(ann.width / 2) * scale, -(ann.height / 2) * scale, ann.width * scale, ann.height * scale)
-            ctx.restore()
-          } catch (err) {
-            console.error('[hwp-export] failed to draw annotation image:', err)
-          }
-        } else if (ann.type === 'watermark') {
-          ctx.save()
-          ctx.font = `${ann.fontSize * scale}px sans-serif`
-          ctx.fillStyle = ann.color
-          ctx.globalAlpha = ann.opacity
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.translate(out.width / 2, out.height / 2)
-          ctx.rotate((ann.rotation * Math.PI) / 180)
-          ctx.fillText(ann.text, 0, 0)
-          ctx.restore()
-        } else if (ann.type === 'textEdit') {
-          ctx.fillStyle = ann.background
-          ctx.fillRect(ann.x * scale, ann.y * scale, ann.width * scale, ann.height * scale)
-          ctx.fillStyle = ann.color
-          ctx.font = `${ann.fontSize * scale}px sans-serif`
-          ctx.textBaseline = 'top'
-          ctx.fillText(ann.text, ann.x * scale + 2, ann.y * scale + 2)
-        }
-      }
+      await drawAnnotations(ctx, annotations, pageNum, renderScale)
     }
 
     // Embed the composited canvas as JPEG into a pdf-lib page.
-    const jpegDataUrl = compositedCanvas.toDataURL('image/jpeg', 0.92)
-    const jpegBytes = base64ToUint8Array(jpegDataUrl)
-    const jpegImage = await pdfDoc.embedJpg(jpegBytes)
+    const jpegImage = await pdfDoc.embedJpg(await canvasJpeg(compositedCanvas, 0.92))
 
     // Size the PDF page in PDF points (canvas pixels ÷ renderScale) so pdf-lib's
     // point-unit page matches the document's logical dimensions. The image is
@@ -290,43 +321,22 @@ export async function exportHwpToPdf(
     // ── Selectable text layer ────────────────────────────────────────────────
     // The picture alone would make an image-only PDF: it looks right but no
     // text can be selected, copied or searched. rhwp gives us the real text with
-    // its geometry, so we draw each run invisibly on top of the pixels it
-    // corresponds to — the same technique OCR layers use. Readers then select
-    // and copy normally, and the visible result is unchanged.
-    const runs = (await doc.getPageText?.(pageNum)) ?? []
-    if (runs.length > 0) {
-      if (!textFont) {
-        const { default: fontkit } = await import('@pdf-lib/fontkit')
-        pdfDoc.registerFontkit(fontkit)
-        // Subset, or the whole CJK face would be embedded once per export.
-        textFont = await pdfDoc.embedFont(await loadKoreanFontBytes(), { subset: true })
-      }
-      for (const run of runs) {
-        // Drop control characters — they have no glyph and abort encoding.
-        const text = stripControlChars(run.text).trim()
-        if (!text || run.height <= 0) continue
-        try {
-          // Size the run so its drawn width matches the width rhwp measured.
-          // The text is invisible, so vertical distortion never shows, while
-          // matching the width keeps selection highlights aligned with the glyphs.
-          const unit = textFont.widthOfTextAtSize(text, 100)
-          const size = unit > 0
-            ? Math.min(Math.max((run.width / unit) * 100, 1), run.height * 2)
-            : run.height * 0.8
-          page.drawText(text, {
-            x: run.x,
-            // Runs are top-down like the canvas; PDF is bottom-up. Sit the
-            // baseline near the bottom of the run box rather than at its edge.
-            y: pageHeight - run.y - run.height * 0.82,
-            size,
-            font: textFont,
-            opacity: 0, // present and selectable, but never painted
-          })
-        } catch {
-          // A glyph the font lacks (emoji, rare CJK) must not fail the export —
-          // that run simply stays unselectable.
-        }
-      }
+    // its geometry, so each run is drawn invisibly on top of the pixels it
+    // corresponds to. Where the source has no text (an image, a scanned page),
+    // whatever OCR recognized takes its place. Both are top-down boxes in page
+    // points like the canvas; PDF is bottom-up.
+    const own = (await doc.getPageText?.(pageNum)) ?? []
+    const boxes = own.length > 0 ? own : (ocrWords?.get(pageNum) ?? [])
+    if (boxes.length > 0) {
+      textFont ??= await embedTextFont(pdfDoc)
+      drawInvisibleRuns(page, textFont, boxes.map(b => ({
+        text: b.text,
+        x: b.x,
+        y: pageHeight - b.y - b.height * BASELINE_RATIO,
+        width: b.width,
+        height: b.height,
+        angle: 0,
+      })))
     }
   }
 

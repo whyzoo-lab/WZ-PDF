@@ -17,6 +17,8 @@ export interface UseAnnotationsReturn extends AnnotationState {
   remapAnnotations: (mapping: Map<number, number>) => void
   /** Remove volatile markups (pen / rectangle). Stamp/signature/watermark are preserved. */
   clearMarkups: () => void
+  /** Replace the whole list — a new document (empty), or an undo / redo. */
+  replaceAnnotations: (annotations: Annotation[]) => void
 }
 
 export function useAnnotations(): UseAnnotationsReturn {
@@ -95,5 +97,15 @@ export function useAnnotations(): UseAnnotationsReturn {
     })
   }, [])
 
-  return { ...state, addAnnotation, updateAnnotation, removeAnnotation, selectAnnotation, setActiveMode, remapAnnotations, clearMarkups }
+  const replaceAnnotations = useCallback((annotations: Annotation[]) => {
+    setState(prev => ({
+      ...prev,
+      annotations,
+      // A selection pointing at something that no longer exists would leave a
+      // transformer attached to nothing.
+      selectedId: prev.selectedId && annotations.some(a => a.id === prev.selectedId) ? prev.selectedId : null,
+    }))
+  }, [])
+
+  return { ...state, addAnnotation, updateAnnotation, removeAnnotation, selectAnnotation, setActiveMode, remapAnnotations, clearMarkups, replaceAnnotations }
 }

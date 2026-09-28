@@ -15,3 +15,12 @@ export const MAX_ZOOM = 3
 // Step for the +/- buttons and Ctrl+wheel. 10% keeps zooming fine-grained;
 // the ActionBar's editable zoom field allows jumping to an exact value.
 export const ZOOM_STEP = 0.1
+
+/**
+ * Largest PDF that can become an HTML viewer. The page decodes its payload
+ * with one `atob` call, and a JavaScript string tops out at 2^29 − 24
+ * characters — base64 of ~400 MB. Past that the export used to throw while
+ * being built; a file just under it would build and then fail to open in the
+ * reader's browser. 300 MB leaves that browser room to work.
+ */
+export const HTML_EXPORT_MAX_BYTES = 300 * 1024 * 1024

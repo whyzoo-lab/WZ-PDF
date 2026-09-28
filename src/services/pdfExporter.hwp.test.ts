@@ -9,9 +9,12 @@ vi.mock('@cantoo/pdf-lib', () => ({
   rgb: vi.fn(),
   degrees: vi.fn(),
 }))
-vi.mock('../hooks/usePdfPage', () => ({
+vi.mock('./pageRender', () => ({
   getOrRenderPage: async () => ({
-    canvas: Object.assign(document.createElement('canvas'), { width: 100, height: 200, toDataURL: () => 'data:image/jpeg;base64,AA' }),
+    canvas: Object.assign(document.createElement('canvas'), {
+      width: 100, height: 200,
+      toBlob: (done: (b: Blob) => void) => done(new Blob([new Uint8Array([0xff, 0xd8])])),
+    }),
     renderScale: 1,
   }),
 }))

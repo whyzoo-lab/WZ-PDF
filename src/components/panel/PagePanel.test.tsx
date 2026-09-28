@@ -6,8 +6,8 @@ import { PagePanel, type PagePanelProps } from './PagePanel'
 // Thumbnails come from a canvas render, which jsdom has nothing to do; the
 // panel only needs them to be strings.
 vi.mock('../../hooks/useThumbnails', () => ({
-  useThumbnails: (_doc: unknown, numPages: number) =>
-    Array.from({ length: numPages }, (_, i) => `data:image/png;base64,page${i + 1}`),
+  THUMB_PAGE_ATTR: 'data-thumb-page',
+  useThumbnails: () => (page: number) => `data:image/png;base64,page${page}`,
 }))
 
 const onSavePages = vi.fn()
@@ -29,7 +29,7 @@ function panel(props: Partial<PagePanelProps> = {}) {
   return render(<PagePanel {...all} />)
 }
 
-const thumb = (n: number) => screen.getByAltText(`Page ${n}`).parentElement!
+const thumb = (n: number) => screen.getByAltText(new RegExp(`^(${n}쪽 미리보기|Page ${n} preview)$`)).parentElement!
 
 beforeEach(() => { onSavePages.mockClear() })
 

@@ -62,16 +62,48 @@ export function parseHttpUrl(rawUrl: unknown): URL {
   return url
 }
 
-/** Only the packaged app origin and the exact Vite development origin are trusted. */
-export function isTrustedRendererUrl(rawUrl: string): boolean {
+export interface TrustOptions {
+  /**
+   * Also trust the Vite dev server. Development only: in a packaged build any
+   * process on the machine can listen on localhost:5173 — on a shared Windows
+   * host, another user's — and a page there that the window was navigated to
+   * would get the preload and every IPC handler with it.
+   */
+  devServer?: boolean
+}
+
+/** The packaged app origin, plus the exact Vite origin when `devServer` is set. */
+export function isTrustedRendererUrl(rawUrl: string, { devServer = false }: TrustOptions = {}): boolean {
   try {
     const url = new URL(rawUrl)
     if (url.username || url.password) return false
     if (url.protocol === 'app:') return url.hostname === 'bundle' && url.port === ''
-    return url.protocol === 'http:' && url.hostname === 'localhost' && url.port === '5173'
+    return devServer && url.protocol === 'http:' && url.hostname === 'localhost' && url.port === '5173'
   } catch {
     return false
   }
+}
+
+/**
+ * Web permissions the viewer itself needs. Everything else stays refused —
+ * Electron's default is to grant camera, microphone, geolocation and the rest
+ * silently.
+ *
+ * This list exists because "refuse everything" (1.18.0) also refused
+ * presentation mode: in Electron `requestFullscreen()` is a permission request
+ * (`fullscreen`), and so is the Escape-key lock the two-step Esc depends on
+ * (`keyboardLock`). With both denied the slideshow drew inside the window, with
+ * the min/max/close buttons over the slide.
+ */
+const GRANTED_PERMISSIONS: readonly string[] = [
+  'fullscreen',                 // presentation mode (FullscreenView, ReaderFullscreen)
+  'keyboardLock',               // Esc stays ours in presentation mode
+  'clipboard-sanitized-write',  // Ctrl+drag region OCR → clipboard
+]
+
+/** Whether a permission may be granted to the page at `requestingUrl`. */
+export function allowsPermission(permission: string, requestingUrl: string, trust: TrustOptions = {}): boolean {
+  return GRANTED_PERMISSIONS.includes(permission) && isTrustedRendererUrl(requestingUrl, trust)
 }
 
 /** Resolve an app://bundle URL to a file strictly contained by distDir. */

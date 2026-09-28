@@ -117,12 +117,6 @@ export const IconReset = () => (
 )
 
 // ── File / export ───────────────────────────────────────────────────────────
-export const IconUpload = () => (
-  <Icon><path d="M12 15.5V4.5M8 8l4-3.5L16 8" /><path d="M4.5 19.5h15" /></Icon>
-)
-export const IconDownload = () => (
-  <Icon><path d="M12 4.5v11M8 12l4 3.5 4-3.5" /><path d="M4.5 19.5h15" /></Icon>
-)
 export const IconLink = () => (
   <Icon>
     <path d="M10 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1" />
@@ -296,5 +290,30 @@ export const IconSpeed = () => (
   <Icon>
     <path d="M4 17a8 8 0 1 1 16 0" />
     <path d="M12 17l4-4.5" strokeLinecap="round" />
+  </Icon>
+)
+
+// ── History ─────────────────────────────────────────────────────────────────
+export const IconUndo = () => (
+  <Icon><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></Icon>
+)
+export const IconRedo = () => (
+  <Icon><path d="m15 14 5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" /></Icon>
+)
+
+// ── Files ───────────────────────────────────────────────────────────────────
+// Open is a folder and save is a disk. The arrows they replaced read as
+// "upload" and "download" — a web service's verbs, not a desktop app's.
+export const IconFolderOpen = () => (
+  <Icon>
+    <path d="M3.5 18.5V6a1.5 1.5 0 0 1 1.5-1.5h4l2 2.5h7.5A1.5 1.5 0 0 1 20 8.5V10" />
+    <path d="M3.5 18.5 6 11.5a1.5 1.5 0 0 1 1.4-1H21l-2.6 7.1a1.5 1.5 0 0 1-1.4.9z" />
+  </Icon>
+)
+export const IconSave = () => (
+  <Icon>
+    <path d="M5 3.5h11l3.5 3.5v11.5A1.5 1.5 0 0 1 18 20H6a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 6 3.5" />
+    <path d="M8 3.5v5h7v-5" />
+    <rect x="7.5" y="13" width="9" height="7" rx="0.5" />
   </Icon>
 )

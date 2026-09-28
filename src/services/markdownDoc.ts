@@ -13,6 +13,7 @@
 // output is still sanitized before it is shown.
 
 import DOMPurify from 'dompurify'
+import { openLinksOutside } from './links'
 
 export interface MarkdownEntry {
   /** Heading depth, 1-6. */
@@ -113,11 +114,7 @@ export async function renderMarkdown(source: string): Promise<RenderedMarkdown> 
 
   // Links leave the app rather than navigating it — except in-page anchors,
   // which are how the outline works.
-  for (const a of Array.from(doc.querySelectorAll('a[href]'))) {
-    if ((a.getAttribute('href') ?? '').startsWith('#')) continue
-    a.setAttribute('target', '_blank')
-    a.setAttribute('rel', 'noopener noreferrer')
-  }
+  openLinksOutside(doc, true)
 
   const firstH1 = doc.querySelector('h1')?.textContent?.trim() || null
   return { html: doc.body.innerHTML, title: frontTitle ?? firstH1, outline }

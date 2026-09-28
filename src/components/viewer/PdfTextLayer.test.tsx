@@ -16,6 +16,7 @@ vi.mock('pdfjs-dist', () => ({
       this.items = textContentSource.items
       this.container = container
     }
+    update = layerUpdate
     async render() {
       let parent = this.container
       for (const item of this.items) {
@@ -40,6 +41,7 @@ vi.mock('pdfjs-dist', () => ({
   },
 }))
 
+const layerUpdate = vi.fn()
 const { PdfTextLayer } = await import('./PdfTextLayer')
 
 // String items (what search indexes): 0 'Intro', 1 '', 2 'the cat', 3 'sat on', 4 'the mat'
@@ -55,10 +57,12 @@ const ITEMS = [
   { str: 'the mat', hasEOL: false },
 ]
 
+const getTextContent = vi.fn(async () => ({ items: ITEMS }))
+
 function doc(): ViewerDoc {
   return {
     getPage: vi.fn(async () => ({
-      getTextContent: async () => ({ items: ITEMS }),
+      getTextContent,
       getViewport: () => ({ width: 100, height: 100, scale: 1, rotation: 0 }),
     })),
   } as unknown as ViewerDoc
@@ -91,5 +95,21 @@ describe('PdfTextLayer search highlights', () => {
     rerender(<PdfTextLayer pdfDoc={doc()} pageNumber={1} scale={1} rotation={0} width={100} height={100} highlights={[...highlights]} />)
     expect(spy.mock.calls.length).toBe(1)
     spy.mockRestore()
+  })
+
+  it('zooming re-lays out the same spans instead of fetching and rebuilding them', async () => {
+    getTextContent.mockClear(); layerUpdate.mockClear()
+    const d = doc()
+    const { container, rerender } = render(
+      <PdfTextLayer pdfDoc={d} pageNumber={1} scale={1} rotation={0} width={100} height={100} />,
+    )
+    await waitFor(() => expect(container.querySelectorAll('span:not(.markedContent)').length).toBeGreaterThan(0))
+    const spans = [...container.querySelectorAll('span')]
+    for (const scale of [1.25, 1.5, 2]) {
+      rerender(<PdfTextLayer pdfDoc={d} pageNumber={1} scale={scale} rotation={0} width={100 * scale} height={100 * scale} />)
+    }
+    expect(getTextContent).toHaveBeenCalledTimes(1)
+    expect(layerUpdate).toHaveBeenCalledTimes(3)
+    expect([...container.querySelectorAll('span')]).toEqual(spans)
   })
 })

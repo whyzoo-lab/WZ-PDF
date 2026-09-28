@@ -54,7 +54,7 @@ exception: it reflows and has no page geometry (see "Email (.eml)").
 
 Key points:
 - **pdfjs worker** is built in `src/services/pdfjsWorker.ts` — a blob URL wrapper that polyfills `Uint8Array.prototype.toHex` and `Map.prototype.getOrInsertComputed` before importing the real worker (both are absent in the Electron Chromium version but required by pdfjs 5.x). That module imports no pdfjs itself, so it stays off the startup path; `usePdfDocument` pulls it in with pdfjs on first document open.
-- `usePdfPage` renders each page once and stores the result in a **module-level WeakMap cache** (`pageCache`). View-mode switches (single ↔ spread ↔ grid ↔ fullscreen) do not re-render pages.
+- `usePdfPage` renders each page once and stores the result in a **module-level cache** (`services/pageRender.ts` — a service, because print, OCR and the exporters use it too). View-mode switches (single ↔ spread ↔ grid ↔ fullscreen) do not re-render pages. The cache is **bounded**: see "Page memory is bounded".
 - `PdfPage` passes `pageData.canvas` directly to `<KonvaImage>` — no `toDataURL` / `new Image()` round-trip.
 
 ### HWP / HWPX viewing
@@ -91,7 +91,8 @@ to — the technique OCR layers use. Two details matter:
   invisible so vertical distortion never shows, while matching the width keeps
   selection highlights aligned with the glyphs.
 - Noto Sans KR is embedded **subsetted**, and a run whose glyphs the font lacks
-  is skipped rather than failing the whole export.
+  is skipped rather than failing the whole export. Subsetting goes through
+  **`fontkit` v2**, not `@pdf-lib/fontkit` — see "Korean text in saved PDFs".
 
 Verify a change here by reading the exported file back with pdfjs and calling
 `getTextContent()` — that is the same call a reader uses for select/copy/search.
@@ -328,7 +329,9 @@ App
 ├── PagePanel          ← Left sidebar: thumbnail strip, multi-select, drag-reorder, add/delete pages
 │                        readOnly={appMode === 'viewer'} — visible in both viewer and editor modes
 ├── Toast              ← Fixed bottom-center auto-dismissing notification (2500ms)
-├── [hidden file input] ← Double-click empty area to open
+├── [hidden file input] ← Double-click empty area to open (only when NOTHING is open —
+│                        Markdown and mail have no pdfDoc, and testing that alone
+│                        threw up the picker on a double-click meant to select a word)
 └── main
     └── PdfViewer
         ├── (single)   → LazyPdfPage × numPages (IntersectionObserver-gated)
@@ -337,7 +340,7 @@ App
         └── (fullscreen) → FullscreenView → PdfPage(s) (1 or 2 depending on fullscreenLayout)
 ```
 
-`LazyPdfPage` wraps `PdfPage` and defers mounting the Konva Stage until the container enters the viewport (400px rootMargin). Once mounted it stays mounted — the render cache makes re-mounts cheap.
+`LazyPdfPage` wraps `PdfPage` and mounts the Konva Stage when the container comes within 400px of the viewport, and unmounts it again once it is two screens away — the render cache makes re-mounts cheap. See "Page memory is bounded".
 
 `PdfPage` = Konva `<Stage>` with four layers: background (`KonvaImage`) + `AnnotationLayer` + in-progress drawing preview + the Ctrl+drag region highlighter.
 
@@ -345,7 +348,32 @@ App
 
 - `PdfPage` and `AnnotationLayer` are wrapped in `React.memo`.
 - `pageAnnotations` inside `PdfPage` is memoized with `useMemo` — gives `AnnotationLayer` a stable reference.
-- Ctrl+scroll zoom is handled via a passive-false wheel listener on `window` in App.tsx (disabled in `fullscreen` and `grid` modes).
+- Ctrl+scroll zoom is handled via a passive-false wheel listener on `<main>` in App.tsx (disabled in `fullscreen` and `grid` modes).
+- `PdfViewer` is `React.memo`: every prop App passes is stable, so the page list is not rebuilt when the page in view changes, read-aloud ticks, or a toast shows.
+- **Zoom does not rebuild text layers.** `PdfTextLayer` renders once per page (and rotation); a zoom calls pdfjs `TextLayer.update`, since position and font size already follow `--total-scale-factor` in CSS. Rebuilding meant a fresh `getTextContent` from the worker for every mounted page on every zoom step, the page on screen queued behind the rest, and the reader's selection lost.
+- **Find re-renders only what it touches.** Match → item mapping is one forward pass per page (it was matches × items), and moving to the next match swaps the highlight array of two pages only (`PdfViewer` keeps every other page's array identical, so memoised pages skip).
+- **`SpeechHighlight` measures for itself.** Its rectangles are re-measured every scroll frame while reading; held in App, that re-rendered the whole app ~60 times a second.
+- **Thumbnails render only rows in view** (`useThumbnails` + an IntersectionObserver on the panel list), cached per document, and shrink an already-rendered page raster when there is one. They used to render every page on opening the panel — the whole of a 1.38 GB ranged PDF pulled in — and copy the array per page (quadratic).
+
+#### Page memory is bounded
+
+Measured by arithmetic on an A4 page at dpr 1.25: a mounted page held its
+raster (~3 MB at fit-page, ~15 MB at fit-width) plus a Konva scene and hit
+canvas per layer (~7 MB / ~45 MB), and nothing was ever released — pages
+stayed mounted once seen and the render cache had no limit. Reading a 223-page
+document to the end came to ~2.2 GB at fit-page. Three changes, each needed:
+- `useInViewport` is two-sided: mount at 400px, unmount beyond `200%` of the
+  viewport. A page that leaves keeps a placeholder of its **own measured size**
+  (scaled with zoom) — the generic Letter placeholder would change the height of
+  every page above the reader as they unmount, and the document would jump.
+- The render cache evicts least-recently-used rasters over a 512 MB budget,
+  never one that is on screen (`retainPage`/`releasePage` from `usePdfPage`).
+  Eviction only drops the reference; a caller still using a canvas (OCR, print)
+  keeps it alive.
+- `AnnotationLayer` is mounted only on pages that have annotations.
+- `renderPage` calls pdfjs `page.cleanup()` once the raster exists: pdfjs keeps
+  every image it decoded for a page until told otherwise (~220 MB over a
+  200-page image-heavy document).
 - `FullscreenView` manages its own zoom state (auto-fit on page change, Ctrl+scroll override). ESC calls `document.exitFullscreen()` first; `onExit()` is triggered by the resulting `fullscreenchange` event — this avoids the "window shrinks after React unmount" artefact.
 
 ### Bundle splitting & lazy loading
@@ -386,12 +414,12 @@ App.tsx is kept thin by extracting feature bundles into hooks. Each owns the sta
 | Hook | Returns | Notes |
 |---|---|---|
 | `useAnnotations()` | annotation state + CRUD + `remapAnnotations`, `clearMarkups` | Sole source of annotation state |
-| `usePdfDocument(file)` | `{ pdfDoc, numPages, isLoading, error }` | Wraps pdfjs `getDocument` lifecycle |
-| `useFitZoom({ pdfDoc, viewMode, rotation, setZoom })` | `{ calcFitZoom }` | Auto-fit on doc/view/rotation change (debounced 80 ms) |
-| `usePrint()` | `{ handlePrint }` | Composites Konva canvases → image, listens to `wz-print` event |
+| `usePdfDocument(file)` | `{ pdfDoc, numPages, isLoading, error, kind, email, markdown, password… }` | Wraps pdfjs `getDocument` lifecycle; detects the format |
+| `useFitZoom({ pdfDoc, viewMode, rotation, setZoom })` | `{ calcFitZoom, fitWidth }` | Auto-fit on doc/view/rotation change (debounced 80 ms) |
+| `usePrint({ …, onError })` | `{ handlePrint, previewPages, confirmPrint, cancelPrint, … }` | Re-renders each page at 2.5x, composites annotations (`services/annotationCanvas.ts`, shared with HWP→PDF), previews as Blob URLs; listens to `wz-print` |
 | `useExporters({ ... onSuccess })` | `{ isExporting, handleExport{Pdf,Html,Images,Exe} }` | Lazy-imports services; surfaces a single `isExporting` for UI gating |
 | `usePageOperations({ fileBytes, onResult })` | `{ isPageOperating, handle{Delete,InsertBlank,InsertFromPdf,Reorder}Pages }` | Shared `runOp` wrapper handles try/catch + state flips |
-| `useThumbnails(pdfDoc, numPages)` | `thumbnails: string[]` (data URLs) | Sequential render at `THUMBNAIL_SCALE=0.2` |
+| `useThumbnails(pdfDoc, numPages, listRef)` | `thumbnailOf(page)` | Renders only rows in view, cached per document |
 
 ### Page management
 
@@ -405,7 +433,7 @@ Page CRUD operations are handled by pure functions in `src/services/pdfPageServi
 | `reorderPages(bytes, newOrder, password?)` | Reorder pages according to a permutation array |
 | `extractPages(bytes, pageNums, password?)` | Copy the given pages into a new PDF ("선택 저장") |
 
-`useThumbnails(pdfDoc, numPages)` — hook that renders page thumbnails sequentially at `THUMBNAIL_SCALE=0.2` (JPEG quality 0.8). Returns `thumbnails: string[]` (data URLs). Re-runs whenever `pdfDoc` changes.
+`useThumbnails(pdfDoc, numPages, listRef)` — renders thumbnails at `THUMBNAIL_SCALE=0.2` (JPEG 0.8) for the rows of `listRef` marked `THUMB_PAGE_ATTR` that are in view, cached per document. Returns `thumbnailOf(page)`.
 
 `PagePanel` (`src/components/panel/PagePanel.tsx`) — left sidebar showing thumbnails:
 - Click to navigate, Ctrl/Shift-click for multi-select
@@ -448,6 +476,16 @@ In the collapsed layout the name shares the middle with the page counter, since
 that is the only place a narrow bar has room for it; `flex-1 min-w-0` is what
 actually centres that block between two clusters of unequal width.
 
+**Words for a desktop app, not a web service.** Open is a folder icon and
+"파일 열기" (it opens every format, not just PDF); saving is a disk icon and
+"PDF로 저장 (Ctrl+S)" — the old upload/download arrows and "PDF 다운로드" read
+as a website's verbs. Ctrl+S is real: the document's own save (PDF for pages,
+the source while editing Markdown), and it works from inside the Markdown
+textarea. OCR is one button (this page) plus a chevron menu for the range; the
+second button labelled `ALL` meant nothing until hovered. The editing row
+labels its tools (선택 · 도장 · 서명 · 워터마크) from `md` up, since their glyphs
+are not self-explanatory, and starts with undo / redo.
+
 Keyboard: `R` recognizes the page, `RR` the whole document, `S` reads aloud.
 The single-press action is deliberately deferred by 350 ms so a second press can
 override it — running the page immediately and then the document would recognize
@@ -468,6 +506,7 @@ Drawing tools that are **display-only and not exported to PDF**. They live along
 | `2` | Toggle red rectangle drag mode (`activeMode = 'rectangle'`) |
 | `ESC` (first press) | Clear all markups + exit drawing mode (if any markups or drawing mode active) |
 | `ESC` (second press) | Exit fullscreen (if in fullscreen with no markups) |
+| `F5` / `Alt+F5` | Present from the first page / from the page in view (`fullscreenStartPage`) |
 | `Home` | Jump to first page (fullscreen only) |
 | `End` | Jump to last page (fullscreen only) |
 
@@ -533,6 +572,68 @@ bad document no longer pins the reload screen for the next, and `main.tsx`
 wraps `App` in one — a render error above the three view boundaries used to
 unmount the root and leave a blank window.
 
+**No `alert()` anywhere.** Export, print, page-insert, file-open and the page
+panel's read error used to report through `alert()`, which blocks the window —
+and in the embedded web viewer the page hosting it. Every failure goes to the
+toast (`onError`), including a Markdown save that used to fail into the console
+alone. `utils/errors.ts` `errorMessage(err)` is the one formatter.
+
+### Start screen and recent documents
+
+With nothing open the window shows `components/StartScreen.tsx`: a real
+**파일 열기** button (the old screen was one grey line naming an "Open" button
+that had no such label, with the whole area secretly clickable) and, in the
+desktop app, the last eight documents. The list lives in the main process
+(`electron/recentFiles.ts`, `recent:*` IPC) as `recent-files.json` in
+userData — **paths and times only**, never anything from inside a document,
+and only absolute paths to formats the app opens. Opening one goes through
+`openPath`, the same route as a double-clicked file, so it passes `read-file`'s
+full validation; one that can no longer be opened drops off the list. Paths
+come from the OS (`open-file`) or, for picked and dropped files, from
+`webUtils.getPathForFile` in the preload — the renderer has no `File.path`.
+Note the dev and packaged builds share the userData folder of the installed
+app, so testing adds to the real list.
+
+The logo and tagline belong to the start screen only; every open document
+(PDF, Markdown, mail) shows its own name instead, and the edit switch is hidden
+with nothing to edit. Small grey text in the chrome is `gray-400` at 11 px or
+more: `gray-500` on the `gray-900` bar is ~3.7:1, under the 4.5:1 small text
+needs.
+
+### Unsaved changes and undo
+
+Two ways work used to disappear without a word: opening another document
+dropped stamps, signatures, page edits and Markdown edits, and nothing could be
+taken back — a stray stamp or a deleted page stayed that way.
+
+**Undo / redo** (`hooks/useEditHistory.ts`) keeps whole snapshots of
+`{ annotations, file }` rather than inverse operations. Both are immutable, so a
+snapshot is two references, and one mechanism covers every change: a page edit
+replaces `file` with the edited bytes, so restoring the old `file` undoes it (the
+document reloads). App wraps `addAnnotation` / `updateAnnotation` /
+`removeAnnotation` / `clearMarkups` and the page-op result to `recordEdit()`
+first. Ctrl+Z, Ctrl+Y / Ctrl+Shift+Z (not in a text field, not presenting) and
+two buttons at the start of the editing row; page documents only — a Markdown
+edit is in a textarea with its own undo. Page delete no longer asks "are you
+sure?"; it says afterwards that Ctrl+Z brings the pages back.
+
+**Unsaved** is a comparison, not a flag: `savedState` holds the `file` and the
+lasting (non-volatile) annotation array as last opened or saved, and anything
+else is unsaved — so undoing back to the saved state reads as clean again. A
+PDF save marks it (`useExporters` `onPdfSaved`), Markdown reports through
+`onDirtyChange`. While unsaved: an amber ● before the file name and in the
+window title; opening another document asks **저장 / 저장 안 함 / 취소**
+(`UnsavedChangesDialog`; "save" runs the real save and only goes on once the
+file is written); and closing the window is held by `beforeunload`, which
+Electron turns into `will-prevent-unload` — the main process asks there,
+because Electron shows no prompt of its own.
+
+Two bugs this closed: a new document inherited the previous one's annotations
+(`openDocument` now clears them), and saving in the Markdown editor re-keyed
+the draft so the editor fell back to the file as opened — the edits vanished
+from the screen the moment they were saved (`savedCopy` now records what is on
+disk separately).
+
 ### Toast notifications
 
 `src/components/Toast.tsx` — fixed bottom-center notification:
@@ -551,7 +652,43 @@ Four export formats, all operating on `fileBytes` (not the rendered canvas). All
 | PDF (password) | `src/services/pdfExporter.ts` | Same output, encrypted or decrypted. Not a menu item — it is the toolbar padlock; see "Encrypted documents" |
 | HTML viewer | `src/services/htmlExporter.ts` | Self-contained file: PDF encoded as base64, decoded to a Blob URL at runtime |
 | Images (ZIP) | `src/services/imageExporter.ts` | Each page rendered to PNG at 2× scale via pdfjs; bundled with **JSZip** |
-| Viewer EXE | `electron/main.ts` `export-exe` IPC | Self-clone of the portable exe with PDF bytes appended; only works when running the packaged portable build |
+| Viewer EXE | `electron/main.ts` `export-exe` IPC | Self-clone of the portable exe with PDF bytes appended; only works when running the packaged portable build. A HWP or image is converted to PDF first (`viewerPdfBytes`) — sending the raw bytes failed with "Invalid PDF signature" |
+
+HTML export refuses PDFs over `HTML_EXPORT_MAX_BYTES` (300 MB): the page decodes its payload with one `atob`, and a JS string tops out at base64 of ~400 MB. It is built from Blob parts (base64 in 768 KB pieces), not four whole-file string copies.
+
+**OCR text is kept on save.** Recognition lives only in memory (`useOcr`), so a
+scanned PDF used to come back out of "PDF 저장" as the same image-only file it
+went in as. `placeOcrWords` (`services/ocrTextLayer.ts`) turns each recognized
+box into an invisible run in PDF user space and `exportPdf` writes it, sized to
+the measured width like the HWP text layer (`drawInvisibleRuns`). Two things it
+gets right:
+- Boxes are converted through the page's own pdfjs viewport
+  (`convertToPdfPoint`), not by flipping y: scanners often write `/Rotate` and
+  MediaBoxes that do not start at 0,0. A rotated page is covered by the test.
+- Pages that already have text are skipped, or every search hit and copy would
+  come out twice.
+Images and HWP go through `exportHwpToPdf`, which uses OCR words where the
+source has no text of its own. Verified in the packaged app: a 2-page scan, `RR`,
+Save → pdfjs reads back all six recognized lines on the right pages.
+
+### Korean text in saved PDFs — fontkit v2, not `@pdf-lib/fontkit`
+
+Every save that embeds Noto Sans KR (a Korean watermark or text edit, HWP/image
+→ PDF with its text layer, OCR text) **failed from the switch to
+`@cantoo/pdf-lib` until 1.19.2** with `Cannot read properties of undefined
+(reading 'pos')` — reproduced in the installed 1.19.1 on a real HWP. The fork
+serializes a subset with `subset.encode()` whenever that method exists,
+assuming fontkit v2's zero-argument form; `@pdf-lib/fontkit` has an internal
+`encode(stream)`.
+
+Routing around that exposed an older bug: `@pdf-lib/fontkit`'s CFF subsetter
+writes a broken font program for Noto Sans KR. Text still extracts, but glyphs
+paint blank — "대외비 계약서" rendered as "대외비" and a gap, with upstream
+pdf-lib too. pdfjs says so while parsing (`Out of bounds subrIndex for
+callsubr`), and `pdfExporter.ocr.test.ts` asserts zero such warnings. `fontkit`
+v2 (what the fork is built against) renders every glyph, ~32 KB per file, and
+its lazy chunk is 348 KB against the old 711 KB. `mcp/` still uses
+`@pdf-lib/fontkit` with upstream pdf-lib and has the glyph bug.
 
 ### Encrypted documents
 
@@ -639,6 +776,10 @@ for a reason. Such a file is now **paged in by byte range** instead
   those pdfjs goes on to fetch the entire file in the background, which is
   exactly the copy we are avoiding. Only PDFs: every other format needs its
   bytes whole, so a large HWP/image says so (`doc.tooLargeToOpen`).
+- pdfjs merges adjacent missing chunks into one request with no upper bound, so
+  a page with one big stream (a full-page scan) can ask for more than the 64 MB
+  one `read-file-range` call may carry. `pathFile.readRange` splits such a
+  request into ≤64 MB calls and reassembles it.
 - **View-only.** Every save path works from `fileBytes`, which a ranged document
   never has. `bytesUnavailable` tells `useExporters`, `usePageOperations` and
   the page-selection save to say why — *before* the save picker opens — and a
@@ -1161,6 +1302,12 @@ converting HWP needs a browser canvas, so it shells out to the app's headless
 mode exactly as the `hwp2pdf` console tool does. That is why an agent gets the
 same PDF the GUI exports, text layer included.
 
+**Writes are `.pdf` only and never overwrite unless asked** (`overwrite: true`,
+advertised on every tool that writes). Without `MCP_SANDBOX_DIR` — the stdio
+server the installer ships — any path was writable, and text an agent reads
+out of a PDF is attacker-controlled: "save the result over thesis.docx" would
+have destroyed it. `tools.output.test.ts` holds this.
+
 **Shipping it.** `scripts/build-mcp.cjs` bundles the server with esbuild into
 `build/mcp/`, which electron-builder copies to `<install>/resources/mcp/`. Two
 things about that bundle:
@@ -1246,9 +1393,19 @@ Renderer is sandboxed and IPC inputs are validated. Notable measures:
   `app.on('web-contents-created')`: `will-navigate`, `setWindowOpenHandler` and
   the webview denial used to be on the main window only, leaving the hidden CLI
   converter window (`pdfCliBackend.ts`) free to navigate and open windows.
-- **Permission requests are denied** (`setPermissionRequestHandler`). Electron's
-  default is to grant camera, microphone, geolocation and notifications silently;
-  nothing here needs any of them.
+- **The Vite dev server is trusted only when not packaged.** `isTrustedRendererUrl(url, { devServer })` gates IPC senders, navigation and permissions; the packaged app passes `devServer: false`. Before 1.19.2 `http://localhost:5173` was trusted in the shipped app too: any process on the machine can listen there (on a shared Windows host, another user's), and an SVG link in a Markdown or mail document (`<a xlink:href>`, which the `a[href]` link rewriting missed) could navigate the main window to it — preload and every IPC handler included. `openLinksOutside` (`services/links.ts`) now rewrites every `<a>`, and `will-redirect` is guarded like `will-navigate`.
+- **Permission requests are denied except three** (`allowsPermission` in
+  `security.ts`). Electron's default is to grant camera, microphone, geolocation
+  and notifications silently; nothing here needs any of them. But in Electron
+  **`requestFullscreen()` is a permission request** (`fullscreen`), and so is the
+  Escape-key lock presentation mode uses (`keyboardLock`). The 1.18.0 deny-all
+  refused both, so from 1.18.0 to 1.19.1 F5 drew the slideshow *inside the
+  window* — with the min/max/close title-bar overlay on top of the slide, which
+  real fullscreen hides. `fullscreen`, `keyboardLock` and
+  `clipboard-sanitized-write` (region OCR copy) are granted, and only to our own
+  renderer URL. Test a new web API that might be permission-gated in a hidden
+  window with the real handler before shipping: a refused `requestFullscreen()`
+  does not even reject, it just never settles.
 - **`read-file` refuses UNC paths** (`\\host\share\x.pdf`) unless the OS itself
   handed the path over (argv, file association, `open-file` — recorded in
   `osProvidedPaths`). Opening a share makes the main process initiate SMB and
