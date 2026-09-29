@@ -22,12 +22,24 @@ describe('useAnnotations', () => {
     expect(result.current.activeMode).toBeNull()
   })
 
-  it('addAnnotation adds annotation and selects it', () => {
+  it('addAnnotation adds a stamp, selects it, and keeps the stamp tool armed', () => {
     const { result } = renderHook(() => useAnnotations())
+    act(() => { result.current.setActiveMode('stamp') })
     let id!: string
     act(() => { id = result.current.addAnnotation(makeStamp()) })
     expect(result.current.annotations).toHaveLength(1)
     expect(result.current.annotations[0].id).toBe(id)
+    // Selected, so its resize handles show at once…
+    expect(result.current.selectedId).toBe(id)
+    // …and still armed, so the next click stamps again.
+    expect(result.current.activeMode).toBe('stamp')
+  })
+
+  it('addAnnotation returns to select after a signature', () => {
+    const { result } = renderHook(() => useAnnotations())
+    act(() => { result.current.setActiveMode('signature') })
+    let id!: string
+    act(() => { id = result.current.addAnnotation({ ...makeStamp(), type: 'signature' } as never) })
     expect(result.current.selectedId).toBe(id)
     expect(result.current.activeMode).toBe('select')
   })

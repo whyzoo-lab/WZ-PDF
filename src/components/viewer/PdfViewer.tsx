@@ -4,7 +4,7 @@ import { LazyPdfPage } from './LazyPdfPage'
 import { SpreadView } from './SpreadView'
 import { GridView } from './GridView'
 import { FullscreenView } from './FullscreenView'
-import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
+import type { Annotation, ActiveMode, OmitId, PendingStamp } from '../../types/annotation'
 import type { AppMode, ViewMode } from '../../types/viewModes'
 import type { SearchMatch } from '../../hooks/useSearch'
 import type { TextLayerHighlight } from './PdfTextLayer'
@@ -29,7 +29,7 @@ interface PdfViewerProps {
   fullscreenLayout: 'single' | 'spread'
   /** First page shown when fullscreen opens (Alt+F5 passes the page in view). */
   fullscreenStartPage?: number
-  pendingStamp: { src: string; presetId?: string } | null
+  pendingStamp: PendingStamp | null
   pendingSignature: string | null
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void

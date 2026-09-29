@@ -3,7 +3,7 @@ import { PdfPage } from './PdfPage'
 import { useInViewport } from '../../hooks/useInViewport'
 import { PDF_RENDER_SCALE } from '../../utils/constants'
 import type { ViewerDoc, DocKind } from '../../types/viewerDoc'
-import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
+import type { Annotation, ActiveMode, OmitId, PendingStamp } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
 
 // US Letter dimensions in PDF points × render scale — used as a placeholder
@@ -21,7 +21,7 @@ interface LazyPdfPageProps {
   annotations: Annotation[]
   selectedId: string | null
   activeMode: ActiveMode
-  pendingStamp: { src: string; presetId?: string } | null
+  pendingStamp: PendingStamp | null
   pendingSignature: string | null
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void

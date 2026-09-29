@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { AppMode, ViewMode } from '../../types/viewModes'
 import type { ActiveMode } from '../../types/annotation'
 import { STAMP_PRESETS, svgToPng } from '../../utils/stampPresets'
+import type { SavedStamp } from '../../services/stampLibrary'
 import { classifyDocFile } from '../../utils/detectDocType'
 import { t } from '../../i18n'
 import { DOCUMENT_ACCEPT } from '../../utils/detectDocType'
@@ -57,6 +58,12 @@ export interface ActionBarProps {
   onRotateLeft: () => void
   onModeChange: (mode: ActiveMode) => void
   onStampSelect: (src: string, presetId?: string) => void
+  /** "내 도장": stamps the reader uploaded, kept on this computer. */
+  savedStamps?: SavedStamp[]
+  onSavedStampSelect?: (stamp: SavedStamp) => void
+  onSavedStampRemove?: (id: string) => void
+  /** Handles an uploaded stamp image (cleans it up and saves it). Without it the image is used as-is, once. */
+  onStampUpload?: (file: File) => void
   onSignatureClick: () => void
   onWatermarkClick: () => void
   onDeleteSelected: () => void
@@ -127,6 +134,10 @@ export function ActionBar({
   onRotateLeft,
   onModeChange,
   onStampSelect,
+  savedStamps = [],
+  onSavedStampSelect,
+  onSavedStampRemove,
+  onStampUpload,
   onSignatureClick,
   onWatermarkClick,
   onDeleteSelected,
@@ -313,6 +324,12 @@ export function ActionBar({
   const handleCustomUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (onStampUpload) {
+      onStampUpload(file)
+      setStampPanelOpen(false)
+      e.target.value = ''
+      return
+    }
     const reader = new FileReader()
     reader.onload = ev => {
       const result = ev.target?.result
@@ -618,6 +635,37 @@ export function ActionBar({
               className="text-xs text-left px-3 py-1.5 hover:bg-gray-700 rounded text-gray-200 whitespace-nowrap"
             >{p.label}</button>
           ))}
+          {savedStamps.length > 0 && onSavedStampSelect && (
+            <>
+              <div className="mt-1 border-t border-gray-600 px-3 pt-1.5 pb-0.5 text-[11px] text-gray-400">{t('stamp.mine')}</div>
+              {savedStamps.map(s => (
+                <div key={s.id} className="group flex items-center rounded hover:bg-gray-700">
+                  <button
+                    onClick={() => { onSavedStampSelect(s); setStampPanelOpen(false) }}
+                    title={s.name}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-200"
+                  >
+                    {/* A light tile, so a dark or red seal on transparency is visible on the dark menu. */}
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white/90">
+                      <img src={s.src} alt="" className="max-h-6 max-w-6 object-contain" />
+                    </span>
+                    <span className="truncate">{s.name}</span>
+                  </button>
+                  {onSavedStampRemove && (
+                    <button
+                      onClick={() => onSavedStampRemove(s.id)}
+                      aria-label={t('stamp.remove', { name: s.name })}
+                      title={t('stamp.remove', { name: s.name })}
+                      className="mr-1 shrink-0 rounded p-1 text-gray-400 opacity-0 hover:bg-gray-600 hover:text-gray-100 focus:opacity-100 group-hover:opacity-100"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div className="mb-0.5 border-t border-gray-600" />
+            </>
+          )}
           <label className="text-xs text-left px-3 py-1.5 hover:bg-gray-700 rounded cursor-pointer text-gray-200">
             {t('stamp.uploadImage')}
             <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleCustomUpload} />

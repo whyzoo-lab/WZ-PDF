@@ -73,6 +73,46 @@ describe('the keydown listener', () => {
   })
 })
 
+describe('the stamp tool', () => {
+  it('stays armed until Esc, which puts it down', () => {
+    const d = setup('single', 1)
+    d.rerender({ ...d, appMode: 'editor' as never, activeMode: 'stamp' as never })
+    press({ key: 'Escape' })
+    expect(d.setActiveMode).toHaveBeenCalledWith('select')
+    expect(d.clearMarkups).not.toHaveBeenCalled()
+  })
+
+  it('keeps the stamp just placed selected after Esc, so Ctrl+C copies it', () => {
+    const d = setup('single', 1)
+    const selectAnnotation = vi.fn()
+    d.rerender({ ...d, appMode: 'editor' as never, activeMode: 'stamp' as never, selectedId: 'st1' as never, selectAnnotation } as never)
+    press({ key: 'Escape' })
+    expect(selectAnnotation).toHaveBeenCalledWith('st1')
+  })
+})
+
+describe('copy and paste of stamps', () => {
+  it('Ctrl+C / Ctrl+X / Ctrl+V go to the stamp handlers', () => {
+    const d = setup('single', 1)
+    const onCopyAnnotation = vi.fn(() => true), onCutAnnotation = vi.fn(() => true), onPasteAnnotation = vi.fn(() => true)
+    d.rerender({ ...d, onCopyAnnotation, onCutAnnotation, onPasteAnnotation } as never)
+    press({ key: 'c', ctrlKey: true })
+    press({ key: 'x', ctrlKey: true })
+    press({ key: 'v', ctrlKey: true })
+    expect(onCopyAnnotation).toHaveBeenCalledTimes(1)
+    expect(onCutAnnotation).toHaveBeenCalledTimes(1)
+    expect(onPasteAnnotation).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves Ctrl+C to the browser when there is no stamp to copy (copying text)', () => {
+    const d = setup('single', 1)
+    d.rerender({ ...d, onCopyAnnotation: () => false } as never)
+    const event = new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true, cancelable: true })
+    window.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+  })
+})
+
 describe('undo and redo keys', () => {
   it('Ctrl+Z undoes, Ctrl+Y and Ctrl+Shift+Z redo', () => {
     const d = setup('single', 1)

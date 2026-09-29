@@ -45,6 +45,13 @@ export const ko = {
 
   // ── Stamp menu ────────────────────────────────────────────────────────────
   'stamp.uploadImage': '이미지 업로드…',
+  'stamp.mine': '내 도장',
+  'stamp.remove': '{name} 도장 지우기',
+  'stamp.armed': '찍을 곳을 클릭하세요. 계속 찍을 수 있고, Esc를 누르면 끝납니다. 크기를 바꾸면 다음부터 그 크기로 찍힙니다.',
+  'stamp.uploadFailed': '도장 이미지를 불러오지 못했습니다: {error}',
+  'annotation.copied': '복사했습니다. 다른 페이지에 마우스를 올리고 Ctrl+V를 누르면 같은 위치에 붙여넣습니다.',
+  'annotation.cut': '잘라냈습니다. Ctrl+V로 붙여넣을 수 있습니다.',
+  'annotation.pastedPages': '{n}쪽에 같은 위치로 붙여넣었습니다.',
 
   // ── Export menu ───────────────────────────────────────────────────────────
   'export.pdf': 'PDF 저장',

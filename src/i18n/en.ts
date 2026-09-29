@@ -45,6 +45,13 @@ export const en = {
 
   // ── Stamp menu ────────────────────────────────────────────────────────────
   'stamp.uploadImage': 'Upload image…',
+  'stamp.mine': 'My stamps',
+  'stamp.remove': 'Remove the {name} stamp',
+  'stamp.armed': 'Click where to stamp. You can keep stamping; Esc stops. Resize one and the next comes out that size.',
+  'stamp.uploadFailed': 'Could not load the stamp image: {error}',
+  'annotation.copied': 'Copied. Point at another page and press Ctrl+V to paste it in the same place.',
+  'annotation.cut': 'Cut. Press Ctrl+V to paste it.',
+  'annotation.pastedPages': 'Pasted in the same place on {n} pages.',
 
   // ── Export menu ───────────────────────────────────────────────────────────
   'export.pdf': 'Save PDF',

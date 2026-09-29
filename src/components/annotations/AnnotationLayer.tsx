@@ -60,9 +60,22 @@ function AnnotationLayerInner({
     })
   }
 
+  // A stamp or signature node appears only once its image has loaded — after
+  // the selection effect above has already run for it. So a node arriving for
+  // the selected annotation takes the transformer itself; otherwise a stamp
+  // just placed showed no resize handles until it was clicked.
+  const selectedIdRef = useRef(selectedId)
+  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
   const setRef = (id: string) => (node: Konva.Node | null) => {
-    if (node) nodeRefs.current.set(id, node)
-    else nodeRefs.current.delete(id)
+    if (node) {
+      nodeRefs.current.set(id, node)
+      if (id === selectedIdRef.current && trRef.current && !trRef.current.nodes().includes(node)) {
+        trRef.current.nodes([node])
+        trRef.current.getLayer()?.batchDraw()
+      }
+    } else {
+      nodeRefs.current.delete(id)
+    }
   }
 
   return (

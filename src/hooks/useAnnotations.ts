@@ -35,9 +35,11 @@ export function useAnnotations(): UseAnnotationsReturn {
       ...prev,
       annotations: [...prev.annotations, { ...annotation, id } as Annotation],
       // Volatile markups don't get selected / don't switch out of drawing mode,
-      // so the user can keep drawing multiple strokes.
+      // so the user can keep drawing multiple strokes. A stamp is selected (so
+      // its handles show at once) but keeps the stamp tool armed, so the next
+      // click stamps again — page after page, like Adobe's stamp tool.
       selectedId: volatile ? prev.selectedId : id,
-      activeMode: volatile ? prev.activeMode : 'select',
+      activeMode: volatile || annotation.type === 'stamp' ? prev.activeMode : 'select',
     }))
     return id
   }, [])

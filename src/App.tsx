@@ -24,7 +24,7 @@ import { SearchBar } from './components/SearchBar'
 import { SpeechAnnouncer } from './components/SpeechAnnouncer'
 import { PasswordPrompt } from './components/modals/PasswordPrompt'
 import { PasswordSetPrompt } from './components/modals/PasswordSetPrompt'
-import type { Annotation, OmitId } from './types/annotation'
+import type { Annotation, OmitId, PendingStamp } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
 import { isFlowKind } from './types/viewerDoc'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
@@ -35,6 +35,8 @@ import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
 import { UpdateToast } from './components/UpdateToast'
 import { useAutoUpdate } from './hooks/useAutoUpdate'
+import { useStampLibrary } from './hooks/useStampLibrary'
+import { customKey, type SavedStamp } from './services/stampLibrary'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { t } from './i18n'
 import { isVolatile } from './types/annotation'
@@ -84,6 +86,9 @@ function prefetchViewerChunks(): void {
   void import('pdfjs-dist').catch(() => {})
 }
 
+/** A preset stamp's size until the reader resizes one (PDF points). */
+const DEFAULT_PRESET_STAMP_SIZE = { width: 100, height: 40 }
+
 /** How long "opening…" may stand in for the start screen at launch. */
 const OPENING_AT_LAUNCH_DEADLINE_MS = 15_000
 
@@ -111,7 +116,7 @@ export default function App() {
   const [isPanelOpen, setIsPanelOpen] = useState(false)
 
   // ── Editing state (pending placement, modals) ─────────────────────────────
-  const [pendingStamp, setPendingStamp] = useState<{ src: string; presetId?: string } | null>(null)
+  const [pendingStamp, setPendingStamp] = useState<PendingStamp | null>(null)
   const [pendingSignature, setPendingSignature] = useState<string | null>(null)
   const [showSignaturePad, setShowSignaturePad] = useState(false)
   const [showWatermarkConfig, setShowWatermarkConfig] = useState(false)
@@ -171,10 +176,24 @@ export default function App() {
     recordEdit()
     return addAnnotationRaw(a)
   }, [recordEdit, addAnnotationRaw])
+  // Saved stamps ("내 도장"), loaded once the editor is switched on.
+  const stampLibrary = useStampLibrary(appMode === 'editor')
+  const { rememberSize: rememberStampSize } = stampLibrary
+  const annotationsRef = useRef(annotations)
+  useLayoutEffect(() => { annotationsRef.current = annotations })
   const updateAnnotation = useCallback((id: string, updates: Partial<Annotation>) => {
     recordEdit()
     updateAnnotationRaw(id, updates)
-  }, [recordEdit, updateAnnotationRaw])
+    // Resizing a stamp sets that stamp's size from now on: the next one placed
+    // (the tool stays armed) and every later use come out the same size.
+    const target = annotationsRef.current.find(a => a.id === id)
+    if (target?.type === 'stamp' && target.presetId && updates.width !== undefined && updates.height !== undefined) {
+      const size = { width: updates.width, height: updates.height }
+      const key = target.presetId
+      setPendingStamp(p => (p && p.presetId === key ? { ...p, ...size } : p))
+      void rememberStampSize(key, size)
+    }
+  }, [recordEdit, updateAnnotationRaw, rememberStampSize])
   const removeAnnotation = useCallback((id: string) => {
     recordEdit()
     removeAnnotationRaw(id)
@@ -658,15 +677,42 @@ export default function App() {
   }, [])
 
   // ── Annotation helpers ────────────────────────────────────────────────────
-  const handleStampSelect = useCallback((src: string, presetId?: string) => {
-    setPendingStamp({ src, presetId })
+  /** Arm the stamp tool. It stays armed after each stamp until Esc or 선택. */
+  const armStamp = useCallback((stamp: PendingStamp) => {
+    setPendingStamp(stamp)
     setActiveMode('stamp')
-  }, [setActiveMode])
+    showToast(t('stamp.armed'))
+  }, [setActiveMode, showToast])
+
+  const { presetSize, upload: uploadStamp, remove: removeSavedStamp } = stampLibrary
+  const handleStampSelect = useCallback(async (src: string, presetId?: string) => {
+    const size = (presetId && await presetSize(presetId).catch(() => null)) || DEFAULT_PRESET_STAMP_SIZE
+    armStamp({ src, presetId, ...size })
+  }, [armStamp, presetSize])
+
+  const handleSavedStampSelect = useCallback((stamp: SavedStamp) => {
+    armStamp({ src: stamp.src, presetId: customKey(stamp.id), width: stamp.width, height: stamp.height })
+  }, [armStamp])
+
+  /** An uploaded image joins "내 도장" and is armed straight away. */
+  const handleStampUpload = useCallback(async (f: File) => {
+    try {
+      handleSavedStampSelect(await uploadStamp(f))
+    } catch (err) {
+      showToast(t('stamp.uploadFailed', { error: errorMessage(err) }))
+    }
+  }, [uploadStamp, handleSavedStampSelect, showToast])
 
   const handleAnnotationAdd = useCallback((annotation: OmitId<Annotation>) => {
     addAnnotation(annotation)
     // Pen / rectangle are volatile — stay in drawing mode for continuous strokes.
     if (isVolatile(annotation)) return
+    // A stamp keeps the tool armed, like Adobe's: the next click stamps again,
+    // on this page or the next. The stamp just placed is selected (addAnnotation
+    // does that), so it can be resized at once — and that size is kept.
+    // (addAnnotation keeps the mode for a stamp; setActiveMode here would
+    // also clear the selection and hide the new stamp's resize handles.)
+    if (annotation.type === 'stamp') return
     setPendingStamp(null)
     setPendingSignature(null)
     setActiveMode('select')
@@ -968,7 +1014,11 @@ export default function App() {
     onRotate: handleRotate,
     onRotateLeft: handleRotateLeft,
     onModeChange: setActiveMode,
-    onStampSelect: handleStampSelect,
+    onStampSelect: (src: string, presetId?: string) => { void handleStampSelect(src, presetId) },
+    savedStamps: stampLibrary.stamps,
+    onSavedStampSelect: handleSavedStampSelect,
+    onSavedStampRemove: (id: string) => { void removeSavedStamp(id) },
+    onStampUpload: (f: File) => { void handleStampUpload(f) },
     onSignatureClick: handleSignatureClick,
     onWatermarkClick: handleWatermarkClick,
     onDeleteSelected: handleDeleteSelected,

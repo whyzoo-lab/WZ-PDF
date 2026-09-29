@@ -3,7 +3,7 @@ import { LazyPdfPage } from './LazyPdfPage'
 import { buildSpreads, wideTest, type PageSize } from '../../utils/spreadLayout'
 import { PDF_RENDER_SCALE } from '../../utils/constants'
 import { t } from '../../i18n'
-import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
+import type { Annotation, ActiveMode, OmitId, PendingStamp } from '../../types/annotation'
 
 interface SpreadViewProps {
   pdfDoc: ViewerDoc
@@ -14,7 +14,7 @@ interface SpreadViewProps {
   annotations: Annotation[]
   selectedId: string | null
   activeMode: ActiveMode
-  pendingStamp: { src: string; presetId?: string } | null
+  pendingStamp: PendingStamp | null
   pendingSignature: string | null
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void

@@ -24,6 +24,8 @@ interface GlobalShortcutsDeps {
   removeAnnotation: (id: string) => void
   clearMarkups: () => void
   setActiveMode: (mode: ActiveMode) => void
+  /** Select an annotation (or none). Used to keep a stamp selected after Esc. */
+  selectAnnotation?: (id: string | null) => void
   /** OCR the page in view. */
   onRunOcr: () => void
   /** OCR every page. */
@@ -39,6 +41,14 @@ interface GlobalShortcutsDeps {
   onRedo?: () => void
   /** Ctrl+S — save the open document. Absent where there is nothing to save. */
   onSave?: () => void
+  /**
+   * Ctrl+C / Ctrl+X / Ctrl+V on stamps, signatures and text edits. Each returns
+   * whether it did anything: when it did not (no stamp selected, or text is
+   * selected), the key is left alone so copying document text still works.
+   */
+  onCopyAnnotation?: () => boolean
+  onCutAnnotation?: () => boolean
+  onPasteAnnotation?: () => boolean
 }
 
 /**
@@ -84,9 +94,10 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
       const {
         pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId, currentPage,
         setViewMode, setShowSearch, onEnterFullscreen, fileInputRef,
-        removeAnnotation, clearMarkups, setActiveMode,
+        removeAnnotation, clearMarkups, setActiveMode, selectAnnotation,
         onRunOcr, onRunOcrAll, onToggleSpeech,
         onSpeechPrevious, onSpeechNext, onSpeechPlayPause, onUndo, onRedo, onSave,
+        onCopyAnnotation, onCutAnnotation, onPasteAnnotation,
       } = latest.current
       const tgt = e.target as HTMLElement | null
       const inInput = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)
@@ -131,6 +142,13 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
         const k = e.key.toLowerCase()
         if (k === 'z' && !e.shiftKey && onUndo) { e.preventDefault(); onUndo(); return }
         if (((k === 'z' && e.shiftKey) || k === 'y') && onRedo) { e.preventDefault(); onRedo(); return }
+        // Copy / cut / paste a stamp. Only claimed when there is one to act on,
+        // so Ctrl+C on selected document text still copies the text.
+        if (!e.shiftKey) {
+          if (k === 'c' && onCopyAnnotation?.()) { e.preventDefault(); return }
+          if (k === 'x' && onCutAnnotation?.()) { e.preventDefault(); return }
+          if (k === 'v' && onPasteAnnotation?.()) { e.preventDefault(); return }
+        }
       }
       if (e.key === 'F2' && viewMode !== 'fullscreen') {
         e.preventDefault()
@@ -217,6 +235,17 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
       //               exits fullscreen.
       // Keyboard Lock API (in FullscreenView) keeps the browser from
       // auto-exiting fullscreen on ESC, giving this handler first crack.
+      // Esc puts the stamp down: the stamp tool stays armed after each stamp
+      // (so pages can be stamped one after another), and this is how it ends.
+      if (e.key === 'Escape' && !inPresentation && activeMode === 'stamp') {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        setActiveMode('select')
+        // Changing mode clears the selection; the stamp just placed stays
+        // selected, so Ctrl+C right after Esc copies it.
+        if (selectedId) selectAnnotation?.(selectedId)
+        return
+      }
       if (e.key === 'Escape' && !inPresentation) {
         const drawingMode = activeMode === 'pen' || activeMode === 'rectangle'
         const hasMarkups  = annotations.some(isVolatile)

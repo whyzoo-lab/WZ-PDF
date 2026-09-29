@@ -182,6 +182,20 @@ describe('ActionBar', () => {
     expect(screen.getByRole('button', { name: /^watermark$/i })).toBeInTheDocument()
   })
 
+  it('lists saved stamps under "My stamps", to use again or remove', () => {
+    const seal = { id: 's1', name: 'Company seal', src: 'data:image/png;base64,AA==', width: 72, height: 72, createdAt: 1 }
+    const onSavedStampSelect = vi.fn()
+    const onSavedStampRemove = vi.fn()
+    render(<ActionBar {...defaultProps} appMode="editor" savedStamps={[seal]}
+      onSavedStampSelect={onSavedStampSelect} onSavedStampRemove={onSavedStampRemove} />)
+    fireEvent.click(screen.getByRole('button', { name: /^stamp$/i }))
+    expect(screen.getByText('My stamps')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /remove the company seal stamp/i }))
+    expect(onSavedStampRemove).toHaveBeenCalledWith('s1')
+    fireEvent.click(screen.getByText('Company seal'))
+    expect(onSavedStampSelect).toHaveBeenCalledWith(seal)
+  })
+
   it('hides editor tools in viewer mode', () => {
     render(<ActionBar {...defaultProps} appMode="viewer" />)
     expect(screen.queryByRole('button', { name: /^stamp$/i })).not.toBeInTheDocument()

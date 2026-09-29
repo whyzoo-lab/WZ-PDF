@@ -10,7 +10,7 @@ import type { TextLayerHighlight, TextEditCommit } from './PdfTextLayer'
 import { OcrTextLayer } from './OcrTextLayer'
 import type { OcrPageResult, OcrWord } from '../../types/ocr'
 import { t } from '../../i18n'
-import type { Annotation, ActiveMode, OmitId } from '../../types/annotation'
+import type { Annotation, ActiveMode, OmitId, PendingStamp } from '../../types/annotation'
 import { annotationsForPage } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
 import { toStoredCoords } from '../../utils/coordinates'
@@ -35,7 +35,7 @@ interface PdfPageProps {
   annotations: Annotation[]
   selectedId: string | null
   activeMode: ActiveMode
-  pendingStamp: { src: string; presetId?: string } | null
+  pendingStamp: PendingStamp | null
   pendingSignature: string | null
   onAnnotationSelect: (id: string | null) => void
   onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void
@@ -285,16 +285,23 @@ function PdfPageInner({
   const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent | Event>) => {
     const stage = e.target.getStage()
     const pos = stage?.getPointerPosition()
+    // A click on the page itself — the stage or the page picture — as opposed
+    // to on a stamp or a resize handle. The stamp tool stays armed after each
+    // placement, so the stamp just placed must be selectable and resizable
+    // without every click on it stamping a new one on top.
+    const onPage = e.target === stage || e.target.getLayer() === pageLayerRef.current
 
     if (pos && activeMode === 'stamp' && pendingStamp) {
+      if (!onPage) return
       const stored = toStoredCoords(pos.x, pos.y, effectiveZoom)
+      const { width, height } = pendingStamp
       onAnnotationAdd({
         type: 'stamp',
         page: pageNumber,
-        x: stored.x - 50,
-        y: stored.y - 20,
-        width: 100,
-        height: 40,
+        x: stored.x - width / 2,
+        y: stored.y - height / 2,
+        width,
+        height,
         rotation: 0,
         src: pendingStamp.src,
         presetId: pendingStamp.presetId,

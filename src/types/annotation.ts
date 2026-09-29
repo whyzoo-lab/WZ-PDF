@@ -79,6 +79,20 @@ export type Annotation =
 // distribution just like `extends any` but without the no-explicit-any lint.
 export type OmitId<T> = T extends unknown ? Omit<T, 'id'> : never
 
+/**
+ * The stamp the next click places. It carries its size so a stamp comes out
+ * the size it was last given (see services/stampLibrary) and stays armed for
+ * the next click — stamping several pages is click, click, click.
+ */
+export interface PendingStamp {
+  src: string
+  /** Preset id, or `custom:<id>` for an uploaded stamp. */
+  presetId?: string
+  /** PDF points. */
+  width: number
+  height: number
+}
+
 export type ActiveMode = 'select' | 'stamp' | 'signature' | 'watermark' | 'pen' | 'rectangle' | null
 
 /** Annotation types that are display-only (not exported to PDF, cleared by Reset). */
