@@ -5,8 +5,9 @@ import { MIN_ZOOM_SPOT, MAX_ZOOM_SPOT } from '../utils/presentTools'
 type Spot = { scale: number; x: number; y: number } | null
 
 interface PresenterWheelDeps {
-  step: number
-  maxPage: number
+  /** First page of the next / previous slide (a page, or a two-page row). */
+  nextPage: (page: number) => number
+  prevPage: (page: number) => number
   spot: Spot
   setSpot: Dispatch<SetStateAction<Spot>>
   setZoom: Dispatch<SetStateAction<number>>
@@ -18,7 +19,7 @@ interface PresenterWheelDeps {
  * zooms the page; horizontal two-finger swipe (accumulated) flips pages; plain
  * vertical wheel flips pages with a cooldown so one flick advances one page.
  */
-export function usePresenterWheel({ step, maxPage, spot, setSpot, setZoom, setCurrentPage }: PresenterWheelDeps) {
+export function usePresenterWheel({ nextPage, prevPage, spot, setSpot, setZoom, setCurrentPage }: PresenterWheelDeps) {
   const wheelCooldownRef = useRef(false)
   const deltaXAccRef     = useRef(0)     // 수평 스와이프 누산기
 
@@ -44,10 +45,10 @@ export function usePresenterWheel({ step, maxPage, spot, setSpot, setZoom, setCu
         deltaXAccRef.current += e.deltaX
         if (deltaXAccRef.current > 80) {
           deltaXAccRef.current = 0
-          setCurrentPage(p => Math.min(p + step, maxPage))
+          setCurrentPage(nextPage)
         } else if (deltaXAccRef.current < -80) {
           deltaXAccRef.current = 0
-          setCurrentPage(p => Math.max(p - step, 1))
+          setCurrentPage(prevPage)
         }
         return
       }
@@ -61,12 +62,12 @@ export function usePresenterWheel({ step, maxPage, spot, setSpot, setZoom, setCu
       wheelCooldownRef.current = true
       setTimeout(() => { wheelCooldownRef.current = false }, 350)
       if (e.deltaY > 0) {
-        setCurrentPage(p => Math.min(p + step, maxPage))
+        setCurrentPage(nextPage)
       } else {
-        setCurrentPage(p => Math.max(p - step, 1))
+        setCurrentPage(prevPage)
       }
     }
     window.addEventListener('wheel', onWheel, { passive: false })
     return () => window.removeEventListener('wheel', onWheel)
-  }, [step, maxPage, spot, setSpot, setZoom, setCurrentPage])
+  }, [nextPage, prevPage, spot, setSpot, setZoom, setCurrentPage])
 }

@@ -84,6 +84,37 @@ describe('FullscreenView', () => {
     expect(screen.getByTestId('page-1')).toBeInTheDocument()
   })
 
+  describe('spread layout', () => {
+    // Page 3 is a wide page: it is shown alone and pairing restarts after it.
+    const spreads = [[1, 2], [3], [4, 5]]
+
+    it('steps through rows, showing a wide page on its own', () => {
+      render(<FullscreenView {...baseProps} layout="spread" spreads={spreads} />)
+      expect(screen.getByTestId('page-1')).toBeInTheDocument()
+      expect(screen.getByTestId('page-2')).toBeInTheDocument()
+      fireEvent.keyDown(window, { key: 'ArrowRight' })
+      expect(screen.getByTestId('page-3')).toBeInTheDocument()
+      expect(screen.queryByTestId('page-4')).not.toBeInTheDocument()
+      fireEvent.keyDown(window, { key: 'ArrowRight' })
+      expect(screen.getByTestId('page-4')).toBeInTheDocument()
+      expect(screen.getByTestId('page-5')).toBeInTheDocument()
+      fireEvent.keyDown(window, { key: 'ArrowLeft' })
+      expect(screen.getByTestId('page-3')).toBeInTheDocument()
+    })
+
+    it('opens on the row that holds the start page', () => {
+      render(<FullscreenView {...baseProps} layout="spread" spreads={spreads} startPage={5} />)
+      expect(screen.getByTestId('page-4')).toBeInTheDocument()
+      expect(screen.getByTestId('page-5')).toBeInTheDocument()
+    })
+
+    it('pairs pages plainly without sizes', () => {
+      render(<FullscreenView {...baseProps} layout="spread" startPage={2} />)
+      expect(screen.getByTestId('page-1')).toBeInTheDocument()
+      expect(screen.getByTestId('page-2')).toBeInTheDocument()
+    })
+  })
+
   it('does not navigate past last page on ArrowRight', () => {
     render(<FullscreenView {...baseProps} numPages={1} />)
     fireEvent.keyDown(window, { key: 'ArrowRight' })

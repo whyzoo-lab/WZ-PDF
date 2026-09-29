@@ -365,7 +365,7 @@ canvas {
 /* Wide tables are extremely common in mail; scroll them instead of letting one
    push the whole app sideways. */
 .wz-email-body table { max-width: 100%; }
-.wz-email-body { overflow-x: auto; }
+.wz-email-body { overflow-x: auto; overflow-wrap: break-word; }
 .wz-email-body a { color: #1d4ed8; text-decoration: underline; }
 .wz-email-body blockquote {
   margin: 0.5rem 0; padding-left: 0.75rem;
@@ -413,6 +413,8 @@ canvas {
    Markdown carries no styling of its own, so unlike the mail body (which only
    needs containing) this has to supply the whole document look. Sanitizing
    happens in src/services/markdownDoc.ts; everything here is presentation. */
+/* A bare URL or path in running text breaks rather than widening the page. */
+.wz-md-body { overflow-wrap: break-word; }
 .wz-md-body > :first-child { margin-top: 0; }
 .wz-md-body > :last-child { margin-bottom: 0; }
 
@@ -467,6 +469,16 @@ canvas {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.88em;
   background: #f3f4f6; border-radius: 4px; padding: 0.15em 0.35em;
+}
+/* A path, URL or long identifier in backticks has no space to break at, so
+   it ran straight out of the page (`a/b/c/…/matrix3`, `Y:\제안\…`). Inline
+   code may break anywhere; each wrapped line keeps its own padded background.
+   Code blocks are left alone — they scroll, and a break there would read as a
+   real line break in the code. */
+.wz-md-body :not(pre) > code {
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .wz-md-body pre {
   margin: 1em 0; padding: 0.9em 1em;

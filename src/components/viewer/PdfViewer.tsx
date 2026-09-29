@@ -9,6 +9,8 @@ import type { AppMode, ViewMode } from '../../types/viewModes'
 import type { SearchMatch } from '../../hooks/useSearch'
 import type { TextLayerHighlight } from './PdfTextLayer'
 import type { OcrPageResult } from '../../types/ocr'
+import { usePageSizes } from '../../hooks/usePageSizes'
+import { buildSpreads } from '../../utils/spreadLayout'
 
 interface PdfViewerProps {
   pdfDoc: ViewerDoc
@@ -100,6 +102,12 @@ function PdfViewerImpl({
     return map
   }, [plainByPage, activePage, activeIndex])
 
+  // Two-page rows, cut around pages much wider than the rest. Sizes are read
+  // only when a two-page layout is actually on screen.
+  const twoUp = viewMode === 'spread' || (viewMode === 'fullscreen' && fullscreenLayout === 'spread')
+  const pageSizes = usePageSizes(pdfDoc, twoUp)
+  const spreads = React.useMemo(() => buildSpreads(numPages, pageSizes, rotation), [numPages, pageSizes, rotation])
+
   const sharedAnnotationProps = {
     pdfDoc,
     kind,
@@ -162,7 +170,7 @@ function PdfViewerImpl({
   }, [viewMode, numPages])
 
   if (viewMode === 'spread') {
-    return <SpreadView {...sharedAnnotationProps} numPages={numPages} />
+    return <SpreadView {...sharedAnnotationProps} numPages={numPages} spreads={spreads} />
   }
 
   if (viewMode === 'grid') {
@@ -187,6 +195,7 @@ function PdfViewerImpl({
         annotations={annotations}
         selectedId={selectedId}
         layout={fullscreenLayout}
+        spreads={spreads}
         startPage={fullscreenStartPage}
         rotation={rotation}
         activeMode={activeMode}

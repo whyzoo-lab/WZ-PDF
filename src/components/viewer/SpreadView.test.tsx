@@ -46,6 +46,12 @@ describe('SpreadView', () => {
     expect(rows).toHaveLength(2)
   })
 
+  it('lays out the rows it is given (a wide page alone)', () => {
+    const { container } = render(<SpreadView {...baseProps} numPages={5} spreads={[[1, 2], [3], [4, 5]]} />)
+    const rows = Array.from(container.querySelectorAll('[data-spread-row]'))
+    expect(rows.map(r => r.children.length)).toEqual([2, 1, 2])
+  })
+
   it('renders correct number of rows for odd numPages', () => {
     const { container } = render(<SpreadView {...baseProps} numPages={5} />)
     // 5 pages → 3 rows (last row has only page 5)

@@ -6,8 +6,10 @@ import type { PresentStroke, PresentToolState } from '../types/present'
 type Spot = { scale: number; x: number; y: number } | null
 
 interface PresenterKeysDeps {
-  step: number
-  maxPage: number
+  /** First page of the next / previous slide (a page, or a two-page row). */
+  nextPage: (page: number) => number
+  prevPage: (page: number) => number
+  lastPage: number
   safeExit: () => void
   tool: PresentToolState
   strokes: PresentStroke[]
@@ -26,7 +28,7 @@ interface PresenterKeysDeps {
  * Home/End, and +/- zoom.
  */
 export function usePresenterKeys({
-  step, maxPage, safeExit, tool, strokes, spot,
+  nextPage, prevPage, lastPage, safeExit, tool, strokes, spot,
   setStrokes, setTool, setSpot, setCurrentPage, setZoom,
 }: PresenterKeysDeps) {
   useEffect(() => {
@@ -72,7 +74,7 @@ export function usePresenterKeys({
         e.key === 'Enter'         // Enter
       ) {
         e.preventDefault()
-        setCurrentPage(p => Math.min(p + step, maxPage))
+        setCurrentPage(nextPage)
         return
       }
 
@@ -83,7 +85,7 @@ export function usePresenterKeys({
         e.key === 'Backspace'     // Back button on USB clickers
       ) {
         e.preventDefault()
-        setCurrentPage(p => Math.max(p - step, 1))
+        setCurrentPage(prevPage)
         return
       }
 
@@ -95,7 +97,7 @@ export function usePresenterKeys({
       }
       if (e.key === 'End') {
         e.preventDefault()
-        setCurrentPage(maxPage)
+        setCurrentPage(lastPage)
         return
       }
 
@@ -110,5 +112,5 @@ export function usePresenterKeys({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [step, maxPage, safeExit, tool, strokes, spot, setStrokes, setTool, setSpot, setCurrentPage, setZoom])
+  }, [nextPage, prevPage, lastPage, safeExit, tool, strokes, spot, setStrokes, setTool, setSpot, setCurrentPage, setZoom])
 }

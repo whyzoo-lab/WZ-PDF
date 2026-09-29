@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { buildSpreads, spreadIndexOf } from '../../utils/spreadLayout'
 import type { ViewerDoc, DocKind } from '../../types/viewerDoc'
 import { PdfPage } from './PdfPage'
 import { t } from '../../i18n'
@@ -19,6 +20,8 @@ interface FullscreenViewProps {
   selectedId: string | null
   /** 'single' shows one page; 'spread' shows two pages side-by-side. */
   layout: 'single' | 'spread'
+  /** Two-page rows for the spread layout (`buildSpreads`). Plain pairs when absent. */
+  spreads?: number[][]
   /** Page to open on. Defaults to the first. */
   startPage?: number
   rotation?: number
@@ -40,6 +43,7 @@ export function FullscreenView({
   annotations,
   selectedId,
   layout,
+  spreads,
   startPage = 1,
   rotation = 0,
   activeMode = 'select',
@@ -49,12 +53,10 @@ export function FullscreenView({
   onExit,
   onCurrentPageChange,
 }: FullscreenViewProps) {
-  // Spreads step through odd pages (1–2, 3–4, …), so a start on an even page
-  // opens the spread that contains it rather than a pairing seen nowhere else.
-  const [currentPage, setCurrentPage] = useState(() => {
-    const page = Math.min(Math.max(1, Math.floor(startPage)), numPages || 1)
-    return layout === 'spread' && page % 2 === 0 ? page - 1 : page
-  })
+  // `currentPage` may be any page; what is shown is the row that contains it.
+  // So a start on the right-hand page of a pair opens that pair, and rows that
+  // are re-cut once page sizes arrive never leave the view between two rows.
+  const [currentPage, setCurrentPage] = useState(() => Math.min(Math.max(1, Math.floor(startPage)), numPages || 1))
   const [showOverlay, setShowOverlay] = useState(true)
   const [tool, setTool] = useState<PresentToolState>(DEFAULT_TOOL_STATE)
   const [strokes, setStrokes] = useState<PresentStroke[]>([])
@@ -69,23 +71,35 @@ export function FullscreenView({
     onExit()
   }, [onExit])
 
-  // ── Navigation step ───────────────────────────────────────────────────────
-  const step = layout === 'spread' ? 2 : 1
-  const maxPage = layout === 'spread' && numPages % 2 === 0 ? numPages - 1 : numPages
-  const rightPage = layout === 'spread' && currentPage + 1 <= numPages ? currentPage + 1 : null
+  // ── Navigation: by page, or by two-page row (a wide page is a row alone) ──
+  const rows = useMemo(
+    () => (layout === 'spread' ? spreads ?? buildSpreads(numPages, null) : null),
+    [layout, spreads, numPages],
+  )
+  const row = rows ? rows[spreadIndexOf(rows, currentPage)] ?? [currentPage] : [currentPage]
+  const leftPage = row[0]
+  const rightPage = row[1] ?? null
+  const nextPage = useCallback((p: number) => {
+    if (!rows) return Math.min(p + 1, numPages)
+    return rows[Math.min(spreadIndexOf(rows, p) + 1, rows.length - 1)][0]
+  }, [rows, numPages])
+  const prevPage = useCallback((p: number) => {
+    if (!rows) return Math.max(p - 1, 1)
+    return rows[Math.max(spreadIndexOf(rows, p) - 1, 0)][0]
+  }, [rows])
 
   // ── Fit zoom (auto-fit page to window + presenter zoom nudges) ────────────
   const isRotated90 = rotation === 90 || rotation === 270
-  const { zoom, setZoom } = useFullscreenFitZoom({ pdfDoc, currentPage, rightPage, isRotated90 })
+  const { zoom, setZoom } = useFullscreenFitZoom({ pdfDoc, currentPage: leftPage, rightPage, isRotated90 })
 
-  // Notify parent when current page changes
+  // Notify parent when the page shown changes
   useEffect(() => {
-    onCurrentPageChange?.(currentPage)
-  }, [currentPage, onCurrentPageChange])
+    onCurrentPageChange?.(leftPage)
+  }, [leftPage, onCurrentPageChange])
 
   // Presenter strokes are per-slide and transient.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional per-slide reset on page change
-  useEffect(() => { setStrokes([]); setSpot(null) }, [currentPage])
+  useEffect(() => { setStrokes([]); setSpot(null) }, [leftPage])
 
   // ── OS fullscreen lifecycle ───────────────────────────────────────────────
   // We use the Keyboard Lock API (Chrome / Electron) to capture the ESC key
@@ -117,7 +131,7 @@ export function FullscreenView({
   }, [safeExit])
 
   // ── Presenter keymap (page nav, tools, ESC two-step, +/- zoom) ────────────
-  usePresenterKeys({ step, maxPage, safeExit, tool, strokes, spot, setStrokes, setTool, setSpot, setCurrentPage, setZoom })
+  usePresenterKeys({ nextPage, prevPage, lastPage: numPages, safeExit, tool, strokes, spot, setStrokes, setTool, setSpot, setCurrentPage, setZoom })
 
   // ── Spotlight follows cursor ──────────────────────────────────────────────
   useEffect(() => {
@@ -128,7 +142,7 @@ export function FullscreenView({
   }, [spot])
 
   // ── Mouse wheel (spot scale, Ctrl+zoom, swipe / scroll page nav) ──────────
-  usePresenterWheel({ step, maxPage, spot, setSpot, setZoom, setCurrentPage })
+  usePresenterWheel({ nextPage, prevPage, spot, setSpot, setZoom, setCurrentPage })
 
   // ── Page overlay ──────────────────────────────────────────────────────────
   const resetOverlay = useCallback(() => {
@@ -143,11 +157,11 @@ export function FullscreenView({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     resetOverlay()
     return () => { if (overlayTimer.current) clearTimeout(overlayTimer.current) }
-  }, [currentPage, resetOverlay])
+  }, [leftPage, resetOverlay])
 
   const overlayText = rightPage !== null
-    ? t('present.pages', { a: currentPage, b: rightPage, total: numPages })
-    : t('present.page', { n: currentPage, total: numPages })
+    ? t('present.pages', { a: leftPage, b: rightPage, total: numPages })
+    : t('present.page', { n: leftPage, total: numPages })
 
   const pageProps = {
     pdfDoc,
@@ -177,7 +191,7 @@ export function FullscreenView({
         // Canvas clicks are excluded so annotation selection still works.
         const target = e.target as HTMLElement
         if (target.tagName !== 'CANVAS') {
-          setCurrentPage(p => Math.min(p + step, maxPage))
+          setCurrentPage(nextPage)
         }
       }}
     >
@@ -185,7 +199,7 @@ export function FullscreenView({
         className="flex items-center justify-center gap-0"
         style={spot ? spotZoomStyle(spot.scale, spot.x, spot.y) : undefined}
       >
-        <PdfPage {...pageProps} pageNumber={currentPage} />
+        <PdfPage {...pageProps} pageNumber={leftPage} />
         {rightPage !== null && (
           <PdfPage {...pageProps} pageNumber={rightPage} />
         )}
