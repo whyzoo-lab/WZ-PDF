@@ -31,6 +31,8 @@ export interface PagePanelProps {
    * no menu entry.
    */
   onSavePages?: (pageNums: number[]) => void
+  /** The reader changed which pages are selected (sorted, 1-based). */
+  onSelectionChange?: (pageNums: number[]) => void
 }
 
 export function PagePanel({
@@ -48,8 +50,18 @@ export function PagePanel({
   onInsertFromPdf,
   onReorderPages,
   onSavePages,
+  onSelectionChange,
 }: PagePanelProps) {
   const [selected, setSelected]         = useState<Set<number>>(new Set())
+  // Reported so Ctrl+V can paste onto the pages picked here. Skipped on mount:
+  // an empty initial selection is not something the reader did.
+  const reportedOnce = useRef(false)
+  useEffect(() => {
+    if (!reportedOnce.current) { reportedOnce.current = true; return }
+    onSelectionChange?.([...selected].sort((a, b) => a - b))
+  // Only the selection itself should report; the callback may be rebuilt.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected])
   const [lastSelected, setLastSelected] = useState<number | null>(null)
   const [dragSource, setDragSource]     = useState<number | null>(null)
   const [dragOver, setDragOver]         = useState<number | null>(null)

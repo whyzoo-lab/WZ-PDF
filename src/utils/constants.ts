@@ -24,3 +24,10 @@ export const ZOOM_STEP = 0.1
  * reader's browser. 300 MB leaves that browser room to work.
  */
 export const HTML_EXPORT_MAX_BYTES = 300 * 1024 * 1024
+
+/**
+ * Marks a rendered page with its number — the page the pointer is over is
+ * where Ctrl+V pastes a stamp. Here, not in PdfPage, so App can read it without
+ * pulling the viewer (and Konva) into the startup bundle.
+ */
+export const PAGE_ATTR = 'data-wz-page'

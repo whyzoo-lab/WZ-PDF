@@ -81,4 +81,13 @@ describe('saving a selection of pages', () => {
     fireEvent.keyDown(window, { key: 'Delete' })
     expect(onDeletePages).not.toHaveBeenCalled()
   })
+
+  it('reports the pages picked, so Ctrl+V can paste onto all of them', () => {
+    const onSelectionChange = vi.fn()
+    panel({ onSelectionChange })
+    expect(onSelectionChange).not.toHaveBeenCalled() // nothing picked yet
+    fireEvent.click(thumb(1))
+    fireEvent.click(thumb(3), { shiftKey: true })
+    expect(onSelectionChange).toHaveBeenLastCalledWith([1, 2, 3])
+  })
 })

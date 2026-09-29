@@ -27,7 +27,7 @@ import { PasswordSetPrompt } from './components/modals/PasswordSetPrompt'
 import type { Annotation, OmitId, PendingStamp } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
 import { isFlowKind } from './types/viewerDoc'
-import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from './utils/constants'
+import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, PAGE_ATTR } from './utils/constants'
 import { classifyDocFile, DOCUMENT_ACCEPT } from './utils/detectDocType'
 import { pickSaveTarget, saveBlobTo, stripDocExt } from './utils/download'
 import { pageSuffix } from './utils/pageSuffix'
@@ -85,6 +85,11 @@ function prefetchViewerChunks(): void {
   void importPdfViewer().catch(() => {})
   void import('pdfjs-dist').catch(() => {})
 }
+
+/** What Ctrl+C / Ctrl+V act on: things placed on a page, not markup or watermarks. */
+const COPYABLE_ANNOTATIONS: ReadonlySet<string> = new Set(['stamp', 'signature', 'textEdit'])
+/** How far a copy pasted onto its own page is moved off the original (PDF points). */
+const PASTE_NUDGE = 12
 
 /** A preset stamp's size until the reader resizes one (PDF points). */
 const DEFAULT_PRESET_STAMP_SIZE = { width: 100, height: 40 }
@@ -946,10 +951,137 @@ export default function App() {
     return pdfDoc && !embed ? () => { void handleExportPdf() } : undefined
   }, [markdown, appMode, pdfDoc, embed, handleExportPdf])
 
+  // ── Copy / paste a stamp ──────────────────────────────────────────────────
+  // For putting the same stamp in the same place on every page: copy it on
+  // page 1, paste on page 2, and it lands at the same coordinates, size and
+  // angle. The page pasted onto is the one under the pointer (the page counter
+  // is only tracked in single view), else the page in view. Pasted back onto
+  // its own page it is nudged, or the copy would sit exactly on the original.
+  // The clipboard outlives the document, so a stamp can be carried to another
+  // file too.
+  const annotationClipboard = useRef<{ annotation: OmitId<Annotation>; pastesByPage: Map<number, number>; sourceDoc: unknown } | null>(null)
+
+  // Pages picked in the left page list, and when. Ctrl+V pastes onto them —
+  // several at once if several are picked — as long as that pick is the latest
+  // thing the reader did; clicking in or scrolling the document afterwards
+  // means "here" again. The list's selection does not follow scrolling, so
+  // without the "latest" rule a pick made long ago would silently win.
+  const panelPick = useRef<{ pages: number[]; at: number } | null>(null)
+  const documentTouchedAt = useRef(0)
+  useEffect(() => { panelPick.current = null }, [pdfDoc])
+  useEffect(() => {
+    const main = mainRef.current
+    if (!main) return
+    const touched = () => { documentTouchedAt.current = performance.now() }
+    const SCROLL_KEYS = new Set(['PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', 'Home', 'End', ' '])
+    const key = (e: KeyboardEvent) => {
+      if (!SCROLL_KEYS.has(e.key)) return
+      const t = e.target as Element | null
+      if (t?.closest('nav, input, textarea, [contenteditable="true"]')) return
+      touched()
+    }
+    main.addEventListener('pointerdown', touched, { passive: true })
+    main.addEventListener('wheel', touched, { passive: true })
+    window.addEventListener('keydown', key, true)
+    return () => {
+      main.removeEventListener('pointerdown', touched)
+      main.removeEventListener('wheel', touched)
+      window.removeEventListener('keydown', key, true)
+    }
+  }, [])
+  const handlePanelSelection = useCallback((pages: number[]) => {
+    panelPick.current = pages.length > 0 ? { pages, at: performance.now() } : null
+  }, [])
+  // Where the pointer is, not which page it was last over: scrolling with the
+  // wheel or the keyboard moves the pages under a still pointer and fires no
+  // pointer event, so remembering "the page under the last move" pasted every
+  // copy after the first onto the page before. The page is looked up at paste
+  // time, from the pointer's position, against the pages as they are now.
+  const pointerAt = useRef<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    const track = (e: PointerEvent) => { pointerAt.current = { x: e.clientX, y: e.clientY } }
+    window.addEventListener('pointermove', track, { passive: true })
+    return () => window.removeEventListener('pointermove', track)
+  }, [])
+  const pageUnderPointer = useCallback((): number | null => {
+    const at = pointerAt.current
+    if (!at) return null
+    const el = document.elementFromPoint(at.x, at.y)?.closest(`[${PAGE_ATTR}]`)
+    const n = el ? Number(el.getAttribute(PAGE_ATTR)) : NaN
+    return Number.isFinite(n) && n > 0 ? n : null
+  }, [])
+  /** The page with the most of itself on screen — when the pointer is not on one. */
+  const pageMostInView = useCallback((): number | null => {
+    const view = mainRef.current?.getBoundingClientRect()
+    if (!view) return null
+    let best: number | null = null
+    let bestArea = 0
+    for (const el of document.querySelectorAll(`[${PAGE_ATTR}]`)) {
+      const r = el.getBoundingClientRect()
+      const w = Math.min(r.right, view.right) - Math.max(r.left, view.left)
+      const h = Math.min(r.bottom, view.bottom) - Math.max(r.top, view.top)
+      if (w > 0 && h > 0 && w * h > bestArea) { bestArea = w * h; best = Number(el.getAttribute(PAGE_ATTR)) }
+    }
+    return best
+  }, [])
+
+  const copySelectedAnnotation = useCallback((): OmitId<Annotation> | null => {
+    if (appMode !== 'editor' || !selectedId) return null
+    // Text selected in the document means the reader is copying text.
+    if (window.getSelection()?.toString()) return null
+    const a = annotations.find(x => x.id === selectedId)
+    if (!a || !COPYABLE_ANNOTATIONS.has(a.type)) return null
+    const { id: _id, ...rest } = a
+    void _id
+    annotationClipboard.current = { annotation: rest as OmitId<Annotation>, pastesByPage: new Map(), sourceDoc: pdfDoc }
+    return rest as OmitId<Annotation>
+  }, [appMode, selectedId, annotations, pdfDoc])
+
+  const handleCopyAnnotation = useCallback((): boolean => {
+    if (!copySelectedAnnotation()) return false
+    showToast(t('annotation.copied'))
+    return true
+  }, [copySelectedAnnotation, showToast])
+
+  const handleCutAnnotation = useCallback((): boolean => {
+    if (!copySelectedAnnotation() || !selectedId) return false
+    removeAnnotation(selectedId)
+    showToast(t('annotation.cut'))
+    return true
+  }, [copySelectedAnnotation, selectedId, removeAnnotation, showToast])
+
+  const handlePasteAnnotation = useCallback((): boolean => {
+    const clip = annotationClipboard.current
+    if (!clip || appMode !== 'editor' || !pdfDoc || numPages < 1) return false
+    const source = clip.annotation
+    const pick = panelPick.current
+    const fromList = isPanelOpen && pick !== null && pick.at > documentTouchedAt.current
+    let pages = fromList
+      ? pick.pages.filter(p => p >= 1 && p <= numPages)
+      : [Math.min(Math.max(1, pageUnderPointer() ?? pageMostInView() ?? currentPage), numPages)]
+    // Several pages at once: the page it was copied from already has it.
+    if (pages.length > 1 && clip.sourceDoc === pdfDoc) {
+      const others = pages.filter(p => p !== source.page)
+      if (others.length > 0) pages = others
+    }
+    if (pages.length === 0) return false
+    // One undo step for the whole paste, however many pages it covered.
+    recordEdit()
+    for (const page of pages) {
+      // Same place on another page; nudged on its own page so it is visible.
+      const count = clip.pastesByPage.get(page) ?? (page === source.page && clip.sourceDoc === pdfDoc ? 1 : 0)
+      clip.pastesByPage.set(page, count + 1)
+      const offset = count * PASTE_NUDGE
+      addAnnotationRaw({ ...source, page, x: source.x + offset, y: source.y + offset } as OmitId<Annotation>)
+    }
+    if (pages.length > 1) showToast(t('annotation.pastedPages', { n: pages.length }))
+    return true
+  }, [appMode, pdfDoc, numPages, currentPage, isPanelOpen, recordEdit, addAnnotationRaw, showToast, pageUnderPointer, pageMostInView])
+
   useGlobalShortcuts({
     pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId, currentPage,
     setViewMode, setShowSearch, onEnterFullscreen: enterFullscreen, fileInputRef,
-    removeAnnotation, clearMarkups, setActiveMode,
+    removeAnnotation, clearMarkups, setActiveMode, selectAnnotation,
     onRunOcr: () => ocr.runPage(currentPage),
     onRunOcrAll: ocr.runAll,
     onToggleSpeech: window.electronAPI?.ttsSynthesize ? handleToggleSpeech : undefined,
@@ -962,6 +1094,9 @@ export default function App() {
     onUndo: canEditHistory ? handleUndo : undefined,
     onRedo: canEditHistory ? handleRedo : undefined,
     onSave: handleSaveShortcut,
+    onCopyAnnotation: handleCopyAnnotation,
+    onCutAnnotation: handleCutAnnotation,
+    onPasteAnnotation: handlePasteAnnotation,
   })
 
   const actionBarProps = {
@@ -1154,6 +1289,7 @@ export default function App() {
               // Only for PDFs: extraction is pdf-lib's job, and it has nothing
               // to say about a HWP page or an image.
               onSavePages={kind === 'pdf' ? handleSavePages : undefined}
+              onSelectionChange={handlePanelSelection}
               onScrollToPage={page => {
                 setScrollToPage(page)
                 if (viewMode === 'grid') setViewMode('single')

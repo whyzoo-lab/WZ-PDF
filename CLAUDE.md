@@ -1655,6 +1655,60 @@ In spread (two-page) view, dragging a pen stroke across the boundary between two
 ### Hooks must precede early returns in PdfPage
 `PdfPage` has an early return for the loading skeleton (`if (isLoading || !pageData) return …`). All React hooks — including the drawing state (`draft`/`draftRef`), `commitDraft`, and the window-level `mouseup` useEffect — must be declared **before** this early return, or React will throw a "hooks called in different order" error.
 
+### Stamps: saved, sized once, stamped repeatedly (like Adobe)
+
+Stamping a contract page by page used to mean uploading the image and resizing
+it again for every page: an uploaded stamp was used once, always landed at
+100 x 40 (a round seal came out an oval), and the tool dropped back to select.
+Now:
+- **"내 도장"** — an uploaded image is cleaned up (`utils/stampImage.ts`: the
+  white paper of an opaque scan is keyed out, since placed as-is it hides the
+  text around the seal; scanner margins are trimmed; its own proportions are
+  kept, longer side 72 pt) and saved (`services/stampLibrary.ts`, IndexedDB —
+  never localStorage, which freezes the packaged app for ~6 s on first access;
+  opened only once the editor is on). It is listed in the stamp menu with a
+  remove button; at most 20.
+- **Its size is remembered.** Resizing a stamp (`updateAnnotation` in App)
+  stores that size for its key — a preset id or `custom:<id>` — and updates the
+  armed stamp, so the next click and every later use come out that size.
+- **The tool stays armed**: `addAnnotation` keeps `activeMode` for a stamp
+  (while selecting it, so its handles show at once). A click on the page stamps
+  again; a click on a stamp or a handle selects/resizes instead (`onPage` in
+  `PdfPage.handleStageClick`). Esc puts the tool down (`useGlobalShortcuts`).
+  Do not call `setActiveMode` after adding a stamp — it clears the selection.
+- A stamp node only exists once its image has loaded, after the selection
+  effect has run, so `AnnotationLayer.setRef` attaches the transformer when the
+  selected node arrives; before, a just-placed stamp showed no handles.
+
+- **Ctrl+C / Ctrl+X / Ctrl+V** copy a stamp, signature or text edit — asked
+  for to put the same stamp in the same place on every page. A paste keeps the
+  source's coordinates, size and angle. **Pages picked in the left page list
+  win when that pick is the latest thing done** — several picked (Shift/Ctrl)
+  means one Ctrl+V pastes onto all of them, as one undo step, skipping the page
+  it was copied from. Clicking in or wheel/key-scrolling the document after the
+  pick means "here" again, because the list's selection does not follow
+  scrolling and an old pick would otherwise win. Otherwise it goes to the page
+  under the pointer, else the page most on screen (the page counter is only
+  kept in single view); pasted back onto
+  its own page it is nudged 12 pt per paste so it does not hide the original.
+  The handlers return whether they acted, so with no stamp selected (or with
+  document text selected) Ctrl+C still copies text. Esc keeps the stamp just
+  placed selected, so Esc then Ctrl+C works.
+  **The page is found at paste time, from the pointer's position**
+  (`elementFromPoint` → `PAGE_ATTR`). The first version remembered the page
+  under the last `pointermove`, and scrolling with the wheel or keyboard moves
+  the pages under a still pointer without firing one — so every paste after
+  the first landed on the page before. Verified in the packaged build by
+  wheel-scrolling alone: pastes on pages 2, 3 and 4 each landed on that page at
+  the source's (366, 696); and picking pages 2–4 in the list then one Ctrl+V put
+  it on all three, while a wheel scroll afterwards sent the next paste to the
+  page under the pointer instead.
+
+Verified end to end in the packaged build over CDP: upload → 72 x 72 round
+stamp with a transparent background → resize to 172 → page 2 stamps at 172 →
+clicking the stamp does not add one → Esc stops → the stamp is still listed
+after a restart.
+
 ### addAnnotation volatile behavior
 `addAnnotation` in `useAnnotations` checks `annotation.type === 'pen' || 'rectangle'` and, for these types, **does not** reset `activeMode` or `selectedId`. This allows continuous multi-stroke drawing without leaving drawing mode. The corresponding `handleAnnotationAdd` in App.tsx early-returns for volatile types so `pendingStamp`/`pendingSignature` state is not cleared and `setActiveMode('select')` is not called.
 

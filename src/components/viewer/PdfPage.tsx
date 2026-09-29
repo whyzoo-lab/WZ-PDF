@@ -14,7 +14,7 @@ import type { Annotation, ActiveMode, OmitId, PendingStamp } from '../../types/a
 import { annotationsForPage } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
 import { toStoredCoords } from '../../utils/coordinates'
-import { PDF_RENDER_SCALE } from '../../utils/constants'
+import { PAGE_ATTR, PDF_RENDER_SCALE } from '../../utils/constants'
 import { sampleBackgroundColor } from '../../utils/sampleBgColor'
 
 // Visual constants for volatile markups
@@ -472,6 +472,8 @@ function PdfPageInner({
       style={{ width: stageWidth, height: stageHeight, overflow: 'hidden', position: 'relative' }}
       role="group"
       aria-label={t('page.a11yPage', { n: pageNumber })}
+      // Which page the pointer is over — where Ctrl+V pastes (see App).
+      {...{ [PAGE_ATTR]: pageNumber }}
     >
       {/* A page with no text is a picture, and a picture of a document is
           nothing at all to someone using a screen reader — the canvas has no
