@@ -105,7 +105,13 @@ MCP_HOST=0.0.0.0 MCP_SANDBOX_DIR=/trusted/workspace MCP_AUTH_TOKEN=replace-with-
 
 ## 한글 폰트
 
-워터마크/텍스트 오버레이에 한글이 포함되면 자동으로 Noto Sans KR을 임베드합니다. 영문만 있으면 Helvetica 사용 (출력 PDF 크기 절약). 폰트 파일은 `../public/fonts/NotoSansKR-Regular.otf`에서 읽어요.
+워터마크/텍스트 오버레이에 한글이 포함되면 자동으로 Noto Sans KR을 임베드합니다. 영문만 있으면 Helvetica 사용 (출력 PDF 크기 절약). 폰트 파일은 다음 순서로 찾습니다.
+
+1. `MCP_KOREAN_FONT_PATH` 환경 변수 (지정하면 이 경로만 사용)
+2. 설치된 앱: `<설치 폴더>/resources/app.asar/dist/fonts/NotoSansKR-Regular.otf` — 서버가 앱 실행 파일(`ELECTRON_RUN_AS_NODE`)로 돌기 때문에 asar 안의 파일을 그대로 읽습니다.
+3. 소스 체크아웃: `../public/fonts/NotoSansKR-Regular.otf`
+
+어디에도 없으면 찾아본 경로를 담은 오류를 돌려줍니다.
 
 ## Using the server that ships with the desktop app
 

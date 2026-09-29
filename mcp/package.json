@@ -15,14 +15,15 @@
     "start:http": "node dist/server-http.js"
   },
   "dependencies": {
+    "@cantoo/pdf-lib": "^2.11.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@pdf-lib/fontkit": "^1.1.1",
     "express": "^5.0.0",
-    "pdf-lib": "^1.17.1",
+    "fontkit": "^2.0.4",
     "pdfjs-dist": "^6.3.289"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/fontkit": "^2.0.9",
     "@types/node": "^26.4.1",
     "tsx": "^4.20.0",
     "typescript": "^7.0.2"

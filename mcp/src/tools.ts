@@ -14,8 +14,12 @@ import { readFile, writeFile, realpath, stat } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { resolve, basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PDFDocument, PDFFont, StandardFonts, rgb, degrees } from 'pdf-lib'
-import fontkit from '@pdf-lib/fontkit'
+import { PDFDocument, PDFFont, StandardFonts, rgb, degrees } from '@cantoo/pdf-lib'
+// fontkit v2 with @cantoo/pdf-lib — the same pair as the app. The pdf-lib +
+// @pdf-lib/fontkit pair this used subsets Noto Sans KR into a broken font
+// program: the text still extracts, but glyphs such as 계약서 paint as blank
+// space (tools.korean.test.ts).
+import * as fontkit from 'fontkit'
 import { pdfjs, pdfWorkerSrc } from './pdfjs.js'
 
 import { convertHwpToPdf, pdfNameFor } from './hwp.js'
@@ -110,18 +114,35 @@ async function resolveOutputPath(p: string, overwrite = false): Promise<string> 
 
 // ── Common helpers ──────────────────────────────────────────────────────────
 
-// Korean font location. Override via MCP_KOREAN_FONT_PATH when deploying
-// outside the WZ PDF monorepo (e.g. the standalone MCP server on a remote host).
-// Default assumes the path used by the local stdio mode (../../public/fonts).
-const KOREAN_FONT_PATH = process.env.MCP_KOREAN_FONT_PATH
-  ? resolve(process.env.MCP_KOREAN_FONT_PATH)
-  : resolve(__dirname, '../../public/fonts/NotoSansKR-Regular.otf')
+// Korean font location, first match wins. MCP_KOREAN_FONT_PATH overrides it
+// (e.g. the standalone server on a remote host).
+//
+// The installed server lives in <install>/resources/mcp/, where no public/
+// folder exists — that default alone made every Korean watermark or page
+// number fail with ENOENT in the shipped app. It reads the app's own copy out
+// of app.asar instead: the server runs on the app binary (ELECTRON_RUN_AS_NODE),
+// whose fs reads inside an asar, so the installer carries the font once.
+// In a checkout both src/ and the build/mcp bundle sit two levels below public/.
+const KOREAN_FONT_CANDIDATES = process.env.MCP_KOREAN_FONT_PATH
+  ? [resolve(process.env.MCP_KOREAN_FONT_PATH)]
+  : [
+      resolve(__dirname, '../app.asar/dist/fonts/NotoSansKR-Regular.otf'),
+      resolve(__dirname, '../../public/fonts/NotoSansKR-Regular.otf'),
+    ]
 
 let _koFontBytes: Buffer | null = null
 async function getKoreanFontBytes(): Promise<Buffer> {
   if (_koFontBytes) return _koFontBytes
-  _koFontBytes = await readFile(KOREAN_FONT_PATH)
-  return _koFontBytes
+  for (const path of KOREAN_FONT_CANDIDATES) {
+    try {
+      _koFontBytes = await readFile(path)
+      return _koFontBytes
+    } catch { /* try the next location */ }
+  }
+  throw new Error(
+    `Korean font (NotoSansKR-Regular.otf) not found. Looked in: ${KOREAN_FONT_CANDIDATES.join(', ')}. ` +
+    'Set MCP_KOREAN_FONT_PATH to its location.',
+  )
 }
 
 function hasNonLatin(s: string): boolean {
