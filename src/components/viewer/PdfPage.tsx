@@ -119,6 +119,15 @@ function PdfPageInner({
   // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when OCR finishes
   useEffect(() => { if (!ocrActive) setOcrOrigin(null) }, [ocrActive])
 
+  // The OCR reveal flash means "recognition just finished here", so it plays
+  // only for a result that arrived while this page was on screen. Pages are
+  // unmounted once they are two screens away and mounted again on the way
+  // back, and a whole-document run finishes pages nobody is looking at — both
+  // used to replay the flash on every scroll, as if the page were being
+  // recognized again. Kept before the early return below (hook order).
+  const [ocrResultAtMount] = useState(ocrResult)
+  const revealOcr = ocrResult !== ocrResultAtMount
+
   // ── HWP native text layer ────────────────────────────────────────────────
   // HWP pages have no pdfjs text layer, but rhwp exposes positioned text runs.
   // Fetch them and render the same selectable overlay OCR uses — so HWP text is
@@ -603,6 +612,7 @@ function PdfPageInner({
           height={stageHeight}
           highlights={searchHighlights}
           onEditCommit={appMode === 'editor' ? commitTextEdit : undefined}
+          reveal={revealOcr}
         />
       )}
       {/* Scanning animation while OCR recognizes this page. A double-click
