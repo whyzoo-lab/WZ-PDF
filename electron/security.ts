@@ -99,6 +99,13 @@ const GRANTED_PERMISSIONS: readonly string[] = [
   'fullscreen',                 // presentation mode (FullscreenView, ReaderFullscreen)
   'keyboardLock',               // Esc stays ours in presentation mode
   'clipboard-sanitized-write',  // Ctrl+drag region OCR → clipboard
+  // Writing a file the reader chose in a save dialog. In Electron
+  // `createWritable()` on a picked handle is a `fileSystem` request, and
+  // refusing it failed saves with "The request is not allowed by the user agent
+  // or the platform" (reported on HTML export). Only a handle the reader handed
+  // over — a save/open dialog or a drop — can reach it; the renderer has no
+  // way to name an arbitrary path.
+  'fileSystem',
 ]
 
 /** Whether a permission may be granted to the page at `requestingUrl`. */

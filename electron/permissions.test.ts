@@ -12,6 +12,10 @@ describe('allowsPermission', () => {
     expect(allowsPermission('keyboardLock', APP)).toBe(true)
     // Ctrl+drag region OCR copies the recognized text.
     expect(allowsPermission('clipboard-sanitized-write', APP)).toBe(true)
+    // Writing the file the reader picked in a save dialog: createWritable() is
+    // a fileSystem request in Electron, and refusing it failed HTML export.
+    expect(allowsPermission('fileSystem', APP)).toBe(true)
+    expect(allowsPermission('fileSystem', 'https://evil.example/')).toBe(false)
     // The dev server only while developing.
     expect(allowsPermission('fullscreen', 'http://localhost:5173/app.html', { devServer: true })).toBe(true)
     expect(allowsPermission('fullscreen', 'http://localhost:5173/app.html')).toBe(false)
