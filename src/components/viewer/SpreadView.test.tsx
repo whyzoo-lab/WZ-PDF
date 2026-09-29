@@ -58,4 +58,19 @@ describe('SpreadView', () => {
     const rows = container.querySelectorAll('[data-spread-row]')
     expect(rows).toHaveLength(3)
   })
+
+  it('puts a blank page beside a page left without a partner, but not beside a wide page', () => {
+    // 1-2 pair, 3 alone before the A3 page 4, 5 alone at the end.
+    const A4 = { width: 595, height: 842 }
+    const sizes = [A4, A4, A4, { width: 1191, height: 842 }, A4]
+    const { container } = render(
+      <SpreadView {...baseProps} numPages={5} spreads={[[1, 2], [3], [4], [5]]} pageSizes={sizes} />,
+    )
+    const rows = Array.from(container.querySelectorAll('[data-spread-row]'))
+    expect(rows.map(r => r.querySelector('[data-spread-blank]') !== null)).toEqual([false, true, false, true])
+    // The blank page is the size of the page it partners (A4 at 1.5 x zoom 1).
+    const blank = rows[1].querySelector<HTMLElement>('[data-spread-blank]')!
+    expect(blank.style.width).toBe('892.5px')
+    expect(blank.style.height).toBe('1263px')
+  })
 })

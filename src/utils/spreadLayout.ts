@@ -29,6 +29,22 @@ export function median(values: number[]): number {
 }
 
 /**
+ * Whether page N (1-based) gets a row of its own. Shared by the view and the
+ * two-page PDF export, so a single-page row means the same thing in both: a
+ * wide page, as opposed to a page simply left without a partner.
+ */
+export function wideTest(sizes: readonly (PageSize | undefined)[] | null, rotation = 0): (page: number) => boolean {
+  const known = sizes ? sizes.filter((s): s is PageSize => !!s && s.width > 0 && s.height > 0) : []
+  const typical = known.length > 0 ? median(known.map(s => aspect(s, rotation))) : 0
+  return (page: number): boolean => {
+    const size = sizes?.[page - 1]
+    if (!size || typical === 0) return false
+    const a = aspect(size, rotation)
+    return a > 1 && a > typical * WIDE_PAGE_FACTOR
+  }
+}
+
+/**
  * Pages grouped into rows of one or two, 1-based.
  *
  * "Wide" is relative to the document itself (its median shape), so a deck of
@@ -37,14 +53,7 @@ export function median(values: number[]): number {
  * pair too wide. Without sizes (still loading) it falls back to plain pairs.
  */
 export function buildSpreads(numPages: number, sizes: readonly (PageSize | undefined)[] | null, rotation = 0): number[][] {
-  const known = sizes ? sizes.filter((s): s is PageSize => !!s && s.width > 0 && s.height > 0) : []
-  const typical = known.length > 0 ? median(known.map(s => aspect(s, rotation))) : 0
-  const isWide = (page: number): boolean => {
-    const size = sizes?.[page - 1]
-    if (!size || typical === 0) return false
-    const a = aspect(size, rotation)
-    return a > 1 && a > typical * WIDE_PAGE_FACTOR
-  }
+  const isWide = wideTest(sizes, rotation)
 
   const spreads: number[][] = []
   let pending: number | null = null

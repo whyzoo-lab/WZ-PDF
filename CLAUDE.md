@@ -692,9 +692,31 @@ Four export formats, all operating on `fileBytes` (not the rendered canvas). All
 |---|---|---|
 | PDF (annotated) | `src/services/pdfExporter.ts` | Embeds stamp/signature/watermark using **pdf-lib**; pen/rectangle are volatile and **not** exported |
 | PDF (password) | `src/services/pdfExporter.ts` | Same output, encrypted or decrypted. Not a menu item — it is the toolbar padlock; see "Encrypted documents" |
+| Booklet ("책자 형태로 저장") | `src/services/spreadExporter.ts` | The two-page view as a PDF, one sheet per row — see below |
 | HTML viewer | `src/services/htmlExporter.ts` | Self-contained file: PDF encoded as base64, decoded to a Blob URL at runtime |
 | Images (ZIP) | `src/services/imageExporter.ts` | Each page rendered to PNG at 2× scale via pdfjs; bundled with **JSZip** |
 | Viewer EXE | `electron/main.ts` `export-exe` IPC | Self-clone of the portable exe with PDF bytes appended; only works when running the packaged portable build. A HWP or image is converted to PDF first (`viewerPdfBytes`) — sending the raw bytes failed with "Invalid PDF signature" |
+
+**책자 형태로 저장 (save as booklet)** — asked for because the two-page view
+is exactly the layout a booklet is printed from. Each row of the view
+(`buildSpreads`) becomes one sheet: two ordinary pages side by side, a wide page
+(A3 landscape among A4) on a sheet of its own, and a page left without a partner
+— before a wide page, or the last of an odd count — on the left half with the
+right half blank. The two-page view shows that blank page too (`SpreadView`,
+`data-spread-blank`), so the screen is the booklet. Decisions behind it:
+- **One sheet size for the whole file** (two median pages wide, i.e. A3
+  landscape for A4), because a booklet is printed and bound on one paper size.
+  Pages are fitted to their half or sheet, so an A4-landscape wide page is
+  scaled up to fill an A3 sheet.
+- **Pages are copied, not rasterised** (`embedPages`), from what "PDF 저장"
+  would write (`savedPdf` in `useExporters`) — annotations and OCR text come
+  along and the text stays selectable. Link annotations, form fields and
+  bookmarks do not. The padlock's password goes on last.
+- `embedPage` uses the MediaBox and ignores /Rotate, while pdfjs shows the
+  CropBox turned by /Rotate. The exporter embeds by CropBox and turns the form
+  itself (`drawRotated`); `spreadExporter.test.ts` reads the result back with
+  pdfjs and checks a /Rotate 90 page's corner lands where the viewer puts it.
+- It writes another file, so it never marks the document saved.
 
 HTML export refuses PDFs over `HTML_EXPORT_MAX_BYTES` (300 MB): the page decodes its payload with one `atob`, and a JS string tops out at base64 of ~400 MB. It is built from Blob parts (base64 in 768 KB pieces), not four whole-file string copies.
 

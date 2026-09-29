@@ -48,6 +48,11 @@ export const en = {
 
   // ── Export menu ───────────────────────────────────────────────────────────
   'export.pdf': 'Save PDF',
+  'export.spread': 'Save as booklet',
+  'export.spreadTitle': 'Saves the two-page view as a booklet PDF: two pages on each sheet, a wide page on a sheet of its own, and a blank page beside any page left without a partner.',
+  'spread.blank': 'Blank page',
+  'export.spreadDone': 'Saved as a booklet — {name}',
+  'export.spreadFailed': 'Could not save the booklet: {error}',
   'export.html': 'Save HTML',
   'export.images': 'Save Images',
   'export.exe': 'EXE Viewer',

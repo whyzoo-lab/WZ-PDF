@@ -98,6 +98,65 @@ export function useExporters({
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
   }, [kind, fileBytes, bytesUnavailable, renderedPdf])
 
+  /**
+   * The document as "PDF 저장" writes it: annotations, OCR text and all,
+   * locked with `password` when one is given.
+   */
+  const savedPdf = useCallback(async (password?: string): Promise<Blob> => {
+    if (kind === 'pdf' && fileBytes) {
+      const { exportPdf } = await import('../services/pdfExporter')
+      // OCR results live only in memory; written into the file they survive
+      // the save, so a scanned document comes back searchable.
+      let textLayer
+      if (pdfDoc && ocrResults && ocrResults.size > 0) {
+        const { placeOcrWords } = await import('../services/ocrTextLayer')
+        textLayer = await placeOcrWords(pdfDoc, ocrResults)
+      }
+      return exportPdf(fileBytes, annotations, {
+        sourcePassword: documentPassword ?? undefined, password,
+      }, textLayer)
+    }
+    // Non-PDF sources have no PDF to patch — build one from the rendered
+    // pages (this is also the HWP→PDF converter).
+    const bytes = await renderedPdf(password)
+    return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
+  }, [kind, fileBytes, pdfDoc, ocrResults, annotations, documentPassword, renderedPdf])
+
+  /**
+   * "책자 형태로 저장" — the two-page view as a PDF: each row of it on one sheet — two A4
+   * pages side by side on A3 landscape, a wide page on a sheet of its own —
+   * which is the layout a booklet is printed from. Built from exactly what
+   * "PDF 저장" writes, then laid out; the password, if any, goes on last.
+   *
+   * It does not mark the document saved: it writes a different file, and the
+   * document itself is as unsaved as before.
+   */
+  const handleExportSpreads = useCallback(async () => {
+    if (!bytesReady()) return
+    const password = savePassword ?? undefined
+    const outName = `${file ? stripDocExt(file.name) : 'document'}_booklet.pdf`
+    const target = await pickSaveTarget(outName, {
+      description: 'PDF document', accept: { 'application/pdf': ['.pdf'] },
+    })
+    if (target.kind === 'canceled') return
+
+    setIsExporting(true)
+    try {
+      const source = await (await savedPdf()).arrayBuffer()
+      const { exportSpreads } = await import('../services/spreadExporter')
+      const bytes = await exportSpreads(source, { password })
+      const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
+      if (await saveBlobTo(target, blob, outName)) {
+        onSuccess(t('export.spreadDone', { name: outName }))
+      }
+    } catch (err) {
+      console.error('Two-page PDF export failed:', err)
+      onError(t('export.spreadFailed', { error: errorMessage(err) }))
+    } finally {
+      setIsExporting(false)
+    }
+  }, [bytesReady, savePassword, file, savedPdf, onSuccess, onError])
+
   /** Save as PDF. Resolves true once the file is written. */
   const handleExportPdf = useCallback(async (): Promise<boolean> => {
     if (!bytesReady()) return false
@@ -117,25 +176,7 @@ export function useExporters({
 
     setIsExporting(true)
     try {
-      let blob: Blob
-      if (kind === 'pdf' && fileBytes) {
-        const { exportPdf } = await import('../services/pdfExporter')
-        // OCR results live only in memory; written into the file they survive
-        // the save, so a scanned document comes back searchable.
-        let textLayer
-        if (pdfDoc && ocrResults && ocrResults.size > 0) {
-          const { placeOcrWords } = await import('../services/ocrTextLayer')
-          textLayer = await placeOcrWords(pdfDoc, ocrResults)
-        }
-        blob = await exportPdf(fileBytes, annotations, {
-          sourcePassword: documentPassword ?? undefined, password,
-        }, textLayer)
-      } else {
-        // Non-PDF sources have no PDF to patch — build one from the rendered
-        // pages (this is also the HWP→PDF converter).
-        const bytes = await renderedPdf(password)
-        blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
-      }
+      const blob = await savedPdf(password)
       if (await saveBlobTo(target, blob, downloadName)) {
         // Saving an encrypted document without a new password takes the
         // password off it. That is the point, but it should be said out loud
@@ -158,7 +199,7 @@ export function useExporters({
     } finally {
       setIsExporting(false)
     }
-  }, [bytesReady, fileBytes, pdfDoc, annotations, ocrResults, file, kind, documentPassword, savePassword, renderedPdf, onSuccess, onError, onPdfSaved])
+  }, [bytesReady, savedPdf, file, documentPassword, savePassword, onSuccess, onError, onPdfSaved])
 
   const handleExportHtml = useCallback(async () => {
     // The generated page embeds the whole file, so a document too large to hold
@@ -254,6 +295,7 @@ export function useExporters({
   return {
     isExporting,
     handleExportPdf,
+    handleExportSpreads,
     handleExportHtml,
     handleExportImages,
     handleExportExe,

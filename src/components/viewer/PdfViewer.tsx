@@ -170,7 +170,7 @@ function PdfViewerImpl({
   }, [viewMode, numPages])
 
   if (viewMode === 'spread') {
-    return <SpreadView {...sharedAnnotationProps} numPages={numPages} spreads={spreads} />
+    return <SpreadView {...sharedAnnotationProps} numPages={numPages} spreads={spreads} pageSizes={pageSizes} />
   }
 
   if (viewMode === 'grid') {

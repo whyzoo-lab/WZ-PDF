@@ -75,6 +75,8 @@ export interface ActionBarProps {
   onPassword: () => void
   /** True when the next save will put a password on the file. */
   saveLocked?: boolean
+  /** Save the two-page view as a PDF (booklet layout). Absent where there are no pages. */
+  onExportSpreads?: () => void
   onExportHtml: () => void
   onExportImages: () => void
   /** If undefined, the EXE option is hidden (only available in Electron builds). */
@@ -138,6 +140,7 @@ export function ActionBar({
   onExportPdf,
   onPassword,
   saveLocked = false,
+  onExportSpreads,
   onExportHtml,
   onExportImages,
   onExportExe,
@@ -630,6 +633,11 @@ export function ActionBar({
       <button onClick={() => { onExportPdf(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
         <IconSave /><span>{t('export.pdf')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
       </button>
+      {onExportSpreads && (
+        <button onClick={() => { onExportSpreads(); onDone() }} title={t('export.spreadTitle')} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+          <IconSpread /><span>{t('export.spread')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
+        </button>
+      )}
       <button onClick={() => { onExportHtml(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
         <IconHtml /><span>{t('export.html')}</span><span className="ml-auto text-gray-400 text-[11px]">.html</span>
       </button>

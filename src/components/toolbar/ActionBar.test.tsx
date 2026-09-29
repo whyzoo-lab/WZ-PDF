@@ -278,6 +278,20 @@ describe('ActionBar', () => {
     expect(onExportHtml).toHaveBeenCalled()
   })
 
+  it('offers "save as booklet" in the save menu when given a handler', () => {
+    const onExportSpreads = vi.fn()
+    render(<ActionBar {...defaultProps} onExportSpreads={onExportSpreads} />)
+    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    fireEvent.click(screen.getByText('Save as booklet'))
+    expect(onExportSpreads).toHaveBeenCalled()
+  })
+
+  it('leaves "save as booklet" out without a handler', () => {
+    render(<ActionBar {...defaultProps} />)
+    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    expect(screen.queryByText('Save as booklet')).not.toBeInTheDocument()
+  })
+
   it('calls onExportImages and closes menu when Images option clicked', () => {
     const onExportImages = vi.fn()
     render(<ActionBar {...defaultProps} onExportImages={onExportImages} />)

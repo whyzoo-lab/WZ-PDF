@@ -252,6 +252,7 @@ export default function App() {
   const {
     isExporting,
     handleExportPdf,
+    handleExportSpreads,
     handleExportHtml,
     handleExportImages,
     handleExportExe,
@@ -937,6 +938,9 @@ export default function App() {
     onExportPdf: handleExportPdf,
     onPassword: handlePassword,
     saveLocked: !!savePassword,
+    // Booklet layout of the two-page view; page documents only (the menu is
+    // not shown for Markdown or mail at all).
+    onExportSpreads: pdfDoc ? handleExportSpreads : undefined,
     onExportHtml: handleExportHtml,
     onExportImages: handleExportImages,
     // EXE Viewer:

@@ -48,6 +48,11 @@ export const ko = {
 
   // ── Export menu ───────────────────────────────────────────────────────────
   'export.pdf': 'PDF 저장',
+  'export.spread': '책자 형태로 저장',
+  'export.spreadTitle': '두 장 보기 모양 그대로 두 쪽을 한 면에 담아 책자용 PDF로 저장합니다. 가로로 넓은 쪽은 한 면에 하나씩, 짝 없이 남은 쪽 옆에는 빈 쪽을 둡니다.',
+  'spread.blank': '빈 쪽',
+  'export.spreadDone': '책자 형태로 저장했습니다 — {name}',
+  'export.spreadFailed': '책자 형태로 저장하지 못했습니다: {error}',
   'export.html': 'HTML 저장',
   'export.images': '이미지 저장',
   'export.exe': 'EXE Viewer',
