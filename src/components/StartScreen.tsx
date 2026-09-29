@@ -8,6 +8,8 @@ export interface StartScreenProps {
   onOpenFile: () => void
   /** Open a recent document by path. Resolves false when it could not be opened. */
   onOpenRecent: (path: string) => Promise<boolean>
+  /** Desktop app: the automatic-update switch. */
+  update?: { state: UpdateState | null; setEnabled: (enabled: boolean) => Promise<void> }
 }
 
 function splitPath(p: string): { name: string; folder: string } {
@@ -24,7 +26,7 @@ function splitPath(p: string): { name: string; folder: string } {
  * launches are for. The list is paths only, kept by the main process in the
  * app's own folder; nothing from inside a document is stored.
  */
-export function StartScreen({ onOpenFile, onOpenRecent }: StartScreenProps) {
+export function StartScreen({ onOpenFile, onOpenRecent, update }: StartScreenProps) {
   const api = typeof window !== 'undefined' ? window.electronAPI : undefined
   const [recent, setRecent] = useState<RecentEntry[]>([])
 
@@ -89,6 +91,22 @@ export function StartScreen({ onOpenFile, onOpenRecent }: StartScreenProps) {
             })}
           </ul>
         </section>
+      )}
+
+      {/* The one place with nothing else to do, so the update switch lives
+          here rather than in a settings screen the app does not otherwise
+          need (the version is already the badge in the toolbar). Absent
+          where the app cannot update itself: the portable exe, a viewer exe. */}
+      {update?.state?.supported && (
+        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-gray-400 hover:text-gray-200">
+          <input
+            type="checkbox"
+            checked={update.state.enabled}
+            onChange={e => { void update.setEnabled(e.target.checked) }}
+            className="h-3.5 w-3.5 accent-blue-500"
+          />
+          {t('update.auto')}
+        </label>
       )}
     </div>
   )

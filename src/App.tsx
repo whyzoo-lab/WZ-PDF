@@ -34,7 +34,7 @@ import { pageSuffix } from './utils/pageSuffix'
 import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
 import { UpdateToast } from './components/UpdateToast'
-import { useUpdateCheck } from './hooks/useUpdateCheck'
+import { useAutoUpdate } from './hooks/useAutoUpdate'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { t } from './i18n'
 import { isVolatile } from './types/annotation'
@@ -225,7 +225,7 @@ export default function App() {
   const savePassword = chosenPassword.from === documentPassword
     ? chosenPassword.value
     : documentPassword
-  const update = useUpdateCheck()
+  const update = useAutoUpdate()
   const ocr = useOcr(pdfDoc, numPages)
   // Declared with the other feature hooks, not down with the speech wiring,
   // because opening a document has to be able to stop it.
@@ -457,11 +457,28 @@ export default function App() {
   // be re-registered every time the document is edited.
   const unsavedRef = useRef(unsaved)
   useLayoutEffect(() => { unsavedRef.current = unsaved })
-  const [pendingOpen, setPendingOpen] = useState<{ file: DocumentFile; path?: string } | null>(null)
+  // What waits on the "save / don't save / cancel" answer: opening another
+  // document, or restarting to install an update.
+  const [pendingLeave, setPendingLeave] = useState<{ reason: 'open' | 'update'; proceed: () => void } | null>(null)
   const loadPdfFile = useCallback((f: DocumentFile, filePath?: string) => {
-    if (unsavedRef.current) setPendingOpen({ file: f, path: filePath })
+    if (unsavedRef.current) setPendingLeave({ reason: 'open', proceed: () => openDocument(f, filePath) })
     else openDocument(f, filePath)
   }, [openDocument])
+
+  // Restart to install a downloaded update. Unsaved work is settled first: the
+  // installer is started before the app quits and closes it regardless, so the
+  // window-close prompt would come too late to save anything. `leavingRef`
+  // then lets the window go without asking again.
+  const leavingRef = useRef(false)
+  const { install: installUpdate } = update
+  const restartToUpdate = useCallback(() => {
+    const go = () => {
+      leavingRef.current = true
+      installUpdate().then(started => { if (!started) leavingRef.current = false }, () => { leavingRef.current = false })
+    }
+    if (unsavedRef.current) setPendingLeave({ reason: 'update', proceed: go })
+    else go()
+  }, [installUpdate])
 
   /** Main upload handler — accepts PDF and HWP/HWPX files. */
   const handleUpload = useCallback((f: File) => {
@@ -837,7 +854,10 @@ export default function App() {
   // turns it into a dialog (see will-prevent-unload in electron/main.ts).
   useEffect(() => {
     if (!unsaved) return
-    const hold = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    const hold = (e: BeforeUnloadEvent) => {
+      if (leavingRef.current) return
+      e.preventDefault(); e.returnValue = ''
+    }
     window.addEventListener('beforeunload', hold)
     return () => window.removeEventListener('beforeunload', hold)
   }, [unsaved])
@@ -978,18 +998,19 @@ export default function App() {
         />
       )}
 
-      {pendingOpen && file && (
+      {pendingLeave && file && (
         <UnsavedChangesDialog
           fileName={file.name}
+          reason={pendingLeave.reason}
           onSave={async () => {
             const saved = flowDoc && markdown !== null
               ? await (markdownSaveRef.current?.() ?? Promise.resolve(false))
               : await handleExportPdf()
-            if (saved) { const next = pendingOpen; setPendingOpen(null); openDocument(next.file, next.path) }
+            if (saved) { setPendingLeave(null); pendingLeave.proceed() }
             return saved
           }}
-          onDiscard={() => { const next = pendingOpen; setPendingOpen(null); openDocument(next.file, next.path) }}
-          onCancel={() => setPendingOpen(null)}
+          onDiscard={() => { setPendingLeave(null); pendingLeave.proceed() }}
+          onCancel={() => setPendingLeave(null)}
         />
       )}
       {passwordPrompt && (
@@ -1102,7 +1123,7 @@ export default function App() {
           {/* Drag/Open prompt — hidden in embed mode (can't drop into an iframe;
               the PDF auto-loads from ?url). */}
           {nothingOpen && (
-            <StartScreen onOpenFile={() => fileInputRef.current?.click()} onOpenRecent={openPath} />
+            <StartScreen onOpenFile={() => fileInputRef.current?.click()} onOpenRecent={openPath} update={update} />
           )}
           {/* Embed mode placeholder: error (if the ?url fetch failed) or a
               spinner while it loads. */}
@@ -1237,11 +1258,8 @@ export default function App() {
         />
       )}
 
-      {update && (
-        <UpdateToast
-          version={update.version}
-          onDownload={() => window.electronAPI?.openDownload?.(update.downloadUrl)}
-        />
+      {update.state?.ready && (
+        <UpdateToast version={update.state.ready} onInstall={restartToUpdate} />
       )}
 
       {/* Print preparation overlay. Rendering ~80 pages with annotations

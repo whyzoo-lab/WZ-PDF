@@ -4,6 +4,8 @@ import { t } from '../../i18n'
 export interface UnsavedChangesDialogProps {
   /** The document with the unsaved changes. */
   fileName: string
+  /** What is about to happen, when it is not opening another document. */
+  reason?: 'open' | 'update'
   /** Save, then go on. Resolves false when the save did not happen (cancelled or failed). */
   onSave: () => Promise<boolean>
   /** Go on without saving. */
@@ -22,7 +24,7 @@ export interface UnsavedChangesDialogProps {
  *
  * Imported directly, not lazily: it has to appear the moment a file is picked.
  */
-export function UnsavedChangesDialog({ fileName, onSave, onDiscard, onCancel }: UnsavedChangesDialogProps) {
+export function UnsavedChangesDialog({ fileName, reason = 'open', onSave, onDiscard, onCancel }: UnsavedChangesDialogProps) {
   const [saving, setSaving] = useState(false)
   const saveRef = useRef<HTMLButtonElement>(null)
 
@@ -58,7 +60,7 @@ export function UnsavedChangesDialog({ fileName, onSave, onDiscard, onCancel }: 
       >
         <h2 id="wz-unsaved-title" className="text-sm font-semibold">{t('unsaved.title')}</h2>
         <p id="wz-unsaved-body" className="mt-1 text-xs text-gray-300 break-words">
-          {t('unsaved.body', { name: fileName })}
+          {t(reason === 'update' ? 'unsaved.bodyUpdate' : 'unsaved.body', { name: fileName })}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <button

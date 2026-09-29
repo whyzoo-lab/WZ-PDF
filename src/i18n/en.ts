@@ -205,9 +205,11 @@ export const en = {
   'ocr.recognizing': 'Recognizing…',
 
   // ── Update notice ─────────────────────────────────────────────────────────
-  'update.available': 'New version {version} available',
-  'update.download': 'Download the latest',
-  'update.dismiss': 'Dismiss',
+  'update.ready': 'Version {version} is ready',
+  'update.onQuit': 'Restart now, or it installs when you close the app',
+  'update.restart': 'Restart',
+  'update.later': 'Later',
+  'update.auto': 'Automatic updates',
 
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': 'Find in document',
@@ -251,6 +253,7 @@ export const en = {
   'doc.unsaved': 'Unsaved changes',
   'unsaved.title': 'Unsaved changes',
   'unsaved.body': '{name} has changes that are not saved. Save them before opening another document?',
+  'unsaved.bodyUpdate': '{name} has changes that are not saved. Save them before restarting to update?',
   'unsaved.save': 'Save',
   'unsaved.discard': 'Don’t save',
   'unsaved.cancel': 'Cancel',

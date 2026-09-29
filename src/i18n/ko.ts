@@ -205,9 +205,11 @@ export const ko = {
   'ocr.recognizing': '인식 중…',
 
   // ── 업데이트 알림 ─────────────────────────────────────────────────────────
-  'update.available': '새 버전 {version} 사용 가능',
-  'update.download': '최신 버전 다운로드',
-  'update.dismiss': '닫기',
+  'update.ready': '새 버전 {version} 준비됨',
+  'update.onQuit': '지금 다시 시작하거나, 앱을 닫을 때 설치됩니다',
+  'update.restart': '다시 시작',
+  'update.later': '나중에',
+  'update.auto': '자동 업데이트',
 
   // ── Search (Ctrl+F) ───────────────────────────────────────────────────────
   'search.placeholder': '문서에서 찾기',
@@ -251,6 +253,7 @@ export const ko = {
   'doc.unsaved': '저장하지 않은 변경 내용이 있습니다',
   'unsaved.title': '저장하지 않은 변경 내용이 있습니다',
   'unsaved.body': '{name}에 저장하지 않은 변경 내용이 있습니다. 다른 문서를 열기 전에 저장할까요?',
+  'unsaved.bodyUpdate': '{name}에 저장하지 않은 변경 내용이 있습니다. 업데이트를 위해 다시 시작하기 전에 저장할까요?',
   'unsaved.save': '저장',
   'unsaved.discard': '저장 안 함',
   'unsaved.cancel': '취소',

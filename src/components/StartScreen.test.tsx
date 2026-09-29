@@ -56,4 +56,20 @@ describe('StartScreen', () => {
     render(<StartScreen onOpenFile={vi.fn()} onOpenRecent={vi.fn()} />)
     expect(screen.queryByRole('heading')).toBeNull()
   })
+
+  it('switches automatic updates in the installed app', () => {
+    const setEnabled = vi.fn(async () => {})
+    const state = { supported: true, enabled: true, ready: null, current: '1.21.0' }
+    render(<StartScreen onOpenFile={vi.fn()} onOpenRecent={vi.fn()} update={{ state, setEnabled }} />)
+    const box = screen.getByRole('checkbox', { name: /자동 업데이트|Automatic updates/ })
+    expect(box).toBeChecked()
+    fireEvent.click(box)
+    expect(setEnabled).toHaveBeenCalledWith(false)
+  })
+
+  it('offers no update switch where the app cannot update itself', () => {
+    const state = { supported: false, enabled: true, ready: null, current: '1.21.0' }
+    render(<StartScreen onOpenFile={vi.fn()} onOpenRecent={vi.fn()} update={{ state, setEnabled: vi.fn() }} />)
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
 })

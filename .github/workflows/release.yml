@@ -58,8 +58,13 @@ jobs:
       - name: Create GitHub Release and upload artifacts
         uses: softprops/action-gh-release@v2
         with:
-          # Attach both the portable exe and the NSIS installer.
+          # Both exes, plus what automatic updates read: latest.yml names the
+          # newest installer and its sha512 (installed copies check this file),
+          # and the .blockmap lets a later update download only what changed.
+          # Without latest.yml on a release, installed apps never see it.
           files: |
             release/WZ_PDF_*.exe
+            release/latest.yml
+            release/WZ_PDF_Setup_*.exe.blockmap
           generate_release_notes: true
           fail_on_unmatched_files: true

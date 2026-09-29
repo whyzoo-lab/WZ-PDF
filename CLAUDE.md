@@ -38,6 +38,7 @@ The renderer never uses Node APIs directly. All IPC calls go through `window.ele
 | `statFile(path)` | Size of a document, validated like `readFile`; decides whole read vs range loading |
 | `readFileRange(path, offset, length)` | One byte range of a large PDF (see "Large documents") |
 | `exportExe(pdfData)` | Save current PDF embedded into a copy of the portable exe |
+| `updateState()` / `setAutoUpdate(on)` / `installUpdate()` / `onUpdateReady(cb)` | Automatic updates (see "Automatic updates") |
 
 ### Rendering pipeline
 
@@ -262,6 +263,9 @@ CP949) and `App` renders `components/markdown/MarkdownView.tsx`.
 is stripped before parsing, and GFM task-list checkboxes are rewritten into
 `li.wz-md-task` markers **before** sanitizing, since an `<input>` would not
 survive it. Body typography lives in `.wz-md-body` (`src/index.css`).
+Inline code breaks anywhere (`:not(pre) > code { overflow-wrap: anywhere }`) and
+running text at long words: a path or URL in backticks has no space to break
+at and used to run straight out of the page. Code blocks still scroll instead.
 
 **Contents rail** — headings down to H3 become a sticky left rail (only when the
 document has ≥3 of them; fewer just looks cluttered). The active section is
@@ -341,6 +345,22 @@ App
 ```
 
 `LazyPdfPage` wraps `PdfPage` and mounts the Konva Stage when the container comes within 400px of the viewport, and unmounts it again once it is two screens away — the render cache makes re-mounts cheap. See "Page memory is bounded".
+
+**Two-page rows are cut around wide pages** (`utils/spreadLayout.ts`). A page
+whose width-to-height ratio is over 1.25x the document's median *and* landscape
+as displayed (an A3 drawing or a sideways A4 among portrait A4s) gets a row of
+its own, and pairing restarts after it; a deck of landscape slides still pairs.
+Sizes come from `usePageSizes` (page dictionaries only, cached per document,
+read only while a two-page layout is shown); until they arrive rows are plain
+pairs. The two-page presentation uses the same rows, so `FullscreenView` keeps
+any page as `currentPage` and shows the row containing it, and the presenter
+key/wheel hooks move by `nextPage`/`prevPage` rather than a fixed step.
+
+**The page grid packs to the window** (`GridView`). It was a fixed three
+columns, so on a wide window each third dwarfed its thumbnail and the pages sat
+far apart. Columns are now the median page width at the grid scale,
+`repeat(auto-fill, …)`, and a page wider than that (landscape among portrait)
+spans as many columns as it needs. Sizes come from the same `usePageSizes`.
 
 `PdfPage` = Konva `<Stage>` with four layers: background (`KonvaImage`) + `AnnotationLayer` + in-progress drawing preview + the Ctrl+drag region highlighter.
 
@@ -687,8 +707,15 @@ paint blank — "대외비 계약서" rendered as "대외비" and a gap, with up
 pdf-lib too. pdfjs says so while parsing (`Out of bounds subrIndex for
 callsubr`), and `pdfExporter.ocr.test.ts` asserts zero such warnings. `fontkit`
 v2 (what the fork is built against) renders every glyph, ~32 KB per file, and
-its lazy chunk is 348 KB against the old 711 KB. `mcp/` still uses
-`@pdf-lib/fontkit` with upstream pdf-lib and has the glyph bug.
+its lazy chunk is 348 KB against the old 711 KB. `mcp/` had the same glyph bug
+on upstream pdf-lib and now runs the same pair (`@cantoo/pdf-lib` + `fontkit`
+v2); `mcp/src/tools.korean.test.ts` holds it.
+
+**Capture pdfjs warnings with a spy around the whole read.** Both tests once
+passed against a broken font: vitest swaps `console` per test, so a wrapper
+installed at module load never saw anything, and pdfjs parses a font on first
+use — `getTextContent()` already counts — so a spy around only
+`getOperatorList()` is too late. `pdfjsWarnings()` in each test does it right.
 
 ### Encrypted documents
 
@@ -734,8 +761,9 @@ maintained fork of the same library, API-compatible for the five symbols we use
 never an option: pdf-lib is the 420 KB `es-*` chunk plus 711 KB of fontkit, and a
 second copy would have doubled it. The fork costs +210 KB raw (+87 KB gzip) on
 that chunk and **nothing at startup** — it is only in lazy export/page-op chunks.
-`mcp/` is a separate package with its own lockfile and no encryption feature, so
-it stays on upstream pdf-lib. AES-256 is the library default and is what we use;
+`mcp/` is a separate package with its own lockfile and no encryption feature; it
+moved to the fork too, but for its fontkit v2 support (see "Korean text in saved
+PDFs"), not for encryption. AES-256 is the library default and is what we use;
 the owner password is set to the same value as the user password, because an
 empty owner password lets any tool re-save without restrictions — "encrypted"
 would then be true only until the first round trip.
@@ -956,6 +984,58 @@ needs the portable artifact already on disk to embed.
 
 The OS passes the double-clicked PDF path as a CLI argument; `electron/main.ts`
 picks it up via `process.argv` and sends `open-file` to the renderer.
+
+### Automatic updates (installed app only)
+
+`electron/autoUpdate.ts` runs **electron-updater against GitHub Releases**. It
+replaced a check of `whyzoo.com/WzPDF/version.php` that only opened a download
+page — and whose manifest had stopped at 1.6.5, so it had silently never fired
+since. The flow: 15 s after launch and every 4 h, read `latest.yml` from the
+newest release, download the installer in the background (verified against the
+sha512 in that file), then show `UpdateToast` — **다시 시작** installs silently
+and relaunches; dismissing is fine, because it is installed when the app next
+quits (`autoInstallOnAppQuit`).
+
+- **Who updates.** `canAutoUpdate`: packaged, Windows, not
+  `PORTABLE_EXECUTABLE_FILE` (the portable exe and every exported viewer exe),
+  and `resources/app-update.yml` present. The CLI converter path never starts it.
+- **What a release must carry.** `publish` in `electron-builder.json5` makes the
+  NSIS build write `release/latest.yml` and a `.blockmap` beside the installer,
+  and `release.yml` uploads both. **A release without `latest.yml` is invisible
+  to every installed copy.** Tags must stay `v<version>`; drafts and
+  pre-releases are ignored (`releaseType: release`).
+- **Unsaved work is settled in the renderer first.** `quitAndInstall` starts the
+  installer *before* the app quits and the installer closes the app itself, so
+  the window-close prompt would come too late. `restartToUpdate` (App) asks
+  save / don't save / cancel through `UnsavedChangesDialog` (`reason="update"`)
+  and sets `leavingRef` so `beforeunload` lets the window go.
+- **Off switch** on the start screen (installed app only); stored in
+  `userData/auto-update.json`, on unless turned off (a damaged file does not
+  turn it off). Off also cancels install-on-quit of an already downloaded one.
+- **Packaging.** electron-updater is a main-process runtime dependency, so it
+  and its ~15 small dependencies are listed in `files` by name (the blanket
+  `node_modules` exclusion stays). `electron/packagedDeps.test.ts` walks the
+  dependency tree and fails if an upgrade adds one that is not listed — the
+  alternative is "Cannot find module" in the installed app only.
+  Two traps, both found only by running the packaged build: electron-builder
+  26 **flattens** the tree while copying and matches `files` against the
+  destination, so electron-updater's nested `node_modules/semver` must be
+  listed as `node_modules/semver` (`DEBUG=electron-builder` prints each
+  `identified module ... to=`); and it is loaded with `require`, because
+  `import()` from inside app.asar returned the package without `autoUpdater`.
+- **Testing it end to end** without publishing: build `--win dir`, replace
+  `release/win-unpacked/resources/app-update.yml` with a `generic` provider
+  pointing at a local server serving a `latest.yml` for a higher version (any
+  bytes, real sha512), run the exe with `--remote-debugging-port` and watch for
+  `.wz-update-toast`. Do not click restart — that runs the fake installer.
+- **Trust.** The installer is not code-signed, so there is no `publisherName`
+  check: the download is trusted because it matches the sha512 in `latest.yml`
+  from the same release, i.e. as far as the GitHub release is trusted. Signing
+  the installer and adding `publisherName` is what would close that gap (and
+  silence SmartScreen). Per-machine installs show one UAC prompt per update.
+
+**The first release with this still needs a manual install** — nothing before
+it has an updater.
 
 ### Reading aloud (text-to-speech)
 
@@ -1325,6 +1405,18 @@ things about that bundle:
 
 `hwp_to_pdf` finds the app two levels up from the server file, which is what ties
 the `extraResources` destination to the code. `WZPDF_APP` overrides it.
+
+**The Korean font comes out of `app.asar`.** Through 1.20.0 the server looked
+only for `../../public/fonts/`, which exists in a checkout (for both `src/` and
+the `build/mcp` bundle) but not under `<install>/resources/mcp/` — so in the
+shipped app every tool call with Korean text failed with `ENOENT`, while every
+test run from the repo passed. Running on the app binary means Electron's `fs`
+reads inside an asar, so the server now tries
+`../app.asar/dist/fonts/NotoSansKR-Regular.otf` first and the installer still
+carries the 4.6 MB font once. `MCP_KOREAN_FONT_PATH` overrides both. Test a
+change here from an installed-style layout (`resources/app.asar` +
+`resources/mcp/`, run with `ELECTRON_RUN_AS_NODE=1 "WZ PDF.exe"`), not from the
+checkout — the checkout is exactly where the bug was invisible.
 
 The installer does **not** write any client's MCP config. That file belongs to
 another application and may already hold the user's own servers; the registration

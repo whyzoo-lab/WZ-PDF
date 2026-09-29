@@ -81,7 +81,35 @@
     "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**",
     "!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/DirectML.dll",
     "!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/dxcompiler.dll",
-    "!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/dxil.dll"
+    "!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/dxil.dll",
+    // Automatic updates (electron/autoUpdate.ts) and everything it requires,
+    // ~1 MB. electron/packagedDeps.test.ts fails if an upgrade adds a
+    // dependency that is not listed here — it would otherwise surface only in
+    // the installed app, as "Cannot find module".
+    "node_modules/electron-updater/**/*",
+    // electron-updater's own semver (it pins ~7.7; the root copy is newer and
+    // belongs to an install-time dependency). electron-builder 26 flattens the
+    // dependency tree as it copies and matches these patterns against the
+    // DESTINATION, so that nested copy lands at node_modules/semver — listing
+    // its source path matched nothing, and the installed app failed every
+    // check with "Cannot find module 'semver'" (found by running the packaged
+    // build against a local update feed; `DEBUG=electron-builder` prints each
+    // "identified module ... to=" line).
+    "node_modules/semver/**/*",
+    "node_modules/builder-util-runtime/**/*",
+    "node_modules/debug/**/*",
+    "node_modules/ms/**/*",
+    "node_modules/sax/**/*",
+    "node_modules/fs-extra/**/*",
+    "node_modules/graceful-fs/**/*",
+    "node_modules/jsonfile/**/*",
+    "node_modules/universalify/**/*",
+    "node_modules/js-yaml/**/*",
+    "node_modules/argparse/**/*",
+    "node_modules/lazy-val/**/*",
+    "node_modules/lodash.escaperegexp/**/*",
+    "node_modules/lodash.isequal/**/*",
+    "node_modules/tiny-typed-emitter/**/*"
   ],
 
   // Keep the big, lazily-loaded binaries OUT of the asar. They are only read
@@ -206,6 +234,15 @@
     "installerIcon": "build/icon.ico",
     "uninstallerIcon": "build/icon.ico"
   },
+
+  // Where automatic updates come from. electron-builder writes this into the
+  // installed app as resources/app-update.yml, and next to the installer it
+  // writes latest.yml + a .blockmap that release.yml must upload with it —
+  // latest.yml is what installed copies read to find a new version.
+  // (build:exe passes --publish never: CI uploads, electron-builder does not.)
+  "publish": [
+    { "provider": "github", "owner": "whyzoo-lab", "repo": "WZ-PDF", "releaseType": "release" }
+  ],
 
   "portable": {
     // PORTABLE_EXECUTABLE_FILE env-var is set by electron-builder to the path

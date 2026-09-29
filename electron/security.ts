@@ -247,15 +247,6 @@ export function pinnedRequest(target: PinnedTarget, signal: AbortSignal): Promis
   })
 }
 
-export function isTrustedUpdateUrl(rawUrl: unknown, trustedOrigin: string): boolean {
-  try {
-    const url = parseHttpUrl(rawUrl)
-    return url.origin === trustedOrigin && url.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
 // ── What the desktop app may open from disk ────────────────────────────────
 //
 // One list, because three places used to carry their own copy and drifted: the

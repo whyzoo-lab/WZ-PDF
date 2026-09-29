@@ -47,6 +47,7 @@
     "@paddleocr/paddleocr-js": "^0.4.2",
     "@rhwp/core": "0.8.2",
     "dompurify": "^3.4.12",
+    "electron-updater": "^6.8.9",
     "fft.js": "^4.0.4",
     "fontkit": "^2.0.4",
     "jszip": "^3.10.1",

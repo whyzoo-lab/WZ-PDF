@@ -8,7 +8,6 @@ import {
   isTextDocumentPath,
   isNonPublicIp,
   isTrustedRendererUrl,
-  isTrustedUpdateUrl,
   parseHttpUrl,
   resolveAppAssetPath,
 } from './security.ts'
@@ -43,11 +42,9 @@ describe('Electron security helpers', () => {
     expect(resolveAppAssetPath(root, 'app://other/assets/app.js')).toBeNull()
   })
 
-  it('rejects unsafe URL forms and validates the update origin exactly', () => {
+  it('rejects unsafe URL forms', () => {
     expect(() => parseHttpUrl('file:///tmp/a.pdf')).toThrow(/http/)
     expect(() => parseHttpUrl('https://user:pass@example.com/a.pdf')).toThrow(/credentials/)
-    expect(isTrustedUpdateUrl('https://whyzoo.com/WzPDF/download.php', 'https://whyzoo.com')).toBe(true)
-    expect(isTrustedUpdateUrl('https://whyzoo.com.evil.test/file', 'https://whyzoo.com')).toBe(false)
   })
 
   it('classifies private and public IP addresses', () => {

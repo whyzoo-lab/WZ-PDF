@@ -1,10 +1,11 @@
-import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session, protocol, net } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session, protocol } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import path from 'path'
 import fs from 'fs'
 import { RecentFilesStore, isRecentCandidate } from './recentFiles'
+import { registerUpdateIpc, startAutoUpdate } from './autoUpdate'
 import { cliToolName, hasCliFlag, runCli } from './cliRunner'
 import { shutdown as shutdownTts, synthesize as synthesizeSpeech } from './ttsEngine'
 import { downloadModel, isVoiceId, modelStatus } from './ttsModel'
@@ -20,7 +21,6 @@ import {
   allowsPermission,
   isTrustedRendererUrl,
   isValidByteRange,
-  isTrustedUpdateUrl,
   parseHttpUrl,
   resolveAppAssetPath,
   pinnedRequest,
@@ -705,34 +705,10 @@ ipcMain.handle('open-help', async (event, lang?: unknown) => {
   }
 })
 
-// ── Optional update check ───────────────────────────────────────────────────
-// The renderer asks the main process (no CORS) to read the version manifest;
-// it compares against the running version and shows a dismissible toast. The
-// download is opened in the user's browser — we never auto-install.
-const UPDATE_MANIFEST_URL = 'https://whyzoo.com/WzPDF/version.php'
-const UPDATE_HOST_PREFIX = 'https://whyzoo.com/'
-
-ipcMain.handle('check-update', async (event) => {
-  assertTrustedIpcSender(event)
-  try {
-    const res = await net.fetch(UPDATE_MANIFEST_URL, { cache: 'no-store' })
-    if (!res.ok) return null
-    return await res.json()
-  } catch (err) {
-    console.error('[WZ PDF] check-update failed:', err instanceof Error ? err.message : String(err))
-    return null
-  }
-})
-
-ipcMain.handle('open-download', async (event, rawUrl?: unknown) => {
-  assertTrustedIpcSender(event)
-  // Compare the parsed origin exactly; string prefixes are easy to get subtly wrong.
-  const target = isTrustedUpdateUrl(rawUrl, new URL(UPDATE_HOST_PREFIX).origin)
-    ? String(rawUrl)
-    : 'https://whyzoo.com/WzPDF/download.php'
-  await shell.openExternal(target)
-  return { success: true }
-})
+// ── Automatic updates (installed app only) ─────────────────────────────────
+// See electron/autoUpdate.ts. Replaces a manifest check against whyzoo.com
+// that only opened a download page, and whose manifest stopped at 1.6.5.
+registerUpdateIpc(assertTrustedIpcSender)
 
 // (The previous `print-window` IPC used `webContents.print()`, which opens
 // the OS system print dialog with no real preview on Windows. The renderer
@@ -777,6 +753,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+  startAutoUpdate(() => win)
 
   // Determine what to open on startup (priority: CLI arg > open-file event > embedded PDF)
   // CLI arg covers both manual launches (`WZ_PDF.exe foo.pdf`) and the OS

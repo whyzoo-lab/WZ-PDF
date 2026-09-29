@@ -85,11 +85,14 @@ interface Window {
     /** Stop the engine and release its memory (~570 MB) right away. */
     ttsStop: () => Promise<void>
 
-    /** Fetch the version manifest via the main process (avoids CORS). null on error. */
-    checkUpdate: () => Promise<UpdateManifest | null>
-
-    /** Open the download page (validated to the update host) in the default browser. */
-    openDownload: (url?: string) => Promise<{ success: boolean }>
+    /** Automatic updates (installed app only). Absent in the web build. */
+    updateState?: () => Promise<UpdateState>
+    /** Turn automatic updates on or off. Resolves with the new state. */
+    setAutoUpdate?: (enabled: boolean) => Promise<UpdateState>
+    /** Quit, install the downloaded update silently and relaunch. */
+    installUpdate?: () => Promise<boolean>
+    /** A newer version finished downloading. Returns an unsubscribe function. */
+    onUpdateReady?: (callback: (version: string) => void) => () => void
   }
 }
 
@@ -110,15 +113,15 @@ interface TtsDownloadProgress {
 }
 
 /** Shape of https://whyzoo.com/WzPDF/version.php */
-interface UpdateManifest {
-  product?: string
-  available?: boolean
-  version?: string
-  filename?: string
-  size_bytes?: number
-  released_at?: string
-  download_url?: string
-  file_url?: string
+/** Mirrors UpdateState in electron/autoUpdate.ts. */
+interface UpdateState {
+  /** False for the portable exe, a viewer exe and development runs. */
+  supported: boolean
+  enabled: boolean
+  /** Version downloaded and waiting to be installed, or null. */
+  ready: string | null
+  /** The running version. */
+  current: string
 }
 
 /** App version, injected at build time from package.json via Vite's `define`. */

@@ -114,10 +114,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Stop the engine and release its memory (~570 MB) right away. */
   ttsStop: (): Promise<void> => ipcRenderer.invoke('tts:stop'),
 
-  // ── Optional update check ─────────────────────────────────────────────────
-  /** Fetch the version manifest via the main process (avoids CORS). null on error. */
-  checkUpdate: (): Promise<unknown> => ipcRenderer.invoke('check-update'),
-  /** Open the download page (validated to the update host) in the default browser. */
-  openDownload: (url?: string): Promise<{ success: boolean }> =>
-    ipcRenderer.invoke('open-download', url),
+  // ── Automatic updates (installed app only; see electron/autoUpdate.ts) ────
+  /** Whether this copy updates itself, whether it is on, and any update waiting. */
+  updateState: (): Promise<unknown> => ipcRenderer.invoke('update:state'),
+  /** Turn automatic updates on or off. Resolves with the new state. */
+  setAutoUpdate: (enabled: boolean): Promise<unknown> => ipcRenderer.invoke('update:set-enabled', enabled),
+  /** Quit, install the downloaded update silently and relaunch. */
+  installUpdate: (): Promise<boolean> => ipcRenderer.invoke('update:install'),
+  /** A newer version finished downloading. Returns an unsubscribe function. */
+  onUpdateReady: (callback: (version: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, version: unknown) => {
+      if (typeof version === 'string') callback(version)
+    }
+    ipcRenderer.on('update:ready', handler)
+    return () => ipcRenderer.removeListener('update:ready', handler)
+  },
 })
