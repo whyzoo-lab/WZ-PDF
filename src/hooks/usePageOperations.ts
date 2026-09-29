@@ -35,9 +35,9 @@ export function usePageOperations({ fileBytes, bytesUnavailable, documentPasswor
    * one whose bytes are simply still being read stays quiet, as before.
    */
   const blocked = useCallback((): boolean => {
-    if (fileBytes) return false
-    if (bytesUnavailable) onError(new Error(bytesUnavailable))
-    return true
+    // Checked first: a HWP or image has bytes, just not PDF ones.
+    if (bytesUnavailable) { onError(new Error(bytesUnavailable)); return true }
+    return !fileBytes
   }, [fileBytes, bytesUnavailable, onError])
 
   /**

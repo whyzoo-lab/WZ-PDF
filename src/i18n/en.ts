@@ -89,6 +89,7 @@ export const en = {
   'start.recent': 'Recent',
   'start.clearRecent': 'Clear list',
   'panel.close': 'Close panel',
+  'panel.pdfOnly': 'Pages can be added, deleted and reordered in PDFs only. Stamps, signatures and watermarks still work.',
   'panel.add': '+ Add ▾',
   'panel.addTitle': 'Add page',
   'panel.insertBlank': 'Insert blank page',

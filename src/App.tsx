@@ -84,6 +84,9 @@ function prefetchViewerChunks(): void {
   void import('pdfjs-dist').catch(() => {})
 }
 
+/** How long "opening…" may stand in for the start screen at launch. */
+const OPENING_AT_LAUNCH_DEADLINE_MS = 15_000
+
 export default function App() {
   // ── Document state ────────────────────────────────────────────────────────
   const [file, setFile] = useState<DocumentFile | null>(null)
@@ -204,6 +207,13 @@ export default function App() {
   const bytesUnavailable = file && isLargeDocument(file)
     ? t('doc.tooLargeToEdit', { limit: EAGER_DOCUMENT_LIMIT_LABEL })
     : null
+  // Adding, deleting and reordering pages rewrite a PDF with pdf-lib. A HWP or
+  // an image has no PDF to rewrite: handing its bytes over failed with "Failed
+  // to parse PDF document … No PDF header found". Stamps, signatures and
+  // watermarks still work on those pages (they are saved into a PDF), so the
+  // edit switch stays; only the page tools are withheld.
+  const pagesEditable = kind === 'pdf'
+  const pageEditUnavailable = bytesUnavailable ?? (pagesEditable ? null : t('panel.pdfOnly'))
 
   // ── Hooks: feature bundles ────────────────────────────────────────────────
   const { fitWidth } = useFitZoom({ pdfDoc, viewMode, rotation, setZoom, viewportRef: mainRef })
@@ -282,7 +292,7 @@ export default function App() {
     handleInsertFromPdf,
     handleReorderPages,
   } = usePageOperations({
-    fileBytes, documentPassword, bytesUnavailable, onResult: handlePageOpResult,
+    fileBytes, documentPassword, bytesUnavailable: pageEditUnavailable, onResult: handlePageOpResult,
     onError: err => showToast(errorMessage(err)),
   })
 
@@ -523,8 +533,23 @@ export default function App() {
   const { showUrlModal, setShowUrlModal, urlLoading, urlError, handleOpenUrl } = useOpenUrl(loadPdfFile, showToast)
 
   // ── Electron: open-file (file association / CLI arg) ──────────────────────
+  // Launched with a document (`?open=1`, set by the main process): the path
+  // only arrives once the page has loaded, and reading the file takes a moment
+  // more. The start screen used to flash up for that whole time, so until the
+  // open settles the window says "opening…" instead. A deadline keeps a lost
+  // message from leaving it there.
+  const [openingAtLaunch, setOpeningAtLaunch] = useState(() => {
+    try { return new URLSearchParams(window.location.search).has('open') } catch { return false }
+  })
   useEffect(() => {
-    const cleanup = window.electronAPI?.onOpenFile(filePath => { void openPath(filePath) })
+    if (!openingAtLaunch) return
+    const id = window.setTimeout(() => setOpeningAtLaunch(false), OPENING_AT_LAUNCH_DEADLINE_MS)
+    return () => window.clearTimeout(id)
+  }, [openingAtLaunch])
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onOpenFile(filePath => {
+      void openPath(filePath).finally(() => setOpeningAtLaunch(false))
+    })
     return () => { cleanup?.() }
   }, [openPath])
 
@@ -698,7 +723,10 @@ export default function App() {
   // Double-clicking the empty viewer opens a file — but only when nothing is
   // open. It used to test `pdfDoc` alone, and Markdown and mail have none, so a
   // double-click meant to select a word in them threw up the file picker.
-  const nothingOpen = !pdfDoc && !email && markdown === null && !isLoading && !error && !embed
+  // `!file` too: between picking a document and its loader reporting in there
+  // is a render with no document and no loading flag, and the start screen
+  // flashed up in it.
+  const nothingOpen = !file && !pdfDoc && !email && markdown === null && !isLoading && !error && !embed
   const handleMainDoubleClick = useCallback(() => {
     if (nothingOpen) fileInputRef.current?.click()
   }, [nothingOpen])
@@ -1065,7 +1093,8 @@ export default function App() {
               numPages={numPages}
               currentPage={currentPage}
               isOperating={isPageOperating}
-              readOnly={appMode === 'viewer'}
+              readOnly={appMode === 'viewer' || !pagesEditable}
+              readOnlyNote={appMode === 'editor' && !pagesEditable ? t('panel.pdfOnly') : undefined}
               onError={showToast}
               onClose={() => setIsPanelOpen(false)}
               // Only for PDFs: extraction is pdf-lib's job, and it has nothing
@@ -1122,7 +1151,12 @@ export default function App() {
           )}
           {/* Drag/Open prompt — hidden in embed mode (can't drop into an iframe;
               the PDF auto-loads from ?url). */}
-          {nothingOpen && (
+          {nothingOpen && openingAtLaunch && (
+            <div className="flex items-center justify-center h-full text-gray-400">
+              {t('doc.loading')}
+            </div>
+          )}
+          {nothingOpen && !openingAtLaunch && (
             <StartScreen onOpenFile={() => fileInputRef.current?.click()} onOpenRecent={openPath} update={update} />
           )}
           {/* Embed mode placeholder: error (if the ?url fetch failed) or a

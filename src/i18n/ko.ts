@@ -90,6 +90,7 @@ export const ko = {
   'start.clearRecent': '목록 지우기',
   'panel.close': '패널 닫기',
   'panel.add': '+ 추가 ▾',
+  'panel.pdfOnly': '페이지 추가·삭제·순서 바꾸기는 PDF에서만 할 수 있습니다. 도장·서명·워터마크는 넣을 수 있습니다.',
   'panel.addTitle': '페이지 추가',
   'panel.insertBlank': '빈 페이지 삽입',
   'panel.insertFromPdf': '다른 PDF에서 삽입…',

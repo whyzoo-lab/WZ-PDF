@@ -15,6 +15,8 @@ export interface PagePanelProps {
   isOperating: boolean
   /** When true, hides edit toolbar, disables drag-and-drop and Delete-key shortcut. */
   readOnly?: boolean
+  /** Shown in place of the toolbar when editing is on but pages cannot be edited (HWP, images). */
+  readOnlyNote?: string
   /** Called when the mobile drawer's close button is tapped (no-op on desktop). */
   onClose?: () => void
   onScrollToPage: (page: number) => void
@@ -37,6 +39,7 @@ export function PagePanel({
   currentPage,
   isOperating,
   readOnly = false,
+  readOnlyNote,
   onError,
   onClose,
   onScrollToPage,
@@ -261,6 +264,9 @@ export function PagePanel({
         </div>
       </div>
 
+      {readOnly && readOnlyNote && (
+        <p className="px-3 py-2 border-b border-gray-700 text-[11px] leading-snug text-gray-400 break-keep shrink-0">{readOnlyNote}</p>
+      )}
       {/* 도구 모음 (편집 모드 전용) */}
       {!readOnly && (
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-700 shrink-0">

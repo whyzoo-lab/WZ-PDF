@@ -71,4 +71,14 @@ describe('saving a selection of pages', () => {
     fireEvent.contextMenu(thumb(1))
     expect(screen.queryByRole('menuitem')).toBeNull()
   })
+
+  it('explains, instead of offering page tools, when pages cannot be edited (HWP, images)', () => {
+    const onDeletePages = vi.fn()
+    panel({ readOnly: true, readOnlyNote: 'PDF에서만 할 수 있습니다', onDeletePages })
+    expect(screen.getByText('PDF에서만 할 수 있습니다')).toBeInTheDocument()
+    expect(screen.queryByTitle(/페이지 추가|Add page/)).toBeNull()
+    fireEvent.click(thumb(2))
+    fireEvent.keyDown(window, { key: 'Delete' })
+    expect(onDeletePages).not.toHaveBeenCalled()
+  })
 })

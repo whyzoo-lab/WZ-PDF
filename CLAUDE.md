@@ -105,6 +105,13 @@ browser's PDF viewer.
 
 **Editing scope** — Existing annotation overlays (stamps, signatures, watermarks, pen, rectangle) work on HWP pages. There is no native HWP content editing. Office formats (DOC, PPT, XLS) are out of scope.
 
+Page add / delete / reorder are **PDF only** (they rewrite the file with
+pdf-lib). For HWP and images the page panel stays read-only even in editor
+mode and says so (`readOnlyNote`), and `usePageOperations` refuses with the same
+sentence — handing HWPX bytes to pdf-lib used to fail with "Failed to parse PDF
+document … No PDF header found". The edit switch itself stays, because the
+overlays above do work and are saved into the exported PDF.
+
 **Bundle impact** — `@rhwp/core` is kept in a lazy chunk (`hwpEngine-*.js`) and never included in the entry bundle; it is only fetched when a HWP/HWPX file is opened.
 
 **Engine version** — `@rhwp/core` is pinned to an **exact** version (no caret) so
@@ -391,6 +398,10 @@ document to the end came to ~2.2 GB at fit-page. Three changes, each needed:
   Eviction only drops the reference; a caller still using a canvas (OCR, print)
   keeps it alive.
 - `AnnotationLayer` is mounted only on pages that have annotations.
+- Anything that animates "on mount" now plays on every scroll back, since pages
+  remount. The OCR reveal flash did exactly that after a whole-document run —
+  it read as the page being recognized again — so `PdfPage` plays it only for a
+  result that arrived while the page was mounted (`PdfPage.ocrReveal.test.tsx`).
 - `renderPage` calls pdfjs `page.cleanup()` once the raster exists: pdfjs keeps
   every image it decoded for a page until told otherwise (~220 MB over a
   200-page image-heavy document).
@@ -613,6 +624,17 @@ come from the OS (`open-file`) or, for picked and dropped files, from
 `webUtils.getPathForFile` in the preload — the renderer has no `File.path`.
 Note the dev and packaged builds share the userData folder of the installed
 app, so testing adds to the real list.
+
+**Launched with a document, the start screen never shows.** The path of a
+double-clicked file can only be sent once the page has loaded, and the file is
+read after that, so the start screen used to flash up first (measured over CDP
+on the installed 1.21.0: start screen at 233 ms, "opening" at 283 ms). The main
+process now knows before creating the window and loads `app.html?open=1`;
+`App` shows "opening…" in its place until the open settles, falls back to the
+start screen if it fails, and gives up after `OPENING_AT_LAUNCH_DEADLINE_MS`.
+`nothingOpen` also requires `!file`, which closes the one render between
+picking a file and its loader reporting in. A viewer exe's embedded PDF still
+takes the old path — it is only known after reading the exe's tail.
 
 The logo and tagline belong to the start screen only; every open document
 (PDF, Markdown, mail) shows its own name instead, and the edit switch is hidden
@@ -1493,9 +1515,13 @@ Renderer is sandboxed and IPC inputs are validated. Notable measures:
   Escape-key lock presentation mode uses (`keyboardLock`). The 1.18.0 deny-all
   refused both, so from 1.18.0 to 1.19.1 F5 drew the slideshow *inside the
   window* — with the min/max/close title-bar overlay on top of the slide, which
-  real fullscreen hides. `fullscreen`, `keyboardLock` and
-  `clipboard-sanitized-write` (region OCR copy) are granted, and only to our own
-  renderer URL. Test a new web API that might be permission-gated in a hidden
+  real fullscreen hides. `fullscreen`, `keyboardLock`,
+  `clipboard-sanitized-write` (region OCR copy) and `fileSystem` are granted,
+  and only to our own renderer URL. `fileSystem` because `createWritable()` on a
+  handle from the save picker is itself a permission request in Electron:
+  refused, HTML export failed with "The request is not allowed by the user agent
+  or the platform in the current context". It only ever concerns a file the
+  reader picked or dropped. Test a new web API that might be permission-gated in a hidden
   window with the real handler before shipping: a refused `requestFullscreen()`
   does not even reject, it just never settles.
 - **`read-file` refuses UNC paths** (`\\host\share\x.pdf`) unless the OS itself

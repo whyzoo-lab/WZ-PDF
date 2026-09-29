@@ -151,7 +151,16 @@ function serveAppProtocol() {
   })
 }
 
-function createWindow() {
+/**
+ * Query the renderer is loaded with when a document is on its way (a file
+ * double-clicked in Explorer, or passed on the command line). Without it the
+ * window showed the start screen until the path arrived and the file was read —
+ * the path can only be sent once the page has loaded. The renderer shows
+ * "opening…" instead, and falls back to the start screen if the open fails.
+ */
+const OPENING_QUERY = '?open=1'
+
+function createWindow({ opening = false }: { opening?: boolean } = {}) {
   win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -193,11 +202,11 @@ function createWindow() {
     // Production: serve the Vite build over app:// (NOT file://) so the OCR
     // runtime, which refuses to run on a file: origin, works. See serveAppProtocol.
     // Load app.html (the React app) — index.html is the web landing/demo page.
-    win.loadURL('app://bundle/app.html')
+    win.loadURL(`app://bundle/app.html${opening ? OPENING_QUERY : ''}`)
   } else {
     // Development: load the React app from the Vite dev server (index.html is
     // the landing/demo page; the desktop app wants app.html directly).
-    win.loadURL('http://localhost:5173/app.html')
+    win.loadURL(`http://localhost:5173/app.html${opening ? OPENING_QUERY : ''}`)
   }
 
   win.on('closed', () => { win = null })
@@ -752,13 +761,14 @@ app.whenReady().then(async () => {
     return
   }
 
-  createWindow()
-  startAutoUpdate(() => win)
-
   // Determine what to open on startup (priority: CLI arg > open-file event > embedded PDF)
   // CLI arg covers both manual launches (`WZ_PDF.exe foo.pdf`) and the OS
-  // file-association entry point (double-click a .pdf in Explorer).
+  // file-association entry point (double-click a .pdf in Explorer). Known before
+  // the window exists, so the renderer can skip the start screen.
   const argFile = findFileArgument(process.argv)
+
+  createWindow({ opening: !!(argFile || pendingFile) })
+  startAutoUpdate(() => win)
 
   if (argFile && win) {
     win.webContents.once('did-finish-load', () => {
