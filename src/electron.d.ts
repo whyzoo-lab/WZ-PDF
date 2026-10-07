@@ -47,11 +47,9 @@ interface Window {
     printToPdf?: () => Promise<ArrayBuffer>
     /** Keep running at full speed while hidden (true) for a long job, then stop (false). */
     setBackgroundWork?: (on: boolean) => Promise<void>
-    /** Narrated video: name the .mp4 (null if cancelled), then write the set beside it. */
+    /** Narrated video: name the .mp4 (null if cancelled), then write it there. */
     pickVideoPath?: (suggestedName: string) => Promise<{ token: string; name: string } | null>
-    writeVideoFiles?: (token: string, files: {
-      plain: Uint8Array; captioned: Uint8Array; srt: string; vtt: string; captionedSuffix: string
-    }) => Promise<string[]>
+    writeVideoFile?: (token: string, mp4: Uint8Array) => Promise<string>
     exportExe: (pdfData: ArrayBuffer) => Promise<{
       success: boolean
       canceled?: boolean
@@ -92,6 +90,15 @@ interface Window {
       speed: number
       totalStep: number
     }) => Promise<{ pcm: Float32Array; sampleRate: number }>
+
+    /** Several sentences in one pass of the model — for a narrated video. */
+    ttsSynthesizeBatch?: (options: {
+      texts: string[]
+      langs: string[]
+      voice: string
+      speed: number
+      totalStep: number
+    }) => Promise<{ pcms: Float32Array[]; sampleRate: number }>
 
     /** Stop the engine and release its memory (~570 MB) right away. */
     ttsStop: () => Promise<void>

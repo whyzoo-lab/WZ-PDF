@@ -1,20 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import path from 'path'
-import { PendingVideoSaves, cleanSuffix, cleanSuggestedName, validateVideoFiles, videoSetPaths } from './videoSave'
+import { PendingVideoSaves, cleanSuggestedName, validateMp4 } from './videoSave'
 
-describe('videoSetPaths', () => {
-  it('puts the whole set beside the .mp4 the reader named', () => {
-    const p = videoSetPaths(path.join('D:', 'talks', '발표.mp4'), '자막 포함')
-    expect(p).toEqual({
-      plain: path.join('D:', 'talks', '발표.mp4'),
-      captioned: path.join('D:', 'talks', '발표 (자막 포함).mp4'),
-      srt: path.join('D:', 'talks', '발표.srt'),
-      vtt: path.join('D:', 'talks', '발표.vtt'),
-    })
-  })
-})
-
-describe('names from the renderer', () => {
+describe('cleanSuggestedName', () => {
   it('keeps a suggested name a file name ending in .mp4', () => {
     expect(cleanSuggestedName('발표자료.mp4')).toBe('발표자료.mp4')
     expect(cleanSuggestedName('발표자료')).toBe('발표자료.mp4')
@@ -22,12 +9,6 @@ describe('names from the renderer', () => {
     expect(cleanSuggestedName('a<b>:c?.mp4')).toBe('abc.mp4')
     expect(cleanSuggestedName('a\u0007b\u001f.mp4')).toBe('ab.mp4')
     expect(cleanSuggestedName(42)).toBe('presentation.mp4')
-  })
-
-  it('keeps a suffix free of anything that would make it a path', () => {
-    expect(cleanSuffix('자막 포함')).toBe('자막 포함')
-    expect(cleanSuffix('../x')).toBe('..x')
-    expect(cleanSuffix('')).toBe('captioned')
   })
 })
 
@@ -49,17 +30,11 @@ describe('PendingVideoSaves', () => {
   })
 })
 
-describe('validateVideoFiles', () => {
-  const mp4 = Uint8Array.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0])
-  const ok = { plain: mp4, captioned: mp4, srt: '1\n', vtt: 'WEBVTT\n', captionedSuffix: '자막 포함' }
-
-  it('accepts the set the exporter makes', () => {
-    expect(validateVideoFiles(ok).captionedSuffix).toBe('자막 포함')
-  })
-
-  it('refuses anything that is not an MP4 or not text', () => {
-    expect(() => validateVideoFiles({ ...ok, plain: new Uint8Array(20) })).toThrow()
-    expect(() => validateVideoFiles({ ...ok, srt: 5 })).toThrow()
-    expect(() => validateVideoFiles(null)).toThrow()
+describe('validateMp4', () => {
+  it('accepts an MP4 and refuses anything else', () => {
+    const mp4 = Uint8Array.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0])
+    expect(validateMp4(mp4)).toBe(mp4)
+    expect(() => validateMp4(new Uint8Array(20))).toThrow()
+    expect(() => validateMp4('mp4')).toThrow()
   })
 })

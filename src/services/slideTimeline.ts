@@ -69,6 +69,25 @@ export function planSlide(start: number, sentences: readonly SpokenSentence[]): 
 }
 
 /**
+ * Mono PCM cut into pieces of at most `size` samples, **each a standalone
+ * copy** — never a `subarray` view.
+ *
+ * mediabunny's AudioSample hands the encoder `data.buffer` (sample.ts,
+ * `toAudioData`), the whole underlying ArrayBuffer, and drops the view's
+ * byteOffset. Pieces cut with `subarray` therefore all started at the first
+ * sample of their sentence: 1.24.3 spoke the first second of every sentence
+ * over and over ("안녕하세 안녕하세 …"). Copies have byteOffset 0 and a buffer of
+ * their own length, so there is nothing to drop. In our code rather than a
+ * patch to the library, per "Never patch a dependency in place"; once the
+ * library honours byteOffset this can go back to views.
+ */
+export function pcmPieces(pcm: Float32Array, size: number): Float32Array[] {
+  const pieces: Float32Array[] = []
+  for (let o = 0; o < pcm.length; o += size) pieces.push(pcm.slice(o, o + size))
+  return pieces
+}
+
+/**
  * The video track's clock: frame times are kept on a 1/30 s grid. The muxer
  * stores them at that rate, and two moments closer than a tick (a caption
  * change right after a fade frame) landed on the same timestamp — FFmpeg warns

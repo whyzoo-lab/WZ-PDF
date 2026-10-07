@@ -1082,13 +1082,13 @@ export default function App() {
   // services/slideVideo.ts makes it; this asks where, shows progress, saves.
   const [videoProgress, setVideoProgress] = useState<VideoProgress | null>(null)
   const canMakeVideo = office?.kind === 'pptx' && !!officePages?.hasNotes && !chromeless
-    && !!window.electronAPI?.ttsSynthesize && !!window.electronAPI?.printToPdf && !!window.electronAPI?.pickVideoPath
+    && !!window.electronAPI?.ttsSynthesizeBatch && !!window.electronAPI?.printToPdf && !!window.electronAPI?.pickVideoPath
   const handleSaveSlideVideo = useCallback(async () => {
     const view = officeHandleRef.current
     const api = window.electronAPI
     // Busy from the first moment: a second press while the save dialog was
     // still open used to ask for a second dialog ("File picker already active").
-    if (!view || office?.kind !== 'pptx' || !api?.pickVideoPath || !api.writeVideoFiles || videoAbort.current) return
+    if (!view || office?.kind !== 'pptx' || !api?.pickVideoPath || !api.writeVideoFile || videoAbort.current) return
     const controller = new AbortController()
     videoAbort.current = controller
     try {
@@ -1100,9 +1100,9 @@ export default function App() {
         reportSpeechFailure(err)
         return
       }
-      // The reader names the .mp4 in the app's own save dialog; the captioned
-      // copy and the .srt / .vtt go beside it under the same name. Asked before
-      // the long work, so the reader is not kept waiting to be asked.
+      // The reader names the .mp4 in the app's own save dialog — one file, the
+      // subtitles inside it. Asked before the long work, so the reader is not
+      // kept waiting to be asked.
       const target = await api.pickVideoPath(`${stripDocExt(file?.name ?? 'presentation')}.mp4`)
       if (!target) return
 
@@ -1124,18 +1124,15 @@ export default function App() {
       const video = await buildSlideVideo({
         pdf,
         notes,
-        synthesize: tts.synthesize,
+        synthesize: tts.synthesizeBatch,
         language: korean ? 'kor' : 'eng',
         captionName: t(korean ? 'video.trackKorean' : 'video.trackEnglish'),
         signal: controller.signal,
         onProgress: p => setVideoProgress({ phase: 'making', ...p }),
       })
       setVideoProgress(p => (p ? { ...p, phase: 'saving' } : p))
-      const names = await api.writeVideoFiles(target.token, {
-        plain: video.plain, captioned: video.captioned, srt: video.srt, vtt: video.vtt,
-        captionedSuffix: t('video.captionedSuffix'),
-      })
-      showToast(t('video.saved', { files: names.join(', ') }))
+      const name = await api.writeVideoFile(target.token, video.mp4)
+      showToast(t('video.saved', { name }))
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') showToast(t('video.cancelled'))
       else {

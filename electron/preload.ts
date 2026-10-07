@@ -85,15 +85,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   /**
    * A narrated video: the native save dialog for the .mp4 (null if cancelled),
-   * then the set written beside it — see electron/videoSave.ts.
+   * then the file written there — see electron/videoSave.ts.
    */
   /** Keep running at full speed while hidden (true) for a long job, then stop (false). */
   setBackgroundWork: (on: boolean): Promise<void> => ipcRenderer.invoke('background-work', on),
   pickVideoPath: (suggestedName: string): Promise<{ token: string; name: string } | null> =>
     ipcRenderer.invoke('video:pick', suggestedName),
-  writeVideoFiles: (token: string, files: {
-    plain: Uint8Array; captioned: Uint8Array; srt: string; vtt: string; captionedSuffix: string
-  }): Promise<string[]> => ipcRenderer.invoke('video:write', token, files),
+  writeVideoFile: (token: string, mp4: Uint8Array): Promise<string> =>
+    ipcRenderer.invoke('video:write', token, mp4),
 
   // ── Help ────────────────────────────────────────────────────────────────
   /** Open the help document in the user's default browser (lang: 'ko' | 'en'). */
@@ -136,6 +135,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     totalStep: number
   }): Promise<{ pcm: Float32Array; sampleRate: number }> =>
     ipcRenderer.invoke('tts:synthesize', options),
+
+  /** Several sentences in one pass — for a narrated video. */
+  ttsSynthesizeBatch: (options: {
+    texts: string[]
+    langs: string[]
+    voice: string
+    speed: number
+    totalStep: number
+  }): Promise<{ pcms: Float32Array[]; sampleRate: number }> =>
+    ipcRenderer.invoke('tts:synthesize-batch', options),
 
   /** Stop the engine and release its memory (~570 MB) right away. */
   ttsStop: (): Promise<void> => ipcRenderer.invoke('tts:stop'),

@@ -1,40 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toSrt, toVtt, wrapCaption } from './captions'
-import { FRAME_GRID, frameTimes, planSlide, TIMING } from './slideTimeline'
-
-describe('caption files', () => {
-  const cues = [
-    { start: 0.6, end: 3.25, text: '안녕하세요.\n김태선 입니다' },
-    { start: 3661.5, end: 3663, text: 'A < B & C' },
-  ]
-
-  it('writes SubRip with comma milliseconds, numbered, one line per cue', () => {
-    expect(toSrt(cues)).toBe(
-      '1\n00:00:00,600 --> 00:00:03,250\n안녕하세요. 김태선 입니다\n\n'
-      + '2\n01:01:01,500 --> 01:01:03,000\nA < B & C\n',
-    )
-  })
-
-  it('writes WebVTT with dot milliseconds and its markup characters escaped', () => {
-    expect(toVtt(cues)).toBe(
-      'WEBVTT\n\n'
-      + '00:00:00.600 --> 00:00:03.250\n안녕하세요. 김태선 입니다\n\n'
-      + '01:01:01.500 --> 01:01:03.000\nA &lt; B &amp; C\n',
-    )
-  })
-})
-
-describe('wrapCaption', () => {
-  const measure = (s: string) => [...s].length // one unit per character
-
-  it('breaks at spaces', () => {
-    expect(wrapCaption('one two three four', 9, measure)).toEqual(['one two', 'three', 'four'])
-  })
-
-  it('breaks a word wider than the line between characters', () => {
-    expect(wrapCaption('가나다라마바사아자차 끝', 4, measure)).toEqual(['가나다라', '마바사아', '자차 끝'])
-  })
-})
+import { FRAME_GRID, frameTimes, pcmPieces, planSlide, TIMING } from './slideTimeline'
 
 describe('planSlide', () => {
   it('fades in, speaks with pauses, holds after the last word', () => {
@@ -48,6 +13,21 @@ describe('planSlide', () => {
 
   it('holds a slide without notes', () => {
     expect(planSlide(5, [])).toEqual({ start: 5, end: 5 + TIMING.silentHold, sentenceStarts: [], cues: [] })
+  })
+})
+
+describe('pcmPieces', () => {
+  it('cuts the voice into standalone copies, in order, with nothing lost', () => {
+    const pcm = Float32Array.from({ length: 10 }, (_, i) => i)
+    const pieces = pcmPieces(pcm, 4)
+    expect(pieces.map(p => [...p])).toEqual([[0, 1, 2, 3], [4, 5, 6, 7], [8, 9]])
+    // What the encoder actually reads is the whole buffer from its start: each
+    // piece's buffer must be exactly that piece. With subarray views every
+    // piece read back as [0, 1, 2, 3] — the first second, repeated.
+    for (const p of pieces) {
+      expect(p.byteOffset).toBe(0)
+      expect([...new Float32Array(p.buffer)]).toEqual([...p])
+    }
   })
 })
 

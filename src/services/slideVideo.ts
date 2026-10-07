@@ -3,32 +3,29 @@ import {
   canEncodeAudio, canEncodeVideo,
 } from 'mediabunny'
 import { planSpeech } from './ttsText'
-import { toSrt, toVtt, wrapCaption, type Cue } from './captions'
-import { frameTimes, planSlide, snapToFrame, TIMING, type PlannedSlide, type SpokenSentence } from './slideTimeline'
+import type { Cue } from './captions'
+import { frameTimes, pcmPieces, planSlide, snapToFrame, TIMING, type PlannedSlide, type SpokenSentence } from './slideTimeline'
 import { addTx3gTrack } from './tx3g'
 import { getPdfWorkerUrl } from './pdfjsWorker'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 
 /**
- * A deck's slides with its speaker notes read over them, as an MP4 — the
+ * A deck's slides with its speaker notes read over them, as one MP4 — the
  * slideshow with read-aloud, recorded.
  *
  * Slides come from the deck's PDF (the same print the "Save as PDF" writes, so
  * hidden slides are already out and every slide looks as it prints); the voice
- * is the read-aloud engine, sentence by sentence. Two videos are made in one
- * pass, since the voice is the slow part and is shared:
+ * is the read-aloud engine, sentence by sentence. The file is H.264 + AAC with
+ * the script inside as a subtitle track a player can switch on and off
+ * (services/tx3g.ts). Encoding is WebCodecs, through mediabunny — no FFmpeg.
  *
- * - **plain**: H.264 + AAC + a tx3g caption track a player can switch on and
- *   off (services/tx3g.ts);
- * - **captioned**: the same with the captions drawn into the picture, for
- *   places that show no subtitle tracks (messengers, most web players).
- *
- * The same captions also come back as .srt and .vtt, for YouTube and for a web
- * page's <track>. Encoding is WebCodecs, through mediabunny — no FFmpeg.
+ * One file on purpose: the first version also wrote a copy with the captions
+ * drawn in, a .srt and a .vtt, and four files for one talk was more than
+ * anyone wanted — the subtitles inside the MP4 cover it.
  */
 
-/** The voice engine: one sentence in, mono PCM out. */
-export type Synthesize = (text: string) => Promise<{ pcm: Float32Array; sampleRate: number }>
+/** The voice engine: sentences in, one mono clip each out, in order. */
+export type Synthesize = (texts: string[]) => Promise<{ pcm: Float32Array; sampleRate: number }[]>
 
 export interface SlideVideoInput {
   /** One page per slide shown, in order. */
@@ -36,19 +33,16 @@ export interface SlideVideoInput {
   /** The script for each page, '' for none. */
   notes: readonly string[]
   synthesize: Synthesize
-  /** ISO 639-2/T for the caption and audio tracks, e.g. `kor`. */
+  /** ISO 639-2/T for the subtitle and audio tracks, e.g. `kor`. */
   language: string
-  /** Name of the caption track in players' menus. */
+  /** Name of the subtitle track in players' menus. */
   captionName: string
   onProgress?: (progress: { slide: number; slides: number; sentence: number; sentences: number }) => void
   signal?: AbortSignal
 }
 
 export interface SlideVideoResult {
-  plain: Uint8Array
-  captioned: Uint8Array
-  srt: string
-  vtt: string
+  mp4: Uint8Array
   /** Seconds. */
   duration: number
 }
@@ -71,6 +65,11 @@ const KEY_FRAME_SECONDS = 60
  * seeking need.
  */
 const HEARTBEAT_SECONDS = 5
+/**
+ * Sentences voiced per call. The engine does a batch in one pass of its model,
+ * and five at a time ran 1.7x faster than one by one (electron/ttsBatch.ts).
+ */
+const VOICE_BATCH = 5
 /** Sound is fed in pieces no longer than this — a second — interleaved with the frames. */
 const AUDIO_PIECE = SAMPLE_RATE
 
@@ -141,46 +140,12 @@ async function renderSlide(doc: PDFDocumentProxy, pageNumber: number, width: num
   return frame
 }
 
-/** Subtitles drawn into the picture, the way the slideshow shows them. */
-function drawCaption(ctx: CanvasRenderingContext2D, text: string, width: number, height: number) {
-  const fontPx = Math.round(height * 0.04)
-  ctx.font = `600 ${fontPx}px "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`
-  ctx.textBaseline = 'middle'
-  ctx.textAlign = 'left'
-  const padX = Math.round(fontPx * 0.4)
-  const lineH = Math.round(fontPx * 1.45)
-  const lines = wrapCaption(text, width * 0.84 - padX * 2, s => ctx.measureText(s).width)
-  const bottom = height - Math.round(height * 0.06)
-  lines.forEach((line, i) => {
-    const y = bottom - (lines.length - i) * lineH
-    const w = ctx.measureText(line).width + padX * 2
-    const x = Math.round((width - w) / 2)
-    ctx.fillStyle = 'rgba(8, 8, 8, 0.78)'
-    ctx.fillRect(x, y, Math.round(w), lineH)
-    ctx.fillStyle = '#fff'
-    ctx.fillText(line, x + padX, y + lineH / 2)
-  })
-}
-
-function newOutput(canvas: HTMLCanvasElement, language: string) {
-  const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target: new BufferTarget() })
-  // Slides are still pictures, so nearly all of a file is its key frames: one
-  // every two seconds made a six-minute talk 46 MB. A key frame starts each
-  // slide (forced where it is added), and otherwise only a long slide gets
-  // another. 96 kbit/s is plenty for one voice.
-  const video = new CanvasSource(canvas, { codec: 'avc', quality: new Quality('high'), keyFrameInterval: KEY_FRAME_SECONDS, latencyMode: 'quality', contentHint: 'text' })
-  const audio = new AudioSampleSource({ codec: 'aac', quality: new Quality({ bitrate: 96_000 }) })
-  output.addVideoTrack(video, { frameRate: 30 })
-  output.addAudioTrack(audio, { languageCode: language })
-  return { output, video, audio }
-}
-
 export async function buildSlideVideo(input: SlideVideoInput): Promise<SlideVideoResult> {
   const { signal } = input
   // pdfjs 6 destroys through the loading task, not the document (CLAUDE.md).
   const loading = await openPdf(input.pdf)
   const doc = await loading.promise
-  const outputs: Output[] = []
+  let output: Output | null = null
   try {
     const pages = doc.numPages
     const first = (await doc.getPage(1)).getViewport({ scale: 1 })
@@ -189,16 +154,21 @@ export async function buildSlideVideo(input: SlideVideoInput): Promise<SlideVide
     if (!(await canEncodeVideo('avc', { width, height }))) throw new Error('H.264 encoding is not available')
     if (!(await canEncodeAudio('aac', { numberOfChannels: 1, sampleRate: SAMPLE_RATE }))) throw new Error('AAC encoding is not available')
 
-    const plainCanvas = document.createElement('canvas')
-    const capCanvas = document.createElement('canvas')
-    for (const c of [plainCanvas, capCanvas]) { c.width = width; c.height = height }
-    const plainCtx = plainCanvas.getContext('2d')!
-    const capCtx = capCanvas.getContext('2d')!
-    const plain = newOutput(plainCanvas, input.language)
-    const captioned = newOutput(capCanvas, input.language)
-    outputs.push(plain.output, captioned.output)
-    await plain.output.start()
-    await captioned.output.start()
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')!
+    const target = new BufferTarget()
+    output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target })
+    // Slides are still pictures, so nearly all of a file is its key frames: one
+    // every two seconds made a six-minute talk 46 MB. A key frame starts each
+    // slide (forced where it is added), and otherwise only a long slide gets
+    // another. 96 kbit/s is plenty for one voice.
+    const video = new CanvasSource(canvas, { codec: 'avc', quality: new Quality('high'), keyFrameInterval: KEY_FRAME_SECONDS, latencyMode: 'quality', contentHint: 'text' })
+    const audio = new AudioSampleSource({ codec: 'aac', quality: new Quality({ bitrate: 96_000 }) })
+    output.addVideoTrack(video, { frameRate: 30 })
+    output.addAudioTrack(audio, { languageCode: input.language })
+    await output.start()
 
     const scripts = Array.from({ length: pages }, (_, i) => planSpeech(input.notes[i] ?? '').chunks)
     const sentences = scripts.reduce((n, s) => n + s.length, 0)
@@ -208,11 +178,9 @@ export async function buildSlideVideo(input: SlideVideoInput): Promise<SlideVide
     const cues: Cue[] = []
     let audioAt = 0 // samples planned so far
     const addAudio = async (piece: { at: number; pcm: Float32Array }) => {
-      for (const source of [plain.audio, captioned.audio]) {
-        const sample = new AudioSample({ data: piece.pcm, format: 'f32', numberOfChannels: 1, sampleRate: SAMPLE_RATE, timestamp: piece.at / SAMPLE_RATE })
-        await source.add(sample)
-        sample.close()
-      }
+      const sample = new AudioSample({ data: piece.pcm, format: 'f32', numberOfChannels: 1, sampleRate: SAMPLE_RATE, timestamp: piece.at / SAMPLE_RATE })
+      await audio.add(sample)
+      sample.close()
     }
 
     let previous: HTMLCanvasElement | null = null
@@ -222,12 +190,16 @@ export async function buildSlideVideo(input: SlideVideoInput): Promise<SlideVide
       report(p + 1)
       // The voice first: it decides how long the slide stays up.
       const voiced: { pcm: Float32Array; sentence: SpokenSentence }[] = []
-      for (const text of scripts[p]) {
+      for (let i = 0; i < scripts[p].length; i += VOICE_BATCH) {
         aborted(signal)
-        const { pcm, sampleRate } = await input.synthesize(text)
-        const audio = resample(pcm, sampleRate)
-        voiced.push({ pcm: audio, sentence: { text, duration: audio.length / SAMPLE_RATE } })
-        spoken++
+        const texts = scripts[p].slice(i, i + VOICE_BATCH)
+        const clips = await input.synthesize(texts)
+        if (clips.length !== texts.length) throw new Error('The voice engine returned the wrong number of sentences')
+        for (const [k, { pcm, sampleRate }] of clips.entries()) {
+          const speech = resample(pcm, sampleRate)
+          voiced.push({ pcm: speech, sentence: { text: texts[k], duration: speech.length / SAMPLE_RATE } })
+        }
+        spoken += texts.length
         report(p + 1)
       }
       const slide: PlannedSlide = planSlide(start, voiced.map(v => v.sentence))
@@ -237,8 +209,8 @@ export async function buildSlideVideo(input: SlideVideoInput): Promise<SlideVide
       // in pieces of at most a second.
       const sound: { at: number; pcm: Float32Array }[] = []
       const pushSound = (pcm: Float32Array) => {
-        for (let o = 0; o < pcm.length; o += AUDIO_PIECE) {
-          const part = pcm.subarray(o, o + AUDIO_PIECE)
+        // Copies, not views: see pcmPieces for what views did to the voice.
+        for (const part of pcmPieces(pcm, AUDIO_PIECE)) {
           sound.push({ at: audioAt, pcm: part })
           audioAt += part.length
         }
@@ -265,21 +237,15 @@ export async function buildSlideVideo(input: SlideVideoInput): Promise<SlideVide
         while (s < sound.length && sound[s].at / SAMPLE_RATE <= t) await addAudio(sound[s++])
         const next = i + 1 < times.length ? times[i + 1] : snapToFrame(slide.end)
         const fade = previous ? Math.min(1, (t - slide.start) / TIMING.fade) : 1
-        for (const ctx of [plainCtx, capCtx]) {
-          ctx.globalAlpha = 1
-          if (previous && fade < 1) {
-            ctx.drawImage(previous, 0, 0)
-            ctx.globalAlpha = fade
-          }
-          ctx.drawImage(current, 0, 0)
-          ctx.globalAlpha = 1
+        ctx.globalAlpha = 1
+        if (previous && fade < 1) {
+          ctx.drawImage(previous, 0, 0)
+          ctx.globalAlpha = fade
         }
-        const cue = slide.cues.find(c => t >= c.start && t < c.end)
-        if (cue) drawCaption(capCtx, cue.text, width, height)
+        ctx.drawImage(current, 0, 0)
+        ctx.globalAlpha = 1
         // A new slide starts with a key frame, so seeking to it is exact.
-        const keyFrame = i === 0
-        await plain.video.add(t, next - t, { keyFrame })
-        await captioned.video.add(t, next - t, { keyFrame })
+        await video.add(t, next - t, { keyFrame: i === 0 })
       }
       while (s < sound.length) await addAudio(sound[s++])
       previous = current
@@ -287,22 +253,15 @@ export async function buildSlideVideo(input: SlideVideoInput): Promise<SlideVide
     }
 
     aborted(signal)
-    await plain.output.finalize()
-    await captioned.output.finalize()
+    await output.finalize()
     const duration = start
-    const withTrack = addTx3gTrack(new Uint8Array(plain.output.target.buffer!), {
+    const mp4 = addTx3gTrack(new Uint8Array(target.buffer!), {
       cues, duration, width, height, language: input.language, name: input.captionName,
     })
-    return {
-      plain: withTrack,
-      captioned: new Uint8Array(captioned.output.target.buffer!),
-      srt: toSrt(cues),
-      vtt: toVtt(cues),
-      duration,
-    }
+    return { mp4, duration }
   } catch (err) {
-    // Cancelled or failed: release the encoders rather than leave them open.
-    for (const o of outputs) if (o.state === 'started') await o.cancel().catch(() => undefined)
+    // Cancelled or failed: release the encoder rather than leave it open.
+    if (output?.state === 'started') await output.cancel().catch(() => undefined)
     throw err
   } finally {
     void loading.destroy()

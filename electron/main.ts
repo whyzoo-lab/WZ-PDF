@@ -5,14 +5,14 @@ import { pathToFileURL } from 'node:url'
 import path from 'path'
 import fs from 'fs'
 import { RecentFilesStore, isRecentCandidate } from './recentFiles'
-import { PendingVideoSaves, cleanSuggestedName, validateVideoFiles, videoSetPaths } from './videoSave'
+import { PendingVideoSaves, cleanSuggestedName, validateMp4 } from './videoSave'
 import { registerUpdateIpc, startAutoUpdate } from './autoUpdate'
 import {
   TemplateMismatchError, adoptTemplate, cachedTemplate, downloadTemplate, pruneOtherVersions, readManifest,
   type TemplateManifest,
 } from './viewerTemplate'
 import { cliToolName, hasCliFlag, runCli } from './cliRunner'
-import { shutdown as shutdownTts, synthesize as synthesizeSpeech } from './ttsEngine'
+import { setBoost as setTtsBoost, shutdown as shutdownTts, synthesize as synthesizeSpeech, synthesizeBatch as synthesizeSpeechBatch } from './ttsEngine'
 import { downloadModel, isVoiceId, modelStatus } from './ttsModel'
 import {
   FETCH_TIMEOUT_MS,
@@ -431,27 +431,22 @@ ipcMain.handle('video:pick', async (event, suggestedName: unknown) => {
 // Making a video takes minutes, and the reader goes on to other windows. A
 // hidden window is throttled hard — a one-second timer measured 4.75 s and the
 // export ran about ten times slower — so the renderer asks to be left at full
-// speed for the length of the job, and gives it back afterwards.
+// speed for the length of the job, and gives it back afterwards. The speech
+// engine is raised with it: Windows moves an app's work that is not in front
+// onto slower cores, which halved its speed (ttsEngine.ts, setBoost).
 ipcMain.handle('background-work', async (event, on: unknown) => {
   assertTrustedIpcSender(event)
   if (typeof on !== 'boolean') throw new Error('Invalid background-work flag')
   event.sender.setBackgroundThrottling(!on)
+  setTtsBoost(on)
 })
-ipcMain.handle('video:write', async (event, token: unknown, files: unknown) => {
+ipcMain.handle('video:write', async (event, token: unknown, mp4: unknown) => {
   assertTrustedIpcSender(event)
-  const mp4 = videoSaves.take(token)
-  if (!mp4) throw new Error('No save location chosen')
-  const v = validateVideoFiles(files)
-  const p = videoSetPaths(mp4, v.captionedSuffix)
-  // The reader confirmed replacing name.mp4 in the dialog; the rest of the set
-  // carries the same name and is replaced with it.
-  await fs.promises.writeFile(p.plain, v.plain)
-  await fs.promises.writeFile(p.captioned, v.captioned)
-  // A byte-order mark on the .srt: older Windows players read a .srt without
-  // one in the system code page, which garbles Korean.
-  await fs.promises.writeFile(p.srt, '\uFEFF' + v.srt, 'utf8')
-  await fs.promises.writeFile(p.vtt, v.vtt, 'utf8')
-  return [p.plain, p.captioned, p.srt, p.vtt].map(x => path.basename(x))
+  const target = videoSaves.take(token)
+  if (!target) throw new Error('No save location chosen')
+  // The dialog already asked before replacing an existing file.
+  await fs.promises.writeFile(target, validateMp4(mp4))
+  return path.basename(target)
 })
 
 ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
@@ -804,6 +799,23 @@ ipcMain.handle('tts:synthesize', async (event, options: unknown) => {
   const speed = clamp(Number(opts.speed), 0.5, 2, 1.05)
   const totalStep = Math.round(clamp(Number(opts.totalStep), 1, 32, 8))
   return synthesizeSpeech({ text, voice: opts.voice, lang, speed, totalStep })
+})
+
+/** Most sentences one batch may carry; the renderer sends five. */
+const MAX_BATCH = 8
+ipcMain.handle('tts:synthesize-batch', async (event, options: unknown) => {
+  assertTrustedIpcSender(event)
+  // Checked like a single sentence, item by item.
+  const opts = options as Record<string, unknown>
+  const texts = Array.isArray(opts?.texts) ? opts.texts : []
+  if (texts.length === 0 || texts.length > MAX_BATCH
+    || !texts.every(t => typeof t === 'string' && t.length > 0 && t.length <= 2_000)) throw new Error('Invalid texts')
+  const langsIn = Array.isArray(opts.langs) ? opts.langs : []
+  const langs = texts.map((_, i) => (typeof langsIn[i] === 'string' && /^[a-z]{2}$/.test(langsIn[i]) ? langsIn[i] as string : 'en'))
+  if (!isVoiceId(opts.voice)) throw new Error('Invalid voice')
+  const speed = clamp(Number(opts.speed), 0.5, 2, 1.05)
+  const totalStep = Math.round(clamp(Number(opts.totalStep), 1, 32, 8))
+  return synthesizeSpeechBatch({ texts: texts as string[], langs, voice: opts.voice, speed, totalStep })
 })
 
 ipcMain.handle('tts:stop', async (event) => {

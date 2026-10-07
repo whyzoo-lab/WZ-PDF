@@ -1,7 +1,8 @@
 import path from 'node:path'
+import os from 'node:os'
 import { utilityProcess, type UtilityProcess } from 'electron'
 import { modelStatus } from './ttsModel'
-import type { TtsResponse, TtsSynthesizeRequest } from './ttsWorker'
+import type { TtsRequest, TtsResponse } from './ttsWorker'
 
 /**
  * Main-process side of text-to-speech: owns the worker's lifetime and turns its
@@ -33,13 +34,28 @@ export interface SynthesizedAudio {
   sampleRate: number
 }
 
+export interface SynthesizeBatchOptions {
+  texts: string[]
+  langs: string[]
+  voice: string
+  speed: number
+  totalStep: number
+}
+
+export interface SynthesizedBatch {
+  pcms: Float32Array[]
+  sampleRate: number
+}
+
 interface Pending {
-  resolve: (audio: SynthesizedAudio) => void
+  resolve: (audio: SynthesizedAudio | SynthesizedBatch) => void
   reject: (error: Error) => void
   timer: NodeJS.Timeout
 }
 
 let child: UtilityProcess | null = null
+/** Raised while a long job (a narrated video) waits on the engine. */
+let boosted = false
 let ready: Promise<void> | null = null
 let nextId = 1
 let idleTimer: NodeJS.Timeout | null = null
@@ -51,6 +67,29 @@ function rejectAll(reason: string): void {
     entry.reject(new Error(reason))
   }
   pending.clear()
+}
+
+function applyPriority(): void {
+  const pid = child?.pid
+  if (!pid) return
+  try {
+    os.setPriority(pid, boosted ? os.constants.priority.PRIORITY_ABOVE_NORMAL : os.constants.priority.PRIORITY_NORMAL)
+  } catch (err) {
+    console.warn('[tts] could not change the engine priority:', err)
+  }
+}
+
+/**
+ * Keep the engine fast while the app is behind other windows, for the length
+ * of a job that waits on it. Windows schedules the work of an app that is not
+ * in front onto the i7-12700F's efficiency cores: measured, four sentences took
+ * 107 s with the app behind another window, 52 s in front, and 61 s behind it
+ * with the engine above normal priority. Back to normal when the job ends, so
+ * plain reading aloud never competes with what the reader is doing.
+ */
+export function setBoost(on: boolean): void {
+  boosted = on
+  applyPriority()
 }
 
 /** Kill the worker and forget it; the next request starts a fresh one. */
@@ -76,6 +115,14 @@ function handleMessage(message: TtsResponse): void {
     entry.resolve({ pcm: message.pcm, sampleRate: message.sampleRate })
     return
   }
+  if (message.type === 'audio-batch') {
+    const entry = pending.get(message.id)
+    if (!entry) return
+    pending.delete(message.id)
+    clearTimeout(entry.timer)
+    entry.resolve({ pcms: message.pcms, sampleRate: message.sampleRate })
+    return
+  }
   if (message.type === 'error' && message.id !== null) {
     const entry = pending.get(message.id)
     if (!entry) return
@@ -99,6 +146,8 @@ function start(): Promise<void> {
       stdio: 'inherit',
     })
     child = worker
+    // A worker started in the middle of a job starts at the job's priority.
+    worker.once('spawn', applyPriority)
 
     const timer = setTimeout(() => {
       shutdown()
@@ -144,21 +193,35 @@ export function ensureReady(): Promise<void> {
   return ready
 }
 
-export async function synthesize(options: SynthesizeOptions): Promise<SynthesizedAudio> {
+/** One request to the worker, answered by the reply carrying its id. */
+async function ask<T extends SynthesizedAudio | SynthesizedBatch>(
+  make: (id: number) => TtsRequest,
+  timeoutMs: number,
+): Promise<T> {
   await ensureReady()
   const worker = child
   if (!worker) throw new Error('Speech engine is not running')
 
   const id = nextId++
-  const request: TtsSynthesizeRequest = { type: 'synthesize', id, ...options }
-
-  return new Promise<SynthesizedAudio>((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(id)
       reject(new Error('Speech synthesis timed out'))
-    }, SYNTH_TIMEOUT_MS)
-    pending.set(id, { resolve, reject, timer })
-    worker.postMessage(request)
+    }, timeoutMs)
+    pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer })
+    worker.postMessage(make(id))
     touchIdleTimer()
   })
+}
+
+export function synthesize(options: SynthesizeOptions): Promise<SynthesizedAudio> {
+  return ask<SynthesizedAudio>(id => ({ type: 'synthesize', id, ...options }), SYNTH_TIMEOUT_MS)
+}
+
+/** Several sentences in one pass of the model — for a narrated video. */
+export function synthesizeBatch(options: SynthesizeBatchOptions): Promise<SynthesizedBatch> {
+  return ask<SynthesizedBatch>(
+    id => ({ type: 'synthesize-batch', id, ...options }),
+    SYNTH_TIMEOUT_MS * Math.max(1, options.texts.length),
+  )
 }

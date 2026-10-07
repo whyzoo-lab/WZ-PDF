@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { importEsm } from './esm'
+import { canBatch, splitBatch } from './ttsBatch'
 
 /**
  * Text-to-speech, run in a `utilityProcess` — not the main process.
@@ -35,6 +36,13 @@ interface TextToSpeech {
     speed?: number,
     silenceDuration?: number,
   ): Promise<{ wav: number[]; duration: number[] }>
+  batch(
+    texts: string[],
+    langs: string[],
+    style: VoiceStyle,
+    totalStep: number,
+    speed?: number,
+  ): Promise<{ wav: number[]; duration: number[] }>
 }
 
 interface SupertonicHelper {
@@ -57,11 +65,23 @@ export interface TtsSynthesizeRequest {
   totalStep: number
 }
 
-export type TtsRequest = TtsLoadRequest | TtsSynthesizeRequest
+/** Several sentences at once, for a narrated video (see ttsBatch.ts). */
+export interface TtsSynthesizeBatchRequest {
+  type: 'synthesize-batch'
+  id: number
+  texts: string[]
+  langs: string[]
+  voice: string
+  speed: number
+  totalStep: number
+}
+
+export type TtsRequest = TtsLoadRequest | TtsSynthesizeRequest | TtsSynthesizeBatchRequest
 
 export type TtsResponse =
   | { type: 'ready'; sampleRate: number }
   | { type: 'audio'; id: number; pcm: Float32Array; sampleRate: number }
+  | { type: 'audio-batch'; id: number; pcms: Float32Array[]; sampleRate: number }
   | { type: 'error'; id: number | null; message: string }
 
 let engine: TextToSpeech | null = null
@@ -84,15 +104,18 @@ async function load(modelDir: string): Promise<void> {
   send({ type: 'ready', sampleRate: engine.sampleRate })
 }
 
-function styleFor(modelDir: string, voice: string): VoiceStyle {
-  const cached = styles.get(voice)
+function styleFor(modelDir: string, voice: string, count = 1): VoiceStyle {
+  const key = `${voice}x${count}`
+  const cached = styles.get(key)
   if (cached) return cached
   if (!helper) throw new Error('engine is not loaded')
   // loadVoiceStyle takes an ARRAY of paths — it batches speakers. Passing the
   // string reads its first character as a filename, which fails with an ENOENT
-  // naming a single letter and no hint about why.
-  const style = helper.loadVoiceStyle([path.join(modelDir, 'voice_styles', `${voice}.json`)])
-  styles.set(voice, style)
+  // naming a single letter and no hint about why. A batch needs one entry per
+  // sentence, even when they are all the same voice.
+  const file = path.join(modelDir, 'voice_styles', `${voice}.json`)
+  const style = helper.loadVoiceStyle(Array.from({ length: count }, () => file))
+  styles.set(key, style)
   return style
 }
 
@@ -111,6 +134,24 @@ async function synthesize(modelDir: string, request: TtsSynthesizeRequest): Prom
   })
 }
 
+async function synthesizeBatch(modelDir: string, request: TtsSynthesizeBatchRequest): Promise<void> {
+  if (!engine) throw new Error('engine is not loaded')
+  const { texts, langs, voice, totalStep, speed } = request
+  let pcms: Float32Array[]
+  if (canBatch(texts, langs)) {
+    const { wav, duration } = await engine.batch(texts, langs, styleFor(modelDir, voice, texts.length), totalStep, speed)
+    pcms = splitBatch(wav, duration, engine.sampleRate)
+  } else {
+    // One sentence, or one too long to go through in a single piece.
+    pcms = []
+    for (const [i, text] of texts.entries()) {
+      const { wav } = await engine.call(text, langs[i], styleFor(modelDir, voice), totalStep, speed)
+      pcms.push(Float32Array.from(wav))
+    }
+  }
+  send({ type: 'audio-batch', id: request.id, pcms, sampleRate: engine.sampleRate })
+}
+
 let modelDir = ''
 
 process.parentPort.on('message', event => {
@@ -125,5 +166,8 @@ process.parentPort.on('message', event => {
   }
   if (request.type === 'synthesize') {
     synthesize(modelDir, request).catch(failed(request.id))
+  }
+  if (request.type === 'synthesize-batch') {
+    synthesizeBatch(modelDir, request).catch(failed(request.id))
   }
 })

@@ -51,6 +51,12 @@ export function previousTarget(cursor: number, msIntoSentence: number): number {
 
 /** Denoising steps. 8 is the engine default; fewer is faster and flatter. */
 const TOTAL_STEP = 8
+/**
+ * Steps for a narrated video. Measured on 15 real sentences: 8 steps one at a
+ * time ran at x0.44–0.50 of the speech's length, 5 steps five at a time at
+ * x0.20 — 2.4x faster — and the reader judged the voice unchanged by ear.
+ */
+const VIDEO_TOTAL_STEP = 5
 
 /** Plain speed. The engine's own examples use 1.05, but someone who has not
  *  touched the slider should hear the document at 1x, not slightly hurried. */
@@ -424,21 +430,24 @@ export function useTts() {
   }
 
   /**
-   * One sentence as PCM in the voice and speed being read with — for making a
-   * narrated video (services/slideVideo.ts), where the audio is recorded
-   * rather than played.
+   * Sentences as PCM, several per pass of the model, in the voice and speed
+   * being read with — for a narrated video (services/slideVideo.ts), where the
+   * audio is recorded rather than played. Fewer refinement steps than reading
+   * (VIDEO_TOTAL_STEP): reading only has to stay ahead of playback, while a
+   * video waits on every sentence.
    */
-  const synthesize = useCallback(async (text: string) => {
+  const synthesizeBatch = useCallback(async (texts: string[]) => {
     const api = window.electronAPI
-    if (!api?.ttsSynthesize) throw new Error('Speech is only available in the desktop app')
-    return api.ttsSynthesize({
-      text, voice: voiceRef.current, lang: languageFor(text), speed: speedRef.current, totalStep: TOTAL_STEP,
+    if (!api?.ttsSynthesizeBatch) throw new Error('Speech is only available in the desktop app')
+    const { pcms, sampleRate } = await api.ttsSynthesizeBatch({
+      texts, langs: texts.map(t => languageFor(t)), voice: voiceRef.current, speed: speedRef.current, totalStep: VIDEO_TOTAL_STEP,
     })
+    return pcms.map(pcm => ({ pcm, sampleRate }))
   }, [])
 
   return {
     ...state,
-    speak, pause, resume, stop, previous, next, synthesize,
+    speak, pause, resume, stop, previous, next, synthesizeBatch,
     setVoice: setDraftVoice, setSpeed: setDraftSpeed, applySettings,
     download, cancelDownload, refreshModel,
   }

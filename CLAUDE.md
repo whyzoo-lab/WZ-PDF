@@ -469,27 +469,52 @@ PDF (`officeJobToPdf`, so hidden slides are out and slides look as they print)
 and the shown slides' notes, voices each sentence (`useTts().synthesize`, the
 reader's voice and speed) and encodes with WebCodecs through **mediabunny**
 (MPL-2.0, lazy chunk): H.264 1080p (the slide's shape inside it) + AAC 96k.
-One pass makes two videos, since the voice is the slow part — `plain` and
-`captioned` (captions drawn in, for messengers) — plus `.srt` / `.vtt`. The
-reader names the `.mp4` in the native save dialog (`video:pick`, before the
-work starts) and the set is written beside it under the same name
-(`video:write`, `electron/videoSave.ts`: the path stays in the main process
-behind a one-use token). The first version used `showDirectoryPicker`, which
-asked for a folder instead of a name and failed with "File picker already
-active" on a second press — the handler is now busy from its first line.
+The result is **one file**: the MP4 with the script inside as a switchable
+subtitle track. 1.24.3 also wrote a copy with the captions drawn in, a `.srt`
+and a `.vtt` — four files per talk, which the reader did not want. The reader
+names the `.mp4` in the native save dialog (`video:pick`, before the work
+starts) and it is written there (`video:write`, `electron/videoSave.ts`: the
+path stays in the main process behind a one-use token). The very first
+version used `showDirectoryPicker`, which asked for a folder instead of a name
+and failed with "File picker already active" on a second press — the handler
+is now busy from its first line.
 Things that cost time to learn:
+- **Audio pieces must be copies, never `subarray` views** (`pcmPieces`).
+  mediabunny's AudioSample hands the encoder `data.buffer` and drops the
+  view's byteOffset, so 1.24.3 spoke the first second of every sentence over
+  and over ("안녕하세 안녕하세 …"). The tests had used a constant tone, where a
+  repeated second sounds identical, and the real-voice check looked only at
+  loudness. **Check content, not level**: decode the MP4's audio and correlate
+  each sentence (located by its subtitle cue) with the engine's PCM — 1.24.3
+  scored 0.02 after the first second, the fix ≥ 0.94 on all 15 sentences.
 - **The caption track is tx3g, written by us** (`services/tx3g.ts`):
   mediabunny writes only `wvtt`, which desktop players do not list. The MP4 is
   re-laid out as ftyp, moov (+ a `sbtl` trak, language `kor`, alternate group
   2), the media, a caption mdat, with every stco/co64 moved by its box's
-  shift. ffprobe reports `mov_text (tx3g)`, and `ffmpeg -map 0:s:0 -f srt`
-  gives back the sidecar's text exactly. Browsers' `<video>` ignore in-file
-  tracks — the `.vtt` is for the web.
+  shift. ffprobe reports `mov_text (tx3g)`; `ffmpeg -map 0:s:0 -f srt`
+  gives back every sentence with its timing, and the reader confirmed the
+  track switches on and off in PotPlayer. Browsers' `<video>` ignore in-file
+  tracks.
 - **Sound and picture must be added interleaved** by timestamp: a whole slide
   of audio ahead of its first frame deadlocked inside the muxer.
 - **Slides render with `intent: 'print'`**: pdfjs's display rendering paces
   itself with requestAnimationFrame, which never fires while the window is
   hidden, so an export left running behind another window stalled.
+- **The voice is the time, so it is batched and lighter.** Encoding a talk
+  takes seconds; voicing it takes minutes. The video voices five sentences per
+  pass of the model (`tts:synthesize-batch` → `engine.batch`, split back per
+  sentence by `electron/ttsBatch.ts` — rows are padded to the longest, each cut
+  to its predicted duration) at 5 refinement steps instead of reading's 8
+  (`VIDEO_TOTAL_STEP`). On 15 real sentences in Node: x0.44–0.50 one by one at
+  8 steps, x0.20 batched at 5; the reader judged the voice unchanged by ear.
+  Checked against the engine: each batched clip is within 0.13 s of the same
+  sentence voiced alone, in order. Reading aloud keeps 8 steps one at a time.
+- **The engine is raised to above-normal priority for the job**
+  (`ttsEngine.setBoost`, from the same `background-work` IPC). Windows moves
+  the work of an app that is not in front onto the i7-12700F's efficiency
+  cores: four sentences took 107 s behind another window, 52 s in front, 61 s
+  behind it with the boost. Full deck behind another window: ~16 min without,
+  5 min 24 s with (91 sentences, 13:05). Back to normal afterwards.
 - **Background throttling is off for the length of the job**
   (`background-work` IPC → `webContents.setBackgroundThrottling`, restored in
   `finally`). Measured in the packaged build with the window behind others: a
