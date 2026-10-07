@@ -96,6 +96,19 @@ components below, also unmodified; its own notices are in
 
 ---
 
+## Mediabunny — Mozilla Public License 2.0
+
+> Copyright Vanilagy. Licensed under the Mozilla Public License, Version 2.0.
+> Source: <https://github.com/Vanilagy/mediabunny>. Used unmodified, bundled
+> and minified, to write MP4 files (a PowerPoint deck saved as a narrated
+> video). The corresponding source of the version shipped is the npm package
+> `mediabunny@1.61.3` (its `src/` folder ships with it) and the tag of the
+> same version in the repository above.
+
+Full license: `node_modules/mediabunny/LICENSE`
+
+---
+
 ## hucre — MIT License
 
 > Copyright (c) 2026 productdevbook. Licensed under the MIT License.

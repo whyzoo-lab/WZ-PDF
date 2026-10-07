@@ -35,6 +35,7 @@ import { pickSaveTarget, saveBlobTo, stripDocExt } from './utils/download'
 import { pageSuffix } from './utils/pageSuffix'
 import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
+import { VideoExportPanel, type VideoProgress } from './components/office/VideoExportPanel'
 import { UpdateToast } from './components/UpdateToast'
 import { useAutoUpdate } from './hooks/useAutoUpdate'
 import { useStampLibrary } from './hooks/useStampLibrary'
@@ -896,6 +897,8 @@ export default function App() {
 
   // ── Read aloud ───────────────────────────────────────────────────────────
   const [ttsPromptOpen, setTtsPromptOpen] = useState(false)
+  // Set while a narrated video is being made (handleSaveSlideVideo); aborts it.
+  const videoAbort = useRef<AbortController | null>(null)
 
   /** Read from the page in view to the end — where the reader actually is. */
   // The page each planned sentence came from (services/speechPages.ts), for
@@ -966,6 +969,9 @@ export default function App() {
 
   const handleToggleSpeech = useCallback(async () => {
     if (tts.status !== 'idle') { tts.stop(); return }
+    // A narrated video is using the voice; reading as well would take turns
+    // with it sentence by sentence and slow both.
+    if (videoAbort.current) return
     try {
       // Checked here rather than on mount: sixteen stat() calls do not belong
       // on the startup path for a feature most sessions never touch.
@@ -1072,6 +1078,77 @@ export default function App() {
       setSavingOfficePdf(false)
     }
   }, [file, showToast])
+  // ── A deck with speaker notes, recorded as a narrated video ─────────────────
+  // services/slideVideo.ts makes it; this asks where, shows progress, saves.
+  const [videoProgress, setVideoProgress] = useState<VideoProgress | null>(null)
+  const canMakeVideo = office?.kind === 'pptx' && !!officePages?.hasNotes && !chromeless
+    && !!window.electronAPI?.ttsSynthesize && !!window.electronAPI?.printToPdf && !!window.electronAPI?.pickVideoPath
+  const handleSaveSlideVideo = useCallback(async () => {
+    const view = officeHandleRef.current
+    const api = window.electronAPI
+    // Busy from the first moment: a second press while the save dialog was
+    // still open used to ask for a second dialog ("File picker already active").
+    if (!view || office?.kind !== 'pptx' || !api?.pickVideoPath || !api.writeVideoFiles || videoAbort.current) return
+    const controller = new AbortController()
+    videoAbort.current = controller
+    try {
+      // The voice must be there before anything else is asked.
+      try {
+        const status = await tts.refreshModel()
+        if (!status?.ready) { setTtsPromptOpen(true); return }
+      } catch (err) {
+        reportSpeechFailure(err)
+        return
+      }
+      // The reader names the .mp4 in the app's own save dialog; the captioned
+      // copy and the .srt / .vtt go beside it under the same name. Asked before
+      // the long work, so the reader is not kept waiting to be asked.
+      const target = await api.pickVideoPath(`${stripDocExt(file?.name ?? 'presentation')}.mp4`)
+      if (!target) return
+
+      if (tts.status !== 'idle') tts.stop()
+      // Minutes of work that must not slow to a crawl when the reader switches
+      // to another window (main.ts, 'background-work'); undone in `finally`.
+      await api.setBackgroundWork?.(true)
+      setVideoProgress({ phase: 'preparing', slide: 0, slides: 0, sentence: 0, sentences: 0 })
+      const [{ officeJobToPdf }, { pptxText }, { buildSlideVideo }] = await Promise.all([
+        import('./services/officePdf'),
+        import('./services/ooxmlText'),
+        import('./services/slideVideo'),
+      ])
+      // The slides as "Save as PDF" prints them — hidden ones are already out,
+      // so the notes are taken from the slides shown, in the same order.
+      const pdf = await officeJobToPdf(await view.pdfJob())
+      const notes = (await pptxText(office.bytes)).filter(s => !s.hidden).map(s => s.notes)
+      const korean = notes.some(n => /[가-힣]/.test(n))
+      const video = await buildSlideVideo({
+        pdf,
+        notes,
+        synthesize: tts.synthesize,
+        language: korean ? 'kor' : 'eng',
+        captionName: t(korean ? 'video.trackKorean' : 'video.trackEnglish'),
+        signal: controller.signal,
+        onProgress: p => setVideoProgress({ phase: 'making', ...p }),
+      })
+      setVideoProgress(p => (p ? { ...p, phase: 'saving' } : p))
+      const names = await api.writeVideoFiles(target.token, {
+        plain: video.plain, captioned: video.captioned, srt: video.srt, vtt: video.vtt,
+        captionedSuffix: t('video.captionedSuffix'),
+      })
+      showToast(t('video.saved', { files: names.join(', ') }))
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') showToast(t('video.cancelled'))
+      else {
+        console.error('Slide video failed:', err)
+        showToast(t('video.failed', { error: errorMessage(err) }))
+      }
+    } finally {
+      videoAbort.current = null
+      setVideoProgress(null)
+      void api.setBackgroundWork?.(false).catch(() => undefined)
+    }
+  }, [office, file, tts, showToast, reportSpeechFailure])
+
   const handleSaveOfficePdf = useCallback(async (): Promise<boolean> => {
     const view = officeHandleRef.current
     if (!view || officeSaveBusy.current) return false
@@ -1316,7 +1393,7 @@ export default function App() {
     rotation,
     activeMode,
     selectedId,
-    isExporting: isExporting || savingOfficePdf,
+    isExporting: isExporting || savingOfficePdf || videoProgress !== null,
     // A Word or PowerPoint document reports its own pages for the counter.
     numPages: pagedOffice ? officePages!.count : numPages,
     currentPage: pagedOffice ? officePages!.current : currentPage,
@@ -1325,6 +1402,7 @@ export default function App() {
       ? { on: showSlideNotes, onToggle: () => setShowSlideNotes(v => !v) }
       : undefined,
     onSaveOfficePdf: office !== null && !chromeless ? () => { void handleSaveOfficePdf() } : undefined,
+    onSaveSlideVideo: canMakeVideo ? () => { void handleSaveSlideVideo() } : undefined,
     isPanelOpen,
     onTogglePanel: () => setIsPanelOpen(v => !v),
     onUpload: handleUpload,
@@ -1717,6 +1795,9 @@ export default function App() {
         )}
       </Suspense>
       </ErrorBoundary>
+      {videoProgress && (
+        <VideoExportPanel progress={videoProgress} onCancel={() => videoAbort.current?.abort()} />
+      )}
       {toast && (
         <Toast
           key={toast.id}

@@ -12,7 +12,7 @@ import {
   IconStamp, IconSignature, IconWatermark, IconDelete, IconLink,
   IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
   IconExe, IconLock, IconLockOpen, IconPencil, IconMenu, IconMore, IconFitWidth,
-  IconSpeak, IconStopSpeak, IconRotateLeft,
+  IconSpeak, IconStopSpeak, IconRotateLeft, IconVideo,
 } from './icons'
 import { OcrAnnouncer } from '../OcrAnnouncer'
 import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED, TITLE_MIN_WIDTH, TITLE_GUTTER } from './toolbarStyles'
@@ -40,6 +40,8 @@ export interface ActionBarProps {
   slideNotes?: { on: boolean; onToggle: () => void }
   /** Save a Word, PowerPoint or spreadsheet document as PDF. */
   onSaveOfficePdf?: () => void
+  /** A deck with speaker notes, in the desktop app: record it as a narrated video. */
+  onSaveSlideVideo?: () => void
   /** Embed mode (?embed): hide file-open, export and the viewer/editor toggle
    *  so the toolbar is a clean read-only viewer for website embedding. */
   embed?: boolean
@@ -128,6 +130,7 @@ export function ActionBar({
   pagedFlow = false,
   slideNotes,
   onSaveOfficePdf,
+  onSaveSlideVideo,
   embed = false,
   appMode,
   viewMode,
@@ -217,7 +220,7 @@ export function ActionBar({
 
   // Re-measure the toolbar whenever the visible control set changes.
   const contentKey = [
-    hasPdf, flowDoc, pagedFlow, !!slideNotes, !!onSaveOfficePdf, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
+    hasPdf, flowDoc, pagedFlow, !!slideNotes, !!onSaveOfficePdf, !!onSaveSlideVideo, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
   ].join('|')
   const { ref: headerRef, collapsed } = useToolbarCollapse(contentKey)
 
@@ -800,6 +803,15 @@ export function ActionBar({
       {speakButton}
       {ocrCluster}
 
+      {onSaveSlideVideo && (
+        <button
+          onClick={onSaveSlideVideo}
+          disabled={isExporting}
+          className={`${BTN_BASE} ${BTN_IDLE} disabled:opacity-40`}
+          title={t('video.save')}
+          aria-label={t('video.save')}
+        ><IconVideo /></button>
+      )}
       {/* Word, PowerPoint and sheets have one save: a PDF of the document. */}
       {onSaveOfficePdf && (
         <button
@@ -960,6 +972,11 @@ export function ActionBar({
               <button onClick={() => { onSaveOfficePdf(); setRightMenuOpen(false) }} disabled={isExporting} className={`${menuItem} disabled:opacity-40`}>
                 <IconSave /><span>{t('office.savePdf')}</span>
               </button>
+              {onSaveSlideVideo && (
+                <button onClick={() => { onSaveSlideVideo(); setRightMenuOpen(false) }} disabled={isExporting} className={`${menuItem} disabled:opacity-40`}>
+                  <IconVideo /><span>{t('video.save')}</span>
+                </button>
+              )}
             </>
           )}
         </div>

@@ -36,7 +36,9 @@ export function downloadBlob(blob: Blob, filename: string): void {
  * `report.hwp.html`.
  */
 export function stripDocExt(filename: string): string {
-  return filename.replace(/\.(pdf|hwpx?|eml|png|jpe?g|bmp|gif|webp|avif|ico)$/i, '')
+  // Office, Markdown and CSV were added to the viewer without being added
+  // here, so a deck saved as PDF came out as `deck.pptx.pdf`.
+  return filename.replace(/\.(pdf|hwpx?|eml|png|jpe?g|bmp|gif|webp|avif|ico|docx|pptx|xlsx|xlsm|xls|ods|csv|md|markdown)$/i, '')
 }
 
 // ── Saving ──────────────────────────────────────────────────────────────────

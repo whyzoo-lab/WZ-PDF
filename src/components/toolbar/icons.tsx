@@ -310,6 +310,13 @@ export const IconFolderOpen = () => (
     <path d="M3.5 18.5 6 11.5a1.5 1.5 0 0 1 1.4-1H21l-2.6 7.1a1.5 1.5 0 0 1-1.4.9z" />
   </Icon>
 )
+/** A film frame with a play mark: "save as video". */
+export const IconVideo = () => (
+  <Icon>
+    <rect x="3.5" y="5.5" width="17" height="13" rx="1.5" />
+    <path d="M10.5 9.5v5l4-2.5z" />
+  </Icon>
+)
 export const IconSave = () => (
   <Icon>
     <path d="M5 3.5h11l3.5 3.5v11.5A1.5 1.5 0 0 1 18 20H6a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 6 3.5" />

@@ -423,9 +423,22 @@ export function useTts() {
     canApply: draftVoice !== voice || draftSpeed !== speed,
   }
 
+  /**
+   * One sentence as PCM in the voice and speed being read with — for making a
+   * narrated video (services/slideVideo.ts), where the audio is recorded
+   * rather than played.
+   */
+  const synthesize = useCallback(async (text: string) => {
+    const api = window.electronAPI
+    if (!api?.ttsSynthesize) throw new Error('Speech is only available in the desktop app')
+    return api.ttsSynthesize({
+      text, voice: voiceRef.current, lang: languageFor(text), speed: speedRef.current, totalStep: TOTAL_STEP,
+    })
+  }, [])
+
   return {
     ...state,
-    speak, pause, resume, stop, previous, next,
+    speak, pause, resume, stop, previous, next, synthesize,
     setVoice: setDraftVoice, setSpeed: setDraftSpeed, applySettings,
     download, cancelDownload, refreshModel,
   }

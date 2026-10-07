@@ -83,6 +83,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   printToPdf: (): Promise<ArrayBuffer> => ipcRenderer.invoke('print-to-pdf'),
 
+  /**
+   * A narrated video: the native save dialog for the .mp4 (null if cancelled),
+   * then the set written beside it — see electron/videoSave.ts.
+   */
+  /** Keep running at full speed while hidden (true) for a long job, then stop (false). */
+  setBackgroundWork: (on: boolean): Promise<void> => ipcRenderer.invoke('background-work', on),
+  pickVideoPath: (suggestedName: string): Promise<{ token: string; name: string } | null> =>
+    ipcRenderer.invoke('video:pick', suggestedName),
+  writeVideoFiles: (token: string, files: {
+    plain: Uint8Array; captioned: Uint8Array; srt: string; vtt: string; captionedSuffix: string
+  }): Promise<string[]> => ipcRenderer.invoke('video:write', token, files),
+
   // ── Help ────────────────────────────────────────────────────────────────
   /** Open the help document in the user's default browser (lang: 'ko' | 'en'). */
   openHelp: (lang?: string): Promise<{ success: boolean; error?: string }> =>

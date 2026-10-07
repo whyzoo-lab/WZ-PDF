@@ -463,6 +463,52 @@ notes from the current slide on, slides without notes skipped, and `App` turns
 the boxes on first, so the highlight has visible text to follow. A deck with no
 notes reads the slide text as before.
 
+**A deck with notes saves as a narrated video** (film button, desktop only —
+the voice is the read-aloud engine). `services/slideVideo.ts` takes the deck's
+PDF (`officeJobToPdf`, so hidden slides are out and slides look as they print)
+and the shown slides' notes, voices each sentence (`useTts().synthesize`, the
+reader's voice and speed) and encodes with WebCodecs through **mediabunny**
+(MPL-2.0, lazy chunk): H.264 1080p (the slide's shape inside it) + AAC 96k.
+One pass makes two videos, since the voice is the slow part — `plain` and
+`captioned` (captions drawn in, for messengers) — plus `.srt` / `.vtt`. The
+reader names the `.mp4` in the native save dialog (`video:pick`, before the
+work starts) and the set is written beside it under the same name
+(`video:write`, `electron/videoSave.ts`: the path stays in the main process
+behind a one-use token). The first version used `showDirectoryPicker`, which
+asked for a folder instead of a name and failed with "File picker already
+active" on a second press — the handler is now busy from its first line.
+Things that cost time to learn:
+- **The caption track is tx3g, written by us** (`services/tx3g.ts`):
+  mediabunny writes only `wvtt`, which desktop players do not list. The MP4 is
+  re-laid out as ftyp, moov (+ a `sbtl` trak, language `kor`, alternate group
+  2), the media, a caption mdat, with every stco/co64 moved by its box's
+  shift. ffprobe reports `mov_text (tx3g)`, and `ffmpeg -map 0:s:0 -f srt`
+  gives back the sidecar's text exactly. Browsers' `<video>` ignore in-file
+  tracks — the `.vtt` is for the web.
+- **Sound and picture must be added interleaved** by timestamp: a whole slide
+  of audio ahead of its first frame deadlocked inside the muxer.
+- **Slides render with `intent: 'print'`**: pdfjs's display rendering paces
+  itself with requestAnimationFrame, which never fires while the window is
+  hidden, so an export left running behind another window stalled.
+- **Background throttling is off for the length of the job**
+  (`background-work` IPC → `webContents.setBackgroundThrottling`, restored in
+  `finally`). Measured in the packaged build with the window behind others: a
+  1 s timer took 4.75 s and the export ran at ~22 s per sentence; with it off,
+  the 29-slide deck (91 sentences, 13:11 of real voice) took 4 min 40 s.
+- **Frame times sit on a 1/30 s grid** (`snapToFrame`): the muxer stores them
+  at that rate, and two moments closer than a tick shared a timestamp —
+  FFmpeg warned "non monotonically increasing dts". A slide's frames stop
+  before its snapped end, which is exactly where the next slide starts.
+- **Size is the fades.** Frames are variable-rate (only fades, caption
+  changes and a 5 s heartbeat); a repeated frame costs a few hundred bytes,
+  but a blended fade frame ~100 KB — more than a key frame. Key frames every
+  2 s plus a 0.5 s fade at 30 fps made a 6-minute deck 46 MB; one key frame per
+  slide and a 0.3 s fade at 10 fps (two blended frames) make it ~1.3 MB per
+  minute (real voice, 6 slides: 2:06 → 2.7 MB).
+- Pacing (`services/slideTimeline.ts`): 0.6 s before the first word, 0.35 s
+  between sentences, 1 s after the last, 3 s for a slide without notes; a
+  caption stays until the next replaces it.
+
 The views zoom with CSS `zoom` on a wrapper (sizes are absolute: pt, mm, px),
 and **not** on the element marked `FLOW_PRINT_ATTR` — print clones that element.
 `ReaderFullscreen` takes `layout="page"` for Word and sheets: no white card,
@@ -631,6 +677,7 @@ The renderer bundle is split so the initial chunk only contains code needed for 
 | `components/office/DocxView` | Opening a .docx | docx-preview (~75 KB) |
 | `components/office/SheetView` | Opening a spreadsheet | hucre readers (~180 KB) |
 | `components/office/PptxView` | Opening a .pptx | pptx-renderer + ECharts (~1.1 MB) |
+| `services/slideVideo` | Save a deck as video | mediabunny (MP4 muxing over WebCodecs) |
 | `components/modals/SignaturePad` | Editor → Signature | Canvas drawing UI |
 | `components/modals/WatermarkConfig` | Editor → Watermark | Form UI |
 

@@ -9,6 +9,9 @@ describe('stripDocExt', () => {
     expect(stripDocExt('mail.eml')).toBe('mail')
     expect(stripDocExt('photo.JPG')).toBe('photo')
     expect(stripDocExt('scan.bmp')).toBe('scan')
+    for (const ext of ['docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods', 'csv', 'md', 'markdown']) {
+      expect(stripDocExt(`발표.${ext}`)).toBe('발표')
+    }
   })
   it('leaves dots inside the name alone', () => {
     expect(stripDocExt('2026.07.report.pdf')).toBe('2026.07.report')

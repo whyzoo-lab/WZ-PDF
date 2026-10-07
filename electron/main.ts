@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import path from 'path'
 import fs from 'fs'
 import { RecentFilesStore, isRecentCandidate } from './recentFiles'
+import { PendingVideoSaves, cleanSuggestedName, validateVideoFiles, videoSetPaths } from './videoSave'
 import { registerUpdateIpc, startAutoUpdate } from './autoUpdate'
 import {
   TemplateMismatchError, adoptTemplate, cachedTemplate, downloadTemplate, pruneOtherVersions, readManifest,
@@ -407,6 +408,50 @@ ipcMain.handle('print-to-pdf', async (event) => {
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
   })
   return pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength)
+})
+
+// ── A deck saved as a narrated video (electron/videoSave.ts) ─────────────
+// Asked first, before the video is made, so the reader names the file while
+// the click is still theirs; the chosen path stays here behind a token.
+const videoSaves = new PendingVideoSaves()
+ipcMain.handle('video:pick', async (event, suggestedName: unknown) => {
+  assertTrustedIpcSender(event)
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const korean = app.getLocale().startsWith('ko')
+  const options = {
+    title: korean ? '발표 동영상 저장' : 'Save narrated video',
+    defaultPath: cleanSuggestedName(suggestedName),
+    filters: [{ name: korean ? 'MP4 동영상' : 'MP4 video', extensions: ['mp4'] }],
+  }
+  const { canceled, filePath } = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
+  if (canceled || !filePath) return null
+  const mp4 = /\.mp4$/i.test(filePath) ? filePath : `${filePath}.mp4`
+  return { token: videoSaves.add(mp4), name: path.basename(mp4) }
+})
+// Making a video takes minutes, and the reader goes on to other windows. A
+// hidden window is throttled hard — a one-second timer measured 4.75 s and the
+// export ran about ten times slower — so the renderer asks to be left at full
+// speed for the length of the job, and gives it back afterwards.
+ipcMain.handle('background-work', async (event, on: unknown) => {
+  assertTrustedIpcSender(event)
+  if (typeof on !== 'boolean') throw new Error('Invalid background-work flag')
+  event.sender.setBackgroundThrottling(!on)
+})
+ipcMain.handle('video:write', async (event, token: unknown, files: unknown) => {
+  assertTrustedIpcSender(event)
+  const mp4 = videoSaves.take(token)
+  if (!mp4) throw new Error('No save location chosen')
+  const v = validateVideoFiles(files)
+  const p = videoSetPaths(mp4, v.captionedSuffix)
+  // The reader confirmed replacing name.mp4 in the dialog; the rest of the set
+  // carries the same name and is replaced with it.
+  await fs.promises.writeFile(p.plain, v.plain)
+  await fs.promises.writeFile(p.captioned, v.captioned)
+  // A byte-order mark on the .srt: older Windows players read a .srt without
+  // one in the system code page, which garbles Korean.
+  await fs.promises.writeFile(p.srt, '\uFEFF' + v.srt, 'utf8')
+  await fs.promises.writeFile(p.vtt, v.vtt, 'utf8')
+  return [p.plain, p.captioned, p.srt, p.vtt].map(x => path.basename(x))
 })
 
 ipcMain.handle('export-exe', async (event, pdfData: unknown) => {

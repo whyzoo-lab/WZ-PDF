@@ -45,6 +45,13 @@ interface Window {
     onViewerTemplateProgress?: (callback: (percent: number) => void) => () => void
     /** This page, laid out for print, as PDF bytes (Office → PDF). */
     printToPdf?: () => Promise<ArrayBuffer>
+    /** Keep running at full speed while hidden (true) for a long job, then stop (false). */
+    setBackgroundWork?: (on: boolean) => Promise<void>
+    /** Narrated video: name the .mp4 (null if cancelled), then write the set beside it. */
+    pickVideoPath?: (suggestedName: string) => Promise<{ token: string; name: string } | null>
+    writeVideoFiles?: (token: string, files: {
+      plain: Uint8Array; captioned: Uint8Array; srt: string; vtt: string; captionedSuffix: string
+    }) => Promise<string[]>
     exportExe: (pdfData: ArrayBuffer) => Promise<{
       success: boolean
       canceled?: boolean
