@@ -71,7 +71,10 @@ Show a PDF inline on any page — no download, no plugin:
 
 `embed=1` is a convenience: whoever sees the page can edit the address and open
 anything. For a viewer that shows **only what you chose, view only**, host the
-web build yourself and put a `private.json` next to `app.html`:
+web build yourself and put a `private.json` next to `app.html`. Every build
+carries an example beside `app.html` —
+[`private.example.json`](public/private.example.json) — that works as soon as it
+is copied to that name:
 
 ```json
 {
@@ -91,6 +94,7 @@ web build yourself and put a `private.json` next to `app.html`:
 - Zoom, fit, rotation, page list, two-page and grid views, fullscreen, find and OCR work. **Editing, saving and opening other documents do not**, and printing is off unless `"print": true` (printing is also "save as PDF").
 - Paths are resolved against `private.json`, so relative ones stay on your server. `name` supplies the file name (with its extension) when the URL has none.
 - It is a property of the deployment, not of the link: there is no URL switch to remove. A `private.json` that exists but cannot be read keeps the viewer **closed**, never open.
+- Redeploying must leave `private.json` in place: `deploy.example.bat` keeps it when it clears the server, and never uploads a local one. If you deploy another way, exclude it the same way.
 - It is not access control. The browser downloads the document to show it, so who may see it at all is your server's decision (sign-in); private mode keeps the viewer from being a way to open, change or save anything else.
 
 ---

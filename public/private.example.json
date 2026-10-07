@@ -1,0 +1,15 @@
+{
+  "_readme": [
+    "WZ PDF private mode — an example. Copy this file to private.json in the same folder as app.html to turn it on.",
+    "The viewer then opens only the documents below (app.html?doc=<id>), view only: no other document, no editing, no saving.",
+    "url: relative paths are resolved against this file, so they stay on your server. Use name when the URL has no file name (it must carry the extension).",
+    "print: true allows printing (off by default — printing is also 'save as PDF').",
+    "Not access control: the browser downloads the document to show it. Who may see it at all is your server's decision (sign-in).",
+    "This _readme key is ignored and may be deleted."
+  ],
+  "documents": {
+    "sample": "sample.pdf",
+    "notice": { "url": "/files/get?id=17", "name": "notice.hwp" }
+  },
+  "print": false
+}

@@ -39,11 +39,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM ---- 2) Clear remote (keep installer dir) ------------------
+REM ---- 2) Clear remote (keep installer dir and private.json) --
+REM private.json is the server's own private-mode config (see
+REM public/private.example.json). Wiping it would silently turn a
+REM view-only deployment back into the full viewer.
 REM Note: using -not instead of ! so cmd doesn't eat the bang.
 echo.
-echo [2/4] Clearing remote (preserving %INSTALLER_DIR%)...
-ssh -o BatchMode=yes %SERVER% "find %REMOTE% -mindepth 1 -maxdepth 1 -not -name %INSTALLER_DIR% -exec rm -rf {} +"
+echo [2/4] Clearing remote (preserving %INSTALLER_DIR% and private.json)...
+ssh -o BatchMode=yes %SERVER% "find %REMOTE% -mindepth 1 -maxdepth 1 -not -name %INSTALLER_DIR% -not -name private.json -exec rm -rf {} +"
 if errorlevel 1 (
     echo ERROR: SSH FAILED - check SSH key auth
     exit /b 1
@@ -54,6 +57,9 @@ REM scp can't expand wildcards reliably on Windows; tar pipe is robust
 REM and preserves directory structure in one stream.
 echo.
 echo [3/4] Uploading dist/ (tar pipe)...
+REM A private.json used for local testing (public/ is copied into dist/)
+REM must never overwrite the server's own.
+if exist dist\private.json del /q dist\private.json
 tar c -C dist . | ssh -o BatchMode=yes %SERVER% "cd %REMOTE% && tar x"
 if errorlevel 1 (
     echo ERROR: UPLOAD FAILED

@@ -1108,6 +1108,15 @@ off unless `"print": true`. Decisions behind it:
 - **Not access control**, and the docs say so: the browser downloads the file
   to show it. `public/private.json` is gitignored so a test config can never
   ship in the Pages build.
+- **The example ships in every build**: `public/private.example.json` lands
+  next to `app.html` and works once copied to `private.json` (a test parses
+  it, `_readme` key included — unknown keys are ignored). Its name keeps it
+  inert where it is.
+- **Deploying must not undo it.** `deploy.example.bat` used to clear the
+  server folder except the installer, which deleted the operator's
+  `private.json` on every deploy — and an absent config means the full viewer.
+  It now skips `private.json` when clearing and deletes `dist\private.json`
+  before uploading, so a local test config can never replace the server's.
 
 ### Saving a selection of pages
 

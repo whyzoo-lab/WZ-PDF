@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { loadPrivateMode, parsePrivateConfig, pickPrivateDocument } from './privateMode'
 
@@ -17,6 +18,16 @@ describe('parsePrivateConfig', () => {
     }, CONFIG_URL)
     expect(c.documents.get('rfp')).toEqual({ url: 'https://intra.example.com/viewer/docs/RFP%202026.pdf', name: 'RFP 2026.pdf' })
     expect(c.documents.get('notice')).toEqual({ url: 'https://intra.example.com/files/get?id=17', name: '공지.hwp' })
+    expect(c.print).toBe(false)
+  })
+
+  it('accepts the example shipped in the deploy folder as it stands', () => {
+    // public/private.example.json is what an administrator copies to
+    // private.json; it must work once renamed, its _readme key included.
+    const raw = JSON.parse(readFileSync('public/private.example.json', 'utf8'))
+    const c = parsePrivateConfig(raw, CONFIG_URL)
+    expect(c.documents.get('sample')?.url).toBe('https://intra.example.com/viewer/sample.pdf')
+    expect(c.documents.get('notice')?.name).toBe('notice.hwp')
     expect(c.print).toBe(false)
   })
 

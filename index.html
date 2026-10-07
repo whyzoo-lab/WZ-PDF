@@ -176,7 +176,8 @@
         <h2>Private mode — only the documents you designate</h2>
         <p class="sub"><code>embed=1</code> only hides buttons: anyone can edit the address and open something else.
           For a viewer that shows <strong>just the documents your server chose, view only</strong>, host the web build
-          yourself and place a <code>private.json</code> next to <code>app.html</code>.</p>
+          yourself and place a <code>private.json</code> next to <code>app.html</code>. Every build carries a working example there —
+          <a href="./private.example.json" target="_blank" rel="noopener"><code>private.example.json</code></a> — to copy to that name.</p>
         <pre><code>{
   "documents": {
     "rfp":    "docs/RFP-2026.pdf",
@@ -195,6 +196,7 @@
           <li><strong style="color:var(--tx)">Works:</strong> zoom, fit, rotation, page list, two-page and grid views, fullscreen, find, OCR.</li>
           <li><strong style="color:var(--tx)">Switched off:</strong> opening any other document (file, drop, <code>?url=</code>, mail attachment), editing, saving, downloading.</li>
           <li>It belongs to the deployment, not the link — there is no URL switch to remove. A <code>private.json</code> that exists but cannot be read keeps the viewer closed.</li>
+          <li>When you redeploy, leave <code>private.json</code> on the server — a script that clears the folder first must skip it.</li>
         </ul>
         <div class="note">
           🔐 <strong>Not access control:</strong> the browser downloads the document to show it. Who may see a document at all
