@@ -1,4 +1,5 @@
 import type { DocKind, ViewerDoc } from '../types/viewerDoc'
+import { joinSpeechUnits, type SpeechUnit } from './speechPages'
 
 /**
  * Getting speakable text out of each format.
@@ -204,7 +205,20 @@ export async function textFromPages(
   range: PageRange,
   options: TextFromPagesOptions = {},
 ): Promise<string> {
-  const parts: string[] = []
+  return joinSpeechUnits(await speechUnitsFromPages(doc, kind, range, options))
+}
+
+/**
+ * The same text, page by page — what a presentation needs to turn the page as
+ * it is read (services/speechPages.ts). Pages without text are left out.
+ */
+export async function speechUnitsFromPages(
+  doc: ViewerDoc,
+  kind: DocKind,
+  range: PageRange,
+  options: TextFromPagesOptions = {},
+): Promise<SpeechUnit[]> {
+  const parts: SpeechUnit[] = []
   const from = Math.max(1, range.from)
   const to = Math.min(doc.numPages, range.to)
 
@@ -227,7 +241,7 @@ export async function textFromPages(
     }
 
     const text = groupLinesIntoBlocks(lines).trim()
-    if (text) parts.push(text)
+    if (text) parts.push({ page: pageNumber, text })
   }
-  return parts.join('\n\n')
+  return parts
 }

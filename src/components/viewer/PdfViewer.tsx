@@ -29,6 +29,8 @@ interface PdfViewerProps {
   fullscreenLayout: 'single' | 'spread'
   /** First page shown when fullscreen opens (Alt+F5 passes the page in view). */
   fullscreenStartPage?: number
+  /** The page being read aloud while presenting: fullscreen turns to it. */
+  fullscreenFollowPage?: number | null
   pendingStamp: PendingStamp | null
   pendingSignature: string | null
   onAnnotationSelect: (id: string | null) => void
@@ -62,6 +64,7 @@ function PdfViewerImpl({
   viewMode,
   fullscreenLayout,
   fullscreenStartPage,
+  fullscreenFollowPage = null,
   pendingStamp,
   pendingSignature,
   onAnnotationSelect,
@@ -197,6 +200,7 @@ function PdfViewerImpl({
         layout={fullscreenLayout}
         spreads={spreads}
         startPage={fullscreenStartPage}
+        followPage={fullscreenFollowPage}
         rotation={rotation}
         activeMode={activeMode}
         onAnnotationSelect={onAnnotationSelect}

@@ -24,6 +24,12 @@ interface FullscreenViewProps {
   spreads?: number[][]
   /** Page to open on. Defaults to the first. */
   startPage?: number
+  /**
+   * The page being read aloud, or null. Each time it changes the presentation
+   * turns to it — so reading aloud moves through the pages, while the presenter
+   * can still page freely between sentences.
+   */
+  followPage?: number | null
   rotation?: number
   /** Active editing/drawing mode (e.g. 'pen', 'rectangle'). Defaults to 'select'. */
   activeMode?: ActiveMode
@@ -45,6 +51,7 @@ export function FullscreenView({
   layout,
   spreads,
   startPage = 1,
+  followPage = null,
   rotation = 0,
   activeMode = 'select',
   onAnnotationSelect,
@@ -57,6 +64,15 @@ export function FullscreenView({
   // So a start on the right-hand page of a pair opens that pair, and rows that
   // are re-cut once page sizes arrive never leave the view between two rows.
   const [currentPage, setCurrentPage] = useState(() => Math.min(Math.max(1, Math.floor(startPage)), numPages || 1))
+  // Turn to the page being read when it changes — adjusted during render, as
+  // React advises for state derived from a changing prop, rather than in an
+  // effect that would paint the old page first. Starts unset, so a show opened
+  // while reading opens on the page being read.
+  const [followed, setFollowed] = useState<number | null>(null)
+  if (followPage !== followed) {
+    setFollowed(followPage)
+    if (followPage !== null) setCurrentPage(Math.min(Math.max(1, followPage), numPages || 1))
+  }
   const [showOverlay, setShowOverlay] = useState(true)
   const [tool, setTool] = useState<PresentToolState>(DEFAULT_TOOL_STATE)
   const [strokes, setStrokes] = useState<PresentStroke[]>([])

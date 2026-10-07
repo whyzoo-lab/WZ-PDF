@@ -7,6 +7,8 @@ import { FLOW_PRINT_ATTR } from '../../services/htmlPrint'
 import type { PdfJob } from '../../services/officePdf'
 import { pptxPdfJob } from '../../services/officePdfJobs'
 import { pptxText } from '../../services/ooxmlText'
+import { findFlexible } from '../../services/domText'
+import type { SpeechUnit } from '../../services/speechPages'
 import { ReaderFullscreen } from '../reader/ReaderFullscreen'
 import { OfficePagePanel } from './OfficePagePanel'
 import { SlideCaptions } from './SlideCaptions'
@@ -59,7 +61,7 @@ function nearestPending(
  */
 export function PptxView({
   bytes, zoom, fullscreen, onExitFullscreen, viewMode, onViewModeChange, panelOpen, handleRef, onPageInfo,
-  showNotes = true, fullscreenStartPage = 1,
+  showNotes = true, fullscreenStartPage = 1, speaking = null,
 }: PptxViewProps) {
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [failed, setFailed] = useState<ArrayBuffer | null>(null)
@@ -322,8 +324,8 @@ export function PptxView({
   }, [pendingPage, viewMode])
 
   // ── What the app can ask of this view ─────────────────────────────────────
-  const metrics = useRef({ rowWidth, fit, mode: viewMode, current, notes })
-  useLayoutEffect(() => { metrics.current = { rowWidth, fit, mode: viewMode, current, notes } })
+  const metrics = useRef({ rowWidth, fit, mode: viewMode, current, notes, fullscreen, fsSlide })
+  useLayoutEffect(() => { metrics.current = { rowWidth, fit, mode: viewMode, current, notes, fullscreen, fsSlide } })
   useEffect(() => {
     if (!pres) return
     handleRef.current = {
@@ -332,14 +334,26 @@ export function PptxView({
         if (m.mode === 'grid' || m.fit <= 0) return null
         return (m.rowWidth / pres.width) / m.fit
       },
-      goTo,
-      // A deck with a script is read from its script, from the slide on
-      // screen on; slides without notes are passed over. A deck without one
-      // is read from what the slides say (null: the visible text).
-      speechText: () => {
-        const { notes: all, current: from } = metrics.current
+      // In the slideshow a jump is a slide change: the section scrolls into
+      // place (smoothly, as the keys move it), and a slide the show is still
+      // being held on through the fullscreen resize is moved along with it.
+      goTo: page => {
+        if (!metrics.current.fullscreen) { goTo(page); return }
+        if (fsTarget.current !== null) fsTarget.current = page - 1
+        boxes.current.get(page - 1)?.closest('section')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      },
+      // A deck with a script is read from its script, slide by slide, from the
+      // slide on screen on; slides without notes are passed over, and in the
+      // slideshow so are hidden ones, which it does not show. A deck without
+      // one is read from what the slides say (null: the visible text).
+      speechScript: () => {
+        const { notes: all, current, fullscreen: inShow, fsSlide: shown } = metrics.current
         if (!all?.some(Boolean)) return null
-        return all.slice(Math.max(0, from - 1)).filter(Boolean).join('\n\n')
+        const from = inShow ? shown : Math.max(0, current - 1)
+        return all
+          .map((text, i): SpeechUnit => ({ page: i + 1, text }))
+          .slice(from)
+          .filter(unit => unit.text && !(inShow && pres.slides[unit.page - 1]?.hidden))
       },
       pdfJob: async (): Promise<PdfJob> => {
         renderAll.current()
@@ -373,6 +387,11 @@ export function PptxView({
   } as React.CSSProperties)
 
   if (fullscreen) {
+    // While the script is read aloud the caption is the sentence being spoken,
+    // as subtitles are; otherwise, or for a sentence not on this slide, the
+    // slide's whole script.
+    const slideNotes = notes?.[fsSlide] ?? ''
+    const captionText = speaking && slideNotes && findFlexible(slideNotes, speaking) ? speaking : slideNotes
     // A slideshow skips hidden slides, as PowerPoint's does.
     const shown = pres.slides.map((s, i) => ({ s, i })).filter(({ s }) => !s.hidden)
     // Rounded down: a slide a fraction of a pixel taller than the screen
@@ -388,7 +407,7 @@ export function PptxView({
           ))}
         </div>
         {hasNotes && (
-          <SlideCaptions text={notes?.[fsSlide] ?? ''} on={captionsOn} onToggle={toggleCaptions} />
+          <SlideCaptions text={captionText} on={captionsOn} onToggle={toggleCaptions} />
         )}
       </ReaderFullscreen>
     )

@@ -84,6 +84,32 @@ describe('FullscreenView', () => {
     expect(screen.getByTestId('page-1')).toBeInTheDocument()
   })
 
+  describe('reading aloud', () => {
+    it('turns to the page being read, each time it changes', () => {
+      const { rerender } = render(<FullscreenView {...baseProps} followPage={null} />)
+      expect(screen.getByTestId('page-1')).toBeInTheDocument()
+      rerender(<FullscreenView {...baseProps} followPage={3} />)
+      expect(screen.getByTestId('page-3')).toBeInTheDocument()
+      rerender(<FullscreenView {...baseProps} followPage={4} />)
+      expect(screen.getByTestId('page-4')).toBeInTheDocument()
+    })
+
+    it('lets the presenter page away between sentences on the same page', () => {
+      const { rerender } = render(<FullscreenView {...baseProps} followPage={2} />)
+      expect(screen.getByTestId('page-2')).toBeInTheDocument()
+      fireEvent.keyDown(window, { key: 'ArrowRight' })
+      expect(screen.getByTestId('page-3')).toBeInTheDocument()
+      // The next sentence is still on page 2: nothing pulls the view back.
+      rerender(<FullscreenView {...baseProps} followPage={2} />)
+      expect(screen.getByTestId('page-3')).toBeInTheDocument()
+    })
+
+    it('opens on the page being read when presenting starts mid-reading', () => {
+      render(<FullscreenView {...baseProps} startPage={1} followPage={4} />)
+      expect(screen.getByTestId('page-4')).toBeInTheDocument()
+    })
+  })
+
   describe('spread layout', () => {
     // Page 3 is a wide page: it is shown alone and pairing restarts after it.
     const spreads = [[1, 2], [3], [4, 5]]

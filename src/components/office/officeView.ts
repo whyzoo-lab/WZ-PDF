@@ -1,5 +1,6 @@
 import type { PdfJob } from '../../services/officePdf'
 import type { ViewMode } from '../../types/viewModes'
+import type { SpeechUnit } from '../../services/speechPages'
 
 /**
  * What an Office view offers the app, so the toolbar's viewer controls —
@@ -16,10 +17,11 @@ export interface OfficeViewHandle {
   pdfJob(): Promise<PdfJob>
   /**
    * What read-aloud should read, when the view knows better than its visible
-   * text: a deck's speaker notes, from the slide on screen on. Null to read
+   * text: a deck's speaker notes, slide by slide, from the slide on screen on —
+   * by slide so the slideshow can turn the slide as it is read. Null to read
    * what is on screen.
    */
-  speechText?(): string | null
+  speechScript?(): SpeechUnit[] | null
 }
 
 export interface OfficePageInfo {
@@ -48,6 +50,8 @@ export interface OfficeViewProps {
   showNotes?: boolean
   /** Page (slide) the slideshow opens on, 1-based: 1 for F5, the one in view for Alt+F5. */
   fullscreenStartPage?: number
+  /** The sentence being read aloud, or null — the slideshow shows it as the caption. */
+  speaking?: string | null
 }
 
 /** Gap between pages in the two-page and all-pages layouts, px. */

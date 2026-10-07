@@ -20,6 +20,7 @@ import { useTts } from './hooks/useTts'
 import { SpeechHighlight } from './components/SpeechHighlight'
 import { TtsBar } from './components/TtsBar'
 import { planSpeech } from './services/ttsText'
+import { joinSpeechUnits, pagesForChunks, type SpeechUnit } from './services/speechPages'
 import { SearchBar } from './components/SearchBar'
 import { SpeechAnnouncer } from './components/SpeechAnnouncer'
 import { PasswordPrompt } from './components/modals/PasswordPrompt'
@@ -897,13 +898,19 @@ export default function App() {
   const [ttsPromptOpen, setTtsPromptOpen] = useState(false)
 
   /** Read from the page in view to the end — where the reader actually is. */
+  // The page each planned sentence came from (services/speechPages.ts), for
+  // the follow effect below; null where the text has no pages.
+  const [speechPages, setSpeechPages] = useState<number[] | null>(null)
   const startReading = useCallback(async () => {
     let raw = ''
+    // Text by page, where there are pages: what lets a presentation turn the
+    // page as it is read (see the follow effect below).
+    let units: SpeechUnit[] | null = null
     // A deck with a script is read from the script (its speaker notes), from
-    // the slide on screen on — see OfficeViewHandle.speechText.
-    const script = flowDoc ? officeHandleRef.current?.speechText?.() ?? null : null
+    // the slide on screen on — see OfficeViewHandle.speechScript.
+    const script = flowDoc ? officeHandleRef.current?.speechScript?.() ?? null : null
     if (script) {
-      raw = script
+      units = script
       // The highlight follows the sentence in the notes under each slide, so
       // they must be on screen to follow.
       setShowSlideNotes(true)
@@ -913,8 +920,8 @@ export default function App() {
       const { textFromElement } = await import('./services/ttsSource')
       raw = body ? textFromElement(body) : ''
     } else if (pdfDoc) {
-      const { textFromPages } = await import('./services/ttsSource')
-      raw = await textFromPages(pdfDoc, kind, { from: currentPage, to: numPages }, {
+      const { speechUnitsFromPages } = await import('./services/ttsSource')
+      units = await speechUnitsFromPages(pdfDoc, kind, { from: currentPage, to: numPages }, {
         // A scanned page has an empty text layer; whatever OCR already
         // recognized there is the only thing there is to read.
         ocrRuns: page => {
@@ -924,6 +931,7 @@ export default function App() {
       })
     }
 
+    if (units) raw = joinSpeechUnits(units)
     const { chunks } = planSpeech(raw)
     if (chunks.length === 0) {
       // A scanned page is the common case here, and "nothing to read" is a
@@ -932,8 +940,24 @@ export default function App() {
       showToast(t(scanned ? 'tts.needsOcr' : 'tts.noText'))
       return
     }
+    setSpeechPages(units ? pagesForChunks(units, chunks) : null)
     await tts.speak(chunks)
   }, [tts, flowDoc, pdfDoc, kind, currentPage, numPages, showToast, ocr.ocrResults])
+
+  // ── A presentation turns the page as it is read ───────────────────────────
+  // Outside fullscreen the view follows the highlight, which finds the
+  // sentence on screen. A presentation shows one page or slide, and what is
+  // being read is usually not on it (a deck's notes, the next PDF page), so it
+  // follows the page each sentence was gathered from instead.
+  const spokenPage = tts.status !== 'idle' && speechPages && tts.index >= 0
+    ? speechPages[tts.index] ?? null
+    : null
+  const presentFollowPage = viewMode === 'fullscreen' ? spokenPage : null
+  useEffect(() => {
+    // Slides: the slideshow is the Office view's; PDFs follow through
+    // PdfViewer's `fullscreenFollowPage`.
+    if (presentFollowPage !== null && office) officeHandleRef.current?.goTo(presentFollowPage)
+  }, [presentFollowPage, office])
 
   const reportSpeechFailure = useCallback((err: unknown) => {
     console.error('read-aloud failed:', err)
@@ -1276,6 +1300,7 @@ export default function App() {
     onPageInfo: setOfficePages,
     showNotes: showSlideNotes,
     fullscreenStartPage,
+    speaking: tts.status !== 'idle' ? tts.currentText : null,
   }
 
   const actionBarProps = {
@@ -1632,6 +1657,7 @@ export default function App() {
                 viewMode={viewMode}
                 fullscreenLayout={fullscreenLayout}
                 fullscreenStartPage={fullscreenStartPage}
+                fullscreenFollowPage={presentFollowPage}
                 pendingStamp={pendingStamp}
                 pendingSignature={pendingSignature}
                 onAnnotationSelect={selectAnnotation}

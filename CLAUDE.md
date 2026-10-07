@@ -1490,6 +1490,26 @@ wherever it points next. Three things that has to get right:
   split out because through the app it cannot be observed cleanly: playback
   keeps advancing while a test is measuring.
 
+**A presentation turns the page as it is read.** Outside fullscreen the view
+follows the highlight, which *finds* the sentence on screen. A presentation
+shows one page or slide, and what is read is usually not on it — a deck's
+speaker notes are not drawn in the slideshow, and the next PDF page is not
+mounted — so nothing was found and the show stood still. `startReading` now
+gathers text by page (`speechUnitsFromPages`, `OfficeViewHandle.speechScript`,
+which replaced `speechText`) and `pagesForChunks` (`services/speechPages.ts`)
+matches each planned chunk back to its page once, by a forward scan on the
+chunk's opening (a sentence running across a page break shows the page it
+starts on). In fullscreen, `spokenPage` drives `FullscreenView`'s
+`followPage` (adjusted during render, and only when it *changes*, so the
+presenter can still page away between sentences) or the slideshow's `goTo`.
+The slideshow's caption becomes the sentence being spoken while reading, the
+way subtitles work; a show opened mid-reading opens on the page being read,
+and starting to read inside the slideshow starts from the slide on screen.
+Hidden slides' notes are left out there, since the show does not show them.
+Checked in the preview with a stand-in engine on the 29-slide deck: slides
+advanced 1 → 2 → 3 → 5 → 6 with each caption the spoken sentence (slide 4, a
+divider, has no notes).
+
 `KEEP_BEHIND` holds a couple of played sentences so going back is instant; they
 used to be discarded the moment they finished, which put a synthesis wait in
 front of the one thing a listener is most impatient for.
