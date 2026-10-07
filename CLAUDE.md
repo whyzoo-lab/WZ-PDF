@@ -442,6 +442,27 @@ is built, for the web build. Printing re-fits slides to the page width
 (`--wz-slide-scale` in print CSS), and `printFlowDoc` repaints cloned canvases
 (`copyCanvases`), since `cloneNode` copies a chart's canvas but not its pixels.
 
+**Speaker notes** (the presenter's script) come from `pptxText` in
+`services/ooxmlText.ts` — the same reader the MCP server uses, shared rather
+than copied. They show in an amber box under each slide (single and two-page
+view, not the grid), toggled by a toolbar button that appears only when the deck
+has notes (`OfficePageInfo.hasNotes`). The fit leaves `NOTES_ROOM_PX` for the
+box, or slide 1 opened with its notes below the fold. In the slideshow the
+notes are **subtitles** (`SlideCaptions`: white on black boxes that hug each
+line, bottom centre, portalled to `body`), on by default; `C` — also matched
+by `e.code`, since with the Korean IME it arrives as `ㅊ` — or the translucent
+CC button in the bottom-right corner turns them off. The button shows when the
+mouse moves and hides after 5 still seconds. **Alt+F5 opens the slideshow on
+the slide in view**: the shortcut used to pass App's PDF page counter (always
+1 for Office) and `PptxView` ignored the start page anyway; it now gets
+`fullscreenStartPage`, and re-scrolls to it on each resize until the first
+key, wheel or click, since going fullscreen resizes the window after the
+sections are laid out. **Read-aloud
+reads the script, not the slide**: `OfficeViewHandle.speechText()` returns the
+notes from the current slide on, slides without notes skipped, and `App` turns
+the boxes on first, so the highlight has visible text to follow. A deck with no
+notes reads the slide text as before.
+
 The views zoom with CSS `zoom` on a wrapper (sizes are absolute: pt, mm, px),
 and **not** on the element marked `FLOW_PRINT_ATTR` — print clones that element.
 `ReaderFullscreen` takes `layout="page"` for Word and sheets: no white card,
@@ -1060,6 +1081,34 @@ and in an Electron 44 renderer 1.99 GiB allocates while 2 GiB − 1 fails. Hence
 message, rather than pdfjs dying inside its worker. Lifting it would mean a
 different loader, not a bigger constant.
 
+### Private mode (web build)
+
+`?embed` only hides buttons; whoever sees the page can edit its address.
+Private mode is the version that holds: a deployment places `private.json`
+next to `app.html` (`services/privateMode.ts` has the format), the page embeds
+`app.html?doc=<id>`, and only the listed documents open — view only, printing
+off unless `"print": true`. Decisions behind it:
+- **A file on the server, not a URL switch**, so the person it limits cannot
+  remove it. Read on every start with `cache: 'no-store'`; never in Electron.
+- **Absent vs broken.** 404 / 403 / 410 and an HTML answer (a server that
+  returns the app for every path — Vite dev does) mean "no private mode"; any
+  other failure (5xx, bad JSON, no documents) is `error` and the viewer stays
+  **closed**. A deployment that meant to be private must never fall open.
+- **Locked while pending.** Until the file has answered, `locked` is already
+  true, so a drop in that moment cannot slip through, and `useOpenUrl`'s
+  `?url=` auto-open waits for `autoOpen`.
+- **One choke point.** `loadPdfFile` refuses everything while locked (picked
+  or dropped files, `?url=`, mail attachments); the designated document goes
+  through `openDocument` directly. The rest is chrome: `chromeless` (embed or
+  locked) hides open/save/edit/password and the page panel's 선택 저장, and
+  Ctrl+S saves nothing — which also fixed Office documents being savable with
+  Ctrl+S in plain embed mode. No print button, Ctrl+P swallowed, and
+  `data-wz-no-print` blanks the browser's own print; no context menu on pages;
+  mail attachments neither open nor download.
+- **Not access control**, and the docs say so: the browser downloads the file
+  to show it. `public/private.json` is gitignored so a test config can never
+  ship in the Pages build.
+
 ### Saving a selection of pages
 
 Right-clicking the page panel offers "선택 저장", writing the selected pages as a
@@ -1670,7 +1719,9 @@ Fifteen tools. Eleven are pure Node over pdf-lib/pdfjs; `doc_get_text` and
 `hwp2pdf` console tools do, so an agent gets the same PDF the app saves, text
 included.
 
-**Reading documents runs in the server** (`mcp/src/docText.ts`): Word and
+**Reading documents runs in the server** (`mcp/src/docText.ts`, with the OOXML
+part in `src/services/ooxmlText.ts`, shared with the app's speaker notes and
+listed in `mcp/tsconfig.json` `include`): Word and
 PowerPoint XML through JSZip (`ooxmlText`: runs, paragraphs, table cells as
 tabs), slides in `sldIdLst` order with hidden ones marked and speaker notes
 from the notes page's body placeholder, spreadsheets through hucre with row

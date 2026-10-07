@@ -8,7 +8,12 @@ import { t } from '../i18n'
  * iframe embedding. Errors are non-blocking (toast + inline) — never alert(),
  * which would freeze an embedded iframe.
  */
-export function useOpenUrl(loadPdfFile: (f: File) => void, showToast: (message: string) => void) {
+export function useOpenUrl(
+  loadPdfFile: (f: File) => void,
+  showToast: (message: string) => void,
+  /** False until it is known that `?url=` may be opened (see privateMode.ts). */
+  autoOpen = true,
+) {
   const [showUrlModal, setShowUrlModal] = useState(false)
   const [urlLoading, setUrlLoading] = useState(false)
   // Last URL-load error, shown inline (esp. for embed mode where there's no
@@ -57,7 +62,7 @@ export function useOpenUrl(loadPdfFile: (f: File) => void, showToast: (message: 
   // so a PDF is shown inline without the user downloading it. Runs once.
   const autoLoadedRef = useRef(false)
   useEffect(() => {
-    if (autoLoadedRef.current) return
+    if (!autoOpen || autoLoadedRef.current) return
     autoLoadedRef.current = true
     let url: string | null = null
     try {
@@ -65,7 +70,7 @@ export function useOpenUrl(loadPdfFile: (f: File) => void, showToast: (message: 
       url = params.get('url') || params.get('file')
     } catch { /* no query string */ }
     if (url) handleOpenUrl(url)
-  }, [handleOpenUrl])
+  }, [handleOpenUrl, autoOpen])
 
   return { showUrlModal, setShowUrlModal, urlLoading, urlError, handleOpenUrl }
 }

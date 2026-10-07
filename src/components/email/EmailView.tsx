@@ -9,8 +9,10 @@ import { t } from '../../i18n'
 
 interface EmailViewProps {
   email: ParsedEmail
-  /** Open an attachment in the viewer itself (PDF/HWP only). */
-  onOpenAttachment: (file: File) => void
+  /** Open an attachment in the viewer itself (PDF/HWP only). Absent: no such button. */
+  onOpenAttachment?: (file: File) => void
+  /** Offer attachments for download (not in a private viewer). */
+  canDownload?: boolean
   /** Display zoom — scales the type, since there is no page to scale. */
   zoom: number
   /** Present the message fullscreen instead of inside the app shell. */
@@ -35,7 +37,7 @@ function toFile(a: EmailAttachment): File {
   return new File([new Uint8Array(a.bytes)], a.filename, { type: a.mimeType })
 }
 
-function AttachmentRow({ a, onOpen }: { a: EmailAttachment; onOpen: (f: File) => void }) {
+function AttachmentRow({ a, onOpen, canDownload }: { a: EmailAttachment; onOpen?: (f: File) => void; canDownload: boolean }) {
   const file = useMemo(() => toFile(a), [a])
   const canOpenHere = classifyDocFile(file).supported
 
@@ -45,7 +47,7 @@ function AttachmentRow({ a, onOpen }: { a: EmailAttachment; onOpen: (f: File) =>
         <span className="block truncate text-sm text-gray-800" title={a.filename}>{a.filename}</span>
         <span className="block text-xs text-gray-500">{formatSize(a.size)}</span>
       </span>
-      {canOpenHere && (
+      {canOpenHere && onOpen && (
         <button
           onClick={() => onOpen(file)}
           className="no-print shrink-0 px-2.5 py-1 text-xs rounded-full text-blue-700 hover:bg-blue-50 transition-colors"
@@ -53,12 +55,14 @@ function AttachmentRow({ a, onOpen }: { a: EmailAttachment; onOpen: (f: File) =>
           {t('email.openHere')}
         </button>
       )}
-      <button
-        onClick={() => downloadBlob(new Blob([new Uint8Array(a.bytes)], { type: a.mimeType }), a.filename)}
-        className="no-print shrink-0 px-2.5 py-1 text-xs rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-      >
-        {t('email.download')}
-      </button>
+      {canDownload && (
+        <button
+          onClick={() => downloadBlob(new Blob([new Uint8Array(a.bytes)], { type: a.mimeType }), a.filename)}
+          className="no-print shrink-0 px-2.5 py-1 text-xs rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+        >
+          {t('email.download')}
+        </button>
+      )}
     </li>
   )
 }
@@ -69,7 +73,7 @@ function AttachmentRow({ a, onOpen }: { a: EmailAttachment; onOpen: (f: File) =>
  * cost text fidelity and selection for nothing.
  */
 export function EmailView({
-  email, onOpenAttachment, zoom, fullscreen, onExitFullscreen,
+  email, onOpenAttachment, canDownload = true, zoom, fullscreen, onExitFullscreen,
 }: EmailViewProps) {
   const [showRemoteImages, setShowRemoteImages] = useState(false)
 
@@ -150,7 +154,7 @@ export function EmailView({
             </h2>
             <ul>
               {email.attachments.map((a, i) => (
-                <AttachmentRow key={`${a.filename}-${i}`} a={a} onOpen={onOpenAttachment} />
+                <AttachmentRow key={`${a.filename}-${i}`} a={a} onOpen={onOpenAttachment} canDownload={canDownload} />
               ))}
             </ul>
           </section>

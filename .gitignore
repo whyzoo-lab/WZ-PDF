@@ -64,3 +64,6 @@ public/standard_fonts/
 build/*.exe
 build/mcp/
 build/rhwp/
+
+# Private-mode config belongs to a deployment, never to the repo (services/privateMode.ts)
+public/private.json

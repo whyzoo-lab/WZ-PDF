@@ -289,4 +289,11 @@ export const en = {
   'office.pptxFailed': 'This PowerPoint file cannot be displayed.',
   'office.slide': 'Slide {n}',
   'office.slideHidden': 'hidden slide',
+  'office.notes': 'Speaker notes',
+  'office.notesToggle': 'Show or hide speaker notes (C in the slideshow)',
+  'office.captionsToggle': 'Speaker notes as captions on or off (C)',
+  'private.cannotOpen': 'This viewer shows only the documents it was set up for.',
+  'private.unknownDocument': 'This document cannot be opened. This viewer shows only the documents the server designates.',
+  'private.configFailed': 'The viewer settings (private.json) could not be read. Please contact the administrator.',
+  'private.loadFailed': 'The document could not be loaded: {error}',
 } as const

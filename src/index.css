@@ -252,6 +252,13 @@ canvas {
   .wz-ocr-span.wz-ocr-reveal { animation: none; }
 }
 
+/* A private viewer that does not allow printing (services/privateMode.ts):
+   the browser's own print of the page — which is also "save as PDF" — comes
+   out blank. */
+@media print {
+  html[data-wz-no-print] body { display: none !important; }
+}
+
 /* ── Print styles ────────────────────────────────────────────────────────── */
 /* The print pipeline (src/hooks/usePrint.ts) builds a dedicated
    `#wz-print-root` container with one <img> per page and toggles
@@ -611,6 +618,76 @@ canvas {
   flex: none;
 }
 .wz-slide-hidden { opacity: 0.45; }
+/* Speaker notes under a slide, as wide as the slide. The label comes from CSS
+   so find and read-aloud see only the script itself. */
+.wz-slide-notes {
+  width: calc(var(--wz-slide-w) * var(--wz-slide-scale) * 1px);
+  box-sizing: border-box;
+  padding: 10px 14px 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  color: #1f2937;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.wz-slide-notes::before {
+  content: attr(data-label);
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #92400e;
+}
+.wz-slide-notes p { margin: 0 0 4px; }
+.wz-slide-notes p:last-child { margin-bottom: 0; }
+/* The slideshow's script (C), set as subtitles: white on black boxes that hug
+   each line, centred along the bottom of the screen. Kept clear of the corners,
+   where the captions button sits. */
+.wz-captions {
+  position: fixed;
+  left: 50%;
+  bottom: 6vh;
+  transform: translateX(-50%);
+  width: min(1100px, calc(100vw - 192px));
+  max-height: 30vh;
+  overflow-y: auto;
+  scrollbar-width: none;
+  text-align: center;
+  font-size: clamp(16px, 1.6vw, 26px);
+  line-height: 1.5;
+  z-index: 70;
+}
+.wz-captions::-webkit-scrollbar { display: none; }
+.wz-captions p { margin: 0 0 0.15em; }
+.wz-captions span {
+  padding: 0.08em 0.4em;
+  background: rgb(8 8 8 / 0.78);
+  color: #fff;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.wz-captions-toggle {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 71;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background: rgb(0 0 0 / 0.45);
+  color: #fff;
+  opacity: 0.6;
+  transition: opacity 0.3s;
+  cursor: pointer;
+}
+.wz-captions-toggle:hover,
+.wz-captions-toggle:focus-visible { opacity: 1; }
+.wz-captions-toggle[aria-pressed="false"] { color: #d1d5db; }
+.wz-captions-toggle-idle { opacity: 0; pointer-events: none; }
 .wz-slide-number::after {
   content: attr(data-n);
   font-size: 11px;

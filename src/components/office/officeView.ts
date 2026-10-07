@@ -14,6 +14,12 @@ export interface OfficeViewHandle {
   goTo(page: number): void
   /** The document laid out for a PDF (see services/officePdf.ts). */
   pdfJob(): Promise<PdfJob>
+  /**
+   * What read-aloud should read, when the view knows better than its visible
+   * text: a deck's speaker notes, from the slide on screen on. Null to read
+   * what is on screen.
+   */
+  speechText?(): string | null
 }
 
 export interface OfficePageInfo {
@@ -21,6 +27,8 @@ export interface OfficePageInfo {
   count: number
   /** The one at the top of the view, 1-based. */
   current: number
+  /** A deck with speaker notes (the presentation script). */
+  hasNotes?: boolean
 }
 
 /** Props every Office view takes from the app besides its bytes. */
@@ -36,6 +44,10 @@ export interface OfficeViewProps {
   handleRef: { current: OfficeViewHandle | null }
   /** Page count and current page, for the toolbar's counter. */
   onPageInfo?: (info: OfficePageInfo | null) => void
+  /** Show a deck's speaker notes under each slide. */
+  showNotes?: boolean
+  /** Page (slide) the slideshow opens on, 1-based: 1 for F5, the one in view for Alt+F5. */
+  fullscreenStartPage?: number
 }
 
 /** Gap between pages in the two-page and all-pages layouts, px. */

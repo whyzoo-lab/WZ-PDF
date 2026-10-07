@@ -36,6 +36,8 @@ export interface ActionBarProps {
    * the page controls a PDF has — layouts, page counter, page list — apply.
    */
   pagedFlow?: boolean
+  /** A deck with speaker notes: whether they show under each slide, and the switch. */
+  slideNotes?: { on: boolean; onToggle: () => void }
   /** Save a Word, PowerPoint or spreadsheet document as PDF. */
   onSaveOfficePdf?: () => void
   /** Embed mode (?embed): hide file-open, export and the viewer/editor toggle
@@ -56,7 +58,8 @@ export interface ActionBarProps {
   onUpload: (file: File) => void
   /** Open the "load from URL" modal. */
   onOpenUrl: () => void
-  onPrint: () => void
+  /** Absent where printing is not allowed (a private viewer): no print button. */
+  onPrint?: () => void
   onAppModeChange: (mode: AppMode) => void
   onViewModeChange: (mode: ViewMode) => void
   onZoomIn: () => void
@@ -123,6 +126,7 @@ export function ActionBar({
   flowDoc,
   canEdit = true,
   pagedFlow = false,
+  slideNotes,
   onSaveOfficePdf,
   embed = false,
   appMode,
@@ -213,7 +217,7 @@ export function ActionBar({
 
   // Re-measure the toolbar whenever the visible control set changes.
   const contentKey = [
-    hasPdf, flowDoc, pagedFlow, !!onSaveOfficePdf, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
+    hasPdf, flowDoc, pagedFlow, !!slideNotes, !!onSaveOfficePdf, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
   ].join('|')
   const { ref: headerRef, collapsed } = useToolbarCollapse(contentKey)
 
@@ -452,6 +456,22 @@ export function ActionBar({
     </button>
   )
 
+  // A deck's speaker notes (the presentation script) under each slide.
+  const notesButton = slideNotes ? (
+    <button
+      className={`${BTN_BASE} ${slideNotes.on ? BTN_ACTIVE : BTN_IDLE} shrink-0`}
+      onClick={slideNotes.onToggle}
+      aria-pressed={slideNotes.on}
+      title={t('office.notesToggle')}
+      aria-label={t('office.notesToggle')}
+    >
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
+        <rect x="3" y="2.5" width="14" height="8" rx="1"/>
+        <path d="M4 13.5h12M4 16.5h8" strokeLinecap="round"/>
+      </svg>
+    </button>
+  ) : null
+
   const eraserButton = hasMarkups ? (
     <button className={iconBtn()} onClick={onResetMarkups} title={t('tool.reset')} aria-label={t('tool.reset')}>
       <IconReset />
@@ -560,7 +580,7 @@ export function ActionBar({
   // A plain ghost button like every other tool. It used to carry a filled grey
   // pill, which made it the only control in the bar that looked like something
   // you were supposed to press.
-  const printButton = (hasPdf || flowDoc) ? (
+  const printButton = (hasPdf || flowDoc) && onPrint ? (
     <button
       onClick={onPrint}
       className={iconBtn()}
@@ -732,7 +752,7 @@ export function ActionBar({
           {viewCluster}
           {!isFullscreen && (<><Sep />{pageCounter}</>)}
           {!isFullscreen && viewMode !== 'grid' && (<><Sep />{zoomCluster}</>)}
-          {!isFullscreen && (<><Sep />{pagesButton}</>)}
+          {!isFullscreen && (<><Sep />{pagesButton}{notesButton}</>)}
         </>
       )}
       {hasPdf && (
@@ -838,7 +858,7 @@ export function ActionBar({
               {flowDoc && !pagedFlow && !isFullscreen && (<>{fullscreenButton}{zoomCluster}</>)}
               {pagedFlow && viewCluster}
               {pagedFlow && !isFullscreen && viewMode !== 'grid' && zoomCluster}
-              {pagedFlow && !isFullscreen && pagesButton}
+              {pagedFlow && !isFullscreen && (<div className="flex items-center gap-0.5">{pagesButton}{notesButton}</div>)}
               {hasPdf && viewCluster}
               {hasPdf && !isFullscreen && viewMode !== 'grid' && zoomCluster}
               {hasPdf && !isFullscreen && (
@@ -923,7 +943,7 @@ export function ActionBar({
           )}
           {hasPdf && (
             <>
-              <button onClick={() => { onPrint(); setRightMenuOpen(false) }} className={menuItem}><IconPrint /><span>{t('tool.print')}</span></button>
+              {onPrint && <button onClick={() => { onPrint(); setRightMenuOpen(false) }} className={menuItem}><IconPrint /><span>{t('tool.print')}</span></button>}
               <button onClick={() => { onRunOcr(); setRightMenuOpen(false) }} disabled={isOcrRunning || numPages === 0} className={`${menuItem} disabled:opacity-40`}><IconOcr /><span>{t('ocr.runCurrent')}</span></button>
               <button onClick={() => { onRunOcrAll(); setRightMenuOpen(false) }} disabled={isOcrRunning || numPages === 0} className={`${menuItem} disabled:opacity-40`}><IconOcr /><span>{t('ocr.runAll')}</span></button>
             </>
@@ -1012,7 +1032,7 @@ export function ActionBar({
 
       {editorRow}
 
-      <input ref={fileInputRef} type="file" accept={DOCUMENT_ACCEPT} className="hidden" onChange={handleFileChange} />
+      {!embed && <input ref={fileInputRef} type="file" accept={DOCUMENT_ACCEPT} className="hidden" onChange={handleFileChange} />}
 
       {/* Stamp dropdown portal — rendered in <body> to escape toolbar overflow */}
       {stampPortal}

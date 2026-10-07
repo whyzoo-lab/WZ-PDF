@@ -1,6 +1,6 @@
 # WZ PDF
 
-**Open PDF, Korean HWP, e-mail, images and Markdown — present, annotate, OCR and convert. 100% in your browser. No upload.**
+**Open PDF, Korean HWP, Word, PowerPoint, Excel, e-mail, images and Markdown — present, annotate, OCR and convert. 100% in your browser. No upload.**
 
 Introduce : https://whyzoo.com/WzPDF/ · Demo : https://whyzoo-lab.github.io/WZ-PDF/ · Download : [Releases](https://github.com/whyzoo-lab/WZ-PDF/releases)
 
@@ -34,18 +34,20 @@ OCR runtime. Ships with an optional
 
 - 🔒 **Private by design** — everything runs in the browser/desktop. Nothing is uploaded.
 - 📄 **PDF _and_ HWP/HWPX** — open Korean word-processor files exactly like a PDF, with **native selectable text** (no OCR needed).
+- 📊 **Word, PowerPoint and Excel without Office** — `.docx`, `.pptx`, `.xlsx` / `.xls` / `.ods` / `.csv` open with their layout, tables, charts and pictures, with zoom, page list, find, print and fullscreen. **Every row** of a 200,000-row sheet scrolls. Save any of them **as a PDF with selectable text**.
+- 🎤 **Speaker notes, on screen and read aloud** — a deck's presenter script shows under each slide; in the slideshow it runs along the bottom as **captions** (`C` or the corner button), and read-aloud reads the script instead of the slide. `Alt+F5` starts the show from the slide in view.
 - 🔁 **HWP → PDF that you can actually copy from** — the converted file carries a real text layer, so text stays selectable and searchable in any reader. Not a picture of a document.
 - 📦 **Any document → standalone `.exe`** — hand someone a single file that opens itself. Works for HWP/HWPX too, not just PDF.
 - ✉️ **Open `.eml` mail** — headers, body and **attachments you can save**, with Korean encodings (EUC-KR bodies, encoded subjects and filenames) handled properly. Remote images are blocked until you ask, so opening a message doesn't report back to the sender.
 - 🖼️ **Images too** — jpg / png / bmp / gif / webp open as documents, so zoom, annotation, OCR and every export just work.
 - 📝 **Markdown as a document — and editable** — `.md` renders as a formatted page (headings, tables, code, task lists) with a contents rail that follows you as you scroll. Flip the padlock and you get the raw source, tags and all, to edit and save back.
 - 🖨️ **Mail and Markdown print, zoom, search and present too** — they print as *text*, so the output stays sharp and selectable instead of being a picture of a page; `Ctrl+F` finds across them, and F5 puts them fullscreen with the same presenter tools as a PDF.
-- ⌨️ **Batch converters on your PATH** — `hwp2pdf`, `hwp2hwpx` and `hwpx2hwp` run from any terminal. Point them at files, wildcards or whole folders: `hwp2hwpx C:\docs\2026` walks the tree, and `-o` rebuilds that tree in the output folder instead of flattening it. Wildcards are expanded by the tools (Windows doesn't do it for you), and converted PDFs carry the same selectable text layer as the GUI export.
+- ⌨️ **Batch converters on your PATH** — `topdf` (any format the app opens → PDF), `hwp2pdf`, `hwp2hwpx` and `hwpx2hwp` run from any terminal. Point them at files, wildcards or whole folders: `hwp2hwpx C:\docs\2026` walks the tree, and `-o` rebuilds that tree in the output folder instead of flattening it. Wildcards are expanded by the tools (Windows doesn't do it for you), and converted PDFs carry the same selectable text layer as the GUI export.
 - 🔊 **Reads documents aloud, on your machine** — press the speaker and the page is read to you in a natural voice, Korean included, with ten voices and a speed control. It runs entirely offline once set up: nothing about what you are reading leaves the computer. (Desktop app; the voice model is a one-time 383 MB download you are asked about first.)
 - 🔍 **Fit width in one click** — the viewer opens fitting the whole page, so a one-page document never starts with a scrollbar. When you want browser-level sharpness instead, the fit-width button more than doubles the pixels a glyph gets.
 - 🎯 **Made for presenting** — fullscreen mode with ZoomIt-style presenter tools (pen, highlighter, arrow, laser pointer, spotlight zoom).
 - 🔎 **On-device OCR** — recognize text in scanned pages and images, **fully offline** (Korean + English). Plus **Ctrl-drag any region → OCR → clipboard**.
-- 🧩 **Embed anywhere** — drop the viewer into any website with a single `<iframe>` (see below).
+- 🧩 **Embed anywhere** — drop the viewer into any website with a single `<iframe>` (see below), or run it in **private mode**: only the documents your server designates, view only.
 - ⚡ **Starts fast, stays sharp** — the desktop app boots without waiting on code it isn't using yet, and pages are rasterised at the size they're shown so small text stays crisp.
 - 🖥️ **Web + Windows desktop** — same app, and the desktop build associates with `.pdf` / `.hwp` / `.hwpx`.
 
@@ -61,9 +63,35 @@ Show a PDF inline on any page — no download, no plugin:
   allowfullscreen></iframe>
 ```
 
-- `url` — the PDF/HWP to display (URL-encode it). `embed=1` hides the editing chrome for a clean read-only viewer; drop it to open the full app.
+- `url` — the document to display (URL-encode it): PDF, HWP, Word, PowerPoint, Excel, Markdown, mail or an image. `embed=1` hides the editing chrome for a clean read-only viewer; drop it to open the full app.
 - **CORS:** the web build fetches the file in the browser, so host the document on the **same origin** (or a CORS-enabled URL). The desktop app is not affected by CORS.
 - Try it live on the [demo page](https://whyzoo-lab.github.io/WZ-PDF/), which embeds this viewer with a sample document and shows a copy-ready snippet for your deployment.
+
+### Private mode — only the documents your server designates
+
+`embed=1` is a convenience: whoever sees the page can edit the address and open
+anything. For a viewer that shows **only what you chose, view only**, host the
+web build yourself and put a `private.json` next to `app.html`:
+
+```json
+{
+  "documents": {
+    "rfp":    "docs/RFP-2026.pdf",
+    "notice": { "url": "/files/get?id=17", "name": "notice.hwp" }
+  },
+  "print": false
+}
+```
+
+```html
+<iframe src="https://your-site/viewer/app.html?doc=rfp" style="width:100%; height:80vh; border:0;" allowfullscreen></iframe>
+```
+
+- The viewer then opens **only** those documents (`?doc=` picks one; with a single document it may be left out). A file picked or dropped, `?url=`, a mail attachment — all refused.
+- Zoom, fit, rotation, page list, two-page and grid views, fullscreen, find and OCR work. **Editing, saving and opening other documents do not**, and printing is off unless `"print": true` (printing is also "save as PDF").
+- Paths are resolved against `private.json`, so relative ones stay on your server. `name` supplies the file name (with its extension) when the URL has none.
+- It is a property of the deployment, not of the link: there is no URL switch to remove. A `private.json` that exists but cannot be read keeps the viewer **closed**, never open.
+- It is not access control. The browser downloads the document to show it, so who may see it at all is your server's decision (sign-in); private mode keeps the viewer from being a way to open, change or save anything else.
 
 ---
 

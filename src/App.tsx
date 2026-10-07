@@ -45,6 +45,7 @@ import { useEditHistory } from './hooks/useEditHistory'
 import { UnsavedChangesDialog } from './components/modals/UnsavedChangesDialog'
 import { StartScreen } from './components/StartScreen'
 import { errorMessage } from './utils/errors'
+import { loadPrivateMode, pickPrivateDocument, type PrivateMode } from './services/privateMode'
 
 // Modals are loaded on demand to shrink the initial bundle.
 // They only render when the user actively summons them, so the round-trip
@@ -101,6 +102,11 @@ const DEFAULT_PRESET_STAMP_SIZE = { width: 100, height: 40 }
 /** How long "opening…" may stand in for the start screen at launch. */
 const OPENING_AT_LAUNCH_DEADLINE_MS = 15_000
 
+/** One query-string parameter of the page, or null. */
+function queryParam(name: string): string | null {
+  try { return new URLSearchParams(window.location.search).get(name) } catch { return null }
+}
+
 export default function App() {
   // ── Document state ────────────────────────────────────────────────────────
   const [file, setFile] = useState<DocumentFile | null>(null)
@@ -115,6 +121,22 @@ export default function App() {
   const [embed] = useState(() => {
     try { return new URLSearchParams(window.location.search).has('embed') } catch { return false }
   })
+  // Private mode (services/privateMode.ts): the web viewer shows only what the
+  // server's private.json designates, view only. Decided by a file on the
+  // server, never by the address bar; never in the desktop app.
+  const [privateMode, setPrivateMode] = useState<PrivateMode>(() =>
+    window.electronAPI ? { status: 'off' } : { status: 'pending' })
+  useEffect(() => {
+    if (window.electronAPI) return
+    let cancelled = false
+    void loadPrivateMode(document.baseURI).then(mode => { if (!cancelled) setPrivateMode(mode) })
+    return () => { cancelled = true }
+  }, [])
+  // Locked until the server has answered as well: a document dropped in that
+  // moment would otherwise slip past a private deployment.
+  const locked = privateMode.status !== 'off'
+  const chromeless = embed || locked
+  const canPrint = !locked || (privateMode.status === 'on' && privateMode.config.print)
   const [viewMode, setViewMode] = useState<ViewMode>('single')
   const [fullscreenLayout, setFullscreenLayout] = useState<'single' | 'spread'>('single')
   // First page shown in presentation mode: 1 for F5 and the toolbar button, the
@@ -161,6 +183,8 @@ export default function App() {
   const officeHandleRef = useRef<OfficeViewHandle | null>(null)
   const [officePages, setOfficePages] = useState<OfficePageInfo | null>(null)
   const pagedOffice = office !== null && office.kind !== 'sheet' && officePages !== null
+  // A deck's speaker notes under each slide; shown unless the reader hides them.
+  const [showSlideNotes, setShowSlideNotes] = useState(true)
   const {
     annotations,
     selectedId,
@@ -505,10 +529,16 @@ export default function App() {
   // What waits on the "save / don't save / cancel" answer: opening another
   // document, or restarting to install an update.
   const [pendingLeave, setPendingLeave] = useState<{ reason: 'open' | 'update'; proceed: () => void } | null>(null)
+  // Every way of opening a document ends here — a picked or dropped file,
+  // `?url=`, a mail attachment — so this is where private mode refuses them.
+  // The designated document is opened through `openDocument` directly.
+  const lockedRef = useRef(locked)
+  useLayoutEffect(() => { lockedRef.current = locked })
   const loadPdfFile = useCallback((f: DocumentFile, filePath?: string) => {
+    if (lockedRef.current) { showToast(t('private.cannotOpen')); return }
     if (unsavedRef.current) setPendingLeave({ reason: 'open', proceed: () => openDocument(f, filePath) })
     else openDocument(f, filePath)
-  }, [openDocument])
+  }, [openDocument, showToast])
 
   // Restart to install a downloaded update. Unsaved work is settled first: the
   // installer is started before the app quits and closes it regardless, so the
@@ -565,7 +595,39 @@ export default function App() {
   }, [loadPdfFile, showToast])
 
   // ── Open from URL (+ embed ?url= auto-open) ───────────────────────────────
-  const { showUrlModal, setShowUrlModal, urlLoading, urlError, handleOpenUrl } = useOpenUrl(loadPdfFile, showToast)
+  const { showUrlModal, setShowUrlModal, urlLoading, urlError, handleOpenUrl } =
+    useOpenUrl(loadPdfFile, showToast, privateMode.status === 'off')
+
+  // ── Private mode: the one document the server designates ──────────────────
+  const privateDocument = useMemo(() => {
+    if (privateMode.status !== 'on') return null
+    return pickPrivateDocument(privateMode.config, queryParam('doc'))
+  }, [privateMode])
+  const [privateLoadError, setPrivateLoadError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!privateDocument) return
+    let cancelled = false
+    fetch(privateDocument.url)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.arrayBuffer()
+      })
+      .then(bytes => { if (!cancelled) openDocument(new File([bytes], privateDocument.name)) })
+      .catch(err => {
+        if (!cancelled) setPrivateLoadError(t('private.loadFailed', { error: errorMessage(err) }))
+      })
+    return () => { cancelled = true }
+  }, [privateDocument, openDocument])
+  const privateMessage = privateMode.status === 'error' ? t('private.configFailed')
+    : privateMode.status === 'on' && !privateDocument ? t('private.unknownDocument')
+      : privateLoadError
+  // Printing is "save as PDF" as well, so where it is not allowed the browser's
+  // own print of the page comes out blank (index.css).
+  useEffect(() => {
+    if (canPrint) return
+    document.documentElement.setAttribute('data-wz-no-print', '')
+    return () => document.documentElement.removeAttribute('data-wz-no-print')
+  }, [canPrint])
 
   // ── Electron: open-file (file association / CLI arg) ──────────────────────
   // Launched with a document (`?open=1`, set by the main process): the path
@@ -799,7 +861,7 @@ export default function App() {
   // `!file` too: between picking a document and its loader reporting in there
   // is a render with no document and no loading flag, and the start screen
   // flashed up in it.
-  const nothingOpen = !file && !pdfDoc && !email && markdown === null && !office && !isLoading && !error && !embed
+  const nothingOpen = !file && !pdfDoc && !email && markdown === null && !office && !isLoading && !error && !chromeless
   const handleMainDoubleClick = useCallback(() => {
     if (nothingOpen) fileInputRef.current?.click()
   }, [nothingOpen])
@@ -833,7 +895,15 @@ export default function App() {
   /** Read from the page in view to the end — where the reader actually is. */
   const startReading = useCallback(async () => {
     let raw = ''
-    if (flowDoc) {
+    // A deck with a script is read from the script (its speaker notes), from
+    // the slide on screen on — see OfficeViewHandle.speechText.
+    const script = flowDoc ? officeHandleRef.current?.speechText?.() ?? null : null
+    if (script) {
+      raw = script
+      // The highlight follows the sentence in the notes under each slide, so
+      // they must be on screen to follow.
+      setShowSlideNotes(true)
+    } else if (flowDoc) {
       // The element the flow printer marks is exactly the readable body.
       const body = document.querySelector<HTMLElement>('[data-wz-flow-print]')
       const { textFromElement } = await import('./services/ttsSource')
@@ -1028,12 +1098,15 @@ export default function App() {
   // Ctrl+S: the document's own save — PDF for pages, the source for Markdown
   // (only while editing it; the reading view has nothing to save).
   const handleSaveShortcut = useMemo(() => {
+    // An embedded or private viewer saves nothing (Office documents used to
+    // slip through here in embed mode, with the save button hidden).
+    if (chromeless) return undefined
     if (markdown !== null) {
       return appMode === 'editor' ? () => { void markdownSaveRef.current?.() } : undefined
     }
     if (office !== null) return () => { void handleSaveOfficePdf() }
-    return pdfDoc && !embed ? () => { void handleExportPdf() } : undefined
-  }, [markdown, office, appMode, pdfDoc, embed, handleExportPdf, handleSaveOfficePdf])
+    return pdfDoc ? () => { void handleExportPdf() } : undefined
+  }, [markdown, office, appMode, pdfDoc, chromeless, handleExportPdf, handleSaveOfficePdf])
 
   // ── Copy / paste a stamp ──────────────────────────────────────────────────
   // For putting the same stamp in the same place on every page: copy it on
@@ -1163,7 +1236,10 @@ export default function App() {
   }, [appMode, pdfDoc, numPages, currentPage, isPanelOpen, recordEdit, addAnnotationRaw, showToast, pageUnderPointer, pageMostInView])
 
   useGlobalShortcuts({
-    pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId, currentPage,
+    pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
+    // Alt+F5 starts where the reader is — for Word and PowerPoint that is the
+    // view's own page, not the PDF counter (which stayed at 1 for them).
+    currentPage: pagedOffice ? officePages!.current : currentPage,
     setViewMode, setShowSearch, onEnterFullscreen: enterFullscreen, fileInputRef,
     removeAnnotation, clearMarkups, setActiveMode, selectAnnotation,
     onRunOcr: () => ocr.runPage(currentPage),
@@ -1178,6 +1254,7 @@ export default function App() {
     onUndo: canEditHistory ? handleUndo : undefined,
     onRedo: canEditHistory ? handleRedo : undefined,
     onSave: handleSaveShortcut,
+    canPrint,
     onCopyAnnotation: handleCopyAnnotation,
     onCutAnnotation: handleCutAnnotation,
     onPasteAnnotation: handlePasteAnnotation,
@@ -1192,6 +1269,8 @@ export default function App() {
     panelOpen: isPanelOpen,
     handleRef: officeHandleRef,
     onPageInfo: setOfficePages,
+    showNotes: showSlideNotes,
+    fullscreenStartPage,
   }
 
   const actionBarProps = {
@@ -1200,7 +1279,7 @@ export default function App() {
     // Pages take stamps and page edits, Markdown its source. Word, sheets and
     // mail have nothing to edit.
     canEdit: !!pdfDoc || markdown !== null,
-    embed,
+    embed: chromeless,
     appMode,
     viewMode,
     zoom,
@@ -1212,7 +1291,10 @@ export default function App() {
     numPages: pagedOffice ? officePages!.count : numPages,
     currentPage: pagedOffice ? officePages!.current : currentPage,
     pagedFlow: pagedOffice,
-    onSaveOfficePdf: office !== null && !embed ? () => { void handleSaveOfficePdf() } : undefined,
+    slideNotes: officePages?.hasNotes
+      ? { on: showSlideNotes, onToggle: () => setShowSlideNotes(v => !v) }
+      : undefined,
+    onSaveOfficePdf: office !== null && !chromeless ? () => { void handleSaveOfficePdf() } : undefined,
     isPanelOpen,
     onTogglePanel: () => setIsPanelOpen(v => !v),
     onUpload: handleUpload,
@@ -1239,7 +1321,7 @@ export default function App() {
     onRedo: canEditHistory ? handleRedo : undefined,
     canUndo: history.canUndo,
     canRedo: history.canRedo,
-    onPrint: handlePrintAny,
+    onPrint: canPrint ? handlePrintAny : undefined,
     onAppModeChange: handleAppModeChange,
     onViewModeChange: handleViewModeChange,
     onZoomIn: handleZoomIn,
@@ -1351,8 +1433,9 @@ export default function App() {
 
 
 
-      {/* Hidden file input for F2 / double-click to open */}
-      <input
+      {/* Hidden file input for F2 / double-click to open — absent while
+          private mode is (or may be) on, so F2 has nothing to open. */}
+      {!locked && <input
         ref={fileInputRef}
         type="file"
         accept={DOCUMENT_ACCEPT}
@@ -1362,7 +1445,7 @@ export default function App() {
           if (f) handleUpload(f)
           e.target.value = ''
         }}
-      />
+      />}
 
       <div className="flex flex-1 overflow-hidden relative">
         {/* Mobile backdrop — taps close the drawer; hidden on md+ where panel is inline. */}
@@ -1389,7 +1472,7 @@ export default function App() {
               onClose={() => setIsPanelOpen(false)}
               // Only for PDFs: extraction is pdf-lib's job, and it has nothing
               // to say about a HWP page or an image.
-              onSavePages={kind === 'pdf' ? handleSavePages : undefined}
+              onSavePages={kind === 'pdf' && !chromeless ? handleSavePages : undefined}
               onSelectionChange={handlePanelSelection}
               onScrollToPage={page => {
                 setScrollToPage(page)
@@ -1420,6 +1503,8 @@ export default function App() {
             if (f) handleUpload(f)
           }}
           onDoubleClick={handleMainDoubleClick}
+          // No "Save image as…" on a page in a private viewer.
+          onContextMenu={locked ? e => e.preventDefault() : undefined}
         >
           {/* The document's own heading. There was none anywhere in the viewing
               path, so a screen reader had nothing to navigate by and no name for
@@ -1450,12 +1535,14 @@ export default function App() {
           {nothingOpen && !openingAtLaunch && (
             <StartScreen onOpenFile={() => fileInputRef.current?.click()} onOpenRecent={openPath} update={update} />
           )}
-          {/* Embed mode placeholder: error (if the ?url fetch failed) or a
-              spinner while it loads. */}
-          {embed && !pdfDoc && !isLoading && !error && (
-            urlError ? (
+          {/* Embed and private placeholder: why nothing could be shown, or a
+              spinner while it loads. `!file`, not `!pdfDoc`: Word, slides,
+              Markdown and mail have no pdfDoc, and the spinner stayed on top
+              of them in embed mode. */}
+          {chromeless && !file && !isLoading && !error && (
+            (locked ? privateMessage : urlError) ? (
               <div className="flex h-full items-center justify-center px-6 text-center text-sm text-red-300 select-none">
-                {urlError}
+                {locked ? privateMessage : urlError}
               </div>
             ) : (
               <div className="flex h-full items-center justify-center gap-2 text-gray-400 text-sm select-none">
@@ -1510,7 +1597,8 @@ export default function App() {
               <Suspense fallback={null}>
                 <EmailView
                   email={email}
-                  onOpenAttachment={handleUpload}
+                  onOpenAttachment={locked ? undefined : handleUpload}
+                  canDownload={!locked}
                   zoom={zoom}
                   fullscreen={viewMode === 'fullscreen'}
                   onExitFullscreen={handleFullscreenExit}

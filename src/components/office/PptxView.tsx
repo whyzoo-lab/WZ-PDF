@@ -6,8 +6,10 @@ import {
 import { FLOW_PRINT_ATTR } from '../../services/htmlPrint'
 import type { PdfJob } from '../../services/officePdf'
 import { pptxPdfJob } from '../../services/officePdfJobs'
+import { pptxText } from '../../services/ooxmlText'
 import { ReaderFullscreen } from '../reader/ReaderFullscreen'
 import { OfficePagePanel } from './OfficePagePanel'
+import { SlideCaptions } from './SlideCaptions'
 import { GRID_PAGE_PX, GUTTER_PX, PAGE_GAP_PX, type OfficeViewProps } from './officeView'
 import { t } from '../../i18n'
 
@@ -17,6 +19,8 @@ interface PptxViewProps extends OfficeViewProps {
 
 /** Widest a slide is drawn at zoom 1, however large the window. */
 const MAX_SLIDE_PX = 1280
+/** Height kept free under a slide for its speaker notes at zoom 1. */
+const NOTES_ROOM_PX = 150
 
 type Loaded = { src: ArrayBuffer; pres: PresentationData | null }
 
@@ -55,9 +59,25 @@ function nearestPending(
  */
 export function PptxView({
   bytes, zoom, fullscreen, onExitFullscreen, viewMode, onViewModeChange, panelOpen, handleRef, onPageInfo,
+  showNotes = true, fullscreenStartPage = 1,
 }: PptxViewProps) {
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [failed, setFailed] = useState<ArrayBuffer | null>(null)
+
+  // ── Speaker notes: the presentation script ────────────────────────────────
+  // Read straight from the file (services/ooxmlText.ts) — the renderer does
+  // not surface them. One entry per slide, in the deck's own order, which is
+  // the order the renderer's slides come in.
+  const [notesFor, setNotesFor] = useState<{ src: ArrayBuffer; notes: string[] } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    pptxText(bytes)
+      .then(slides => { if (!cancelled) setNotesFor({ src: bytes, notes: slides.map(s => s.notes) }) })
+      .catch(err => console.error('Speaker notes could not be read:', err))
+    return () => { cancelled = true }
+  }, [bytes])
+  const notes = notesFor?.src === bytes ? notesFor.notes : null
+  const hasNotes = !!notes?.some(Boolean)
 
   useEffect(() => {
     let cancelled = false
@@ -193,7 +213,13 @@ export function PptxView({
   // zoom 1, as a PDF page opens: a portrait deck fitted to the width alone
   // opened with each slide taller than the window.
   const rowWidth = (column.w - GUTTER_PX - PAGE_GAP_PX * (perRow - 1)) / perRow
-  const fit = column.w > 0 ? Math.min(Math.min(MAX_SLIDE_PX, rowWidth) / W, (column.h - GUTTER_PX) / H) : 1
+  // With the script showing, a slide leaves room under it for its notes, as
+  // PowerPoint's normal view does — fitted to the whole window, the notes sat
+  // just below the bottom edge and every slide needed a scroll to read them.
+  const notesRoom = showNotes && hasNotes && viewMode !== 'grid' ? NOTES_ROOM_PX : 0
+  const fit = column.w > 0
+    ? Math.min(Math.min(MAX_SLIDE_PX, rowWidth) / W, (column.h - GUTTER_PX - notesRoom) / H)
+    : 1
   const scale = viewMode === 'grid' ? GRID_PAGE_PX / W : Math.max(0.05, fit * zoom)
 
   // ── Which slide is on screen ──────────────────────────────────────────────
@@ -218,14 +244,72 @@ export function PptxView({
   }, [scale, viewMode])
   const count = pres?.slides.length ?? 0
   useEffect(() => {
-    onPageInfo?.(count ? { count, current: Math.min(current, count) } : null)
-  }, [count, current, onPageInfo])
+    onPageInfo?.(count ? { count, current: Math.min(current, count), hasNotes } : null)
+  }, [count, current, hasNotes, onPageInfo])
   useEffect(() => () => onPageInfo?.(null), [onPageInfo])
 
   const goTo = useCallback((page: number) => {
     boxes.current.get(page - 1)?.scrollIntoView({ block: 'start' })
     setCurrent(page)
   }, [])
+
+  // ── Slideshow: where it opens, which slide is up, its captions ────────────
+  /** The script as subtitles in the slideshow; C or the corner button toggles. */
+  const [captionsOn, setCaptionsOn] = useState(true)
+  const toggleCaptions = useCallback(() => setCaptionsOn(on => !on), [])
+  const [fsSlide, setFsSlide] = useState(0)
+  /**
+   * The slide the slideshow is held on until the reader moves. Going
+   * fullscreen resizes the window after the slides are laid out, and every
+   * section is a screen tall, so a scroll made before that lands between
+   * slides — it is made again on each resize until the first key or wheel.
+   */
+  const fsTarget = useRef<number | null>(null)
+  const showSlide = useCallback((index: number) => {
+    boxes.current.get(index)?.closest('section')?.scrollIntoView({ block: 'start' })
+  }, [])
+  useLayoutEffect(() => {
+    if (!fullscreen || !pres) { fsTarget.current = null; return }
+    // F5 opens on slide 1, Alt+F5 on the one in view. A hidden slide is not
+    // in the slideshow, so it opens on the next one shown (or the last).
+    const shown = pres.slides.map((s, i) => (s.hidden ? -1 : i)).filter(i => i >= 0)
+    const from = fullscreenStartPage - 1
+    const target = shown.find(i => i >= from) ?? shown[shown.length - 1]
+    if (target === undefined) return
+    fsTarget.current = target
+    showSlide(target)
+    const release = () => { fsTarget.current = null }
+    window.addEventListener('keydown', release, true)
+    window.addEventListener('wheel', release, true)
+    window.addEventListener('pointerdown', release, true)
+    return () => {
+      window.removeEventListener('keydown', release, true)
+      window.removeEventListener('wheel', release, true)
+      window.removeEventListener('pointerdown', release, true)
+    }
+  }, [fullscreen, pres, fullscreenStartPage, showSlide])
+  useLayoutEffect(() => {
+    if (fullscreen && fsTarget.current !== null) showSlide(fsTarget.current)
+  }, [fullscreen, screen, showSlide])
+  useEffect(() => {
+    if (!fullscreen) return
+    // The slide whose top is nearest the top of the screen — each fills it.
+    const onScroll = () => {
+      let best = 0
+      let bestDist = Infinity
+      for (const [i, box] of boxes.current) {
+        const dist = Math.abs(box.closest('section')?.getBoundingClientRect().top ?? Infinity)
+        if (dist < bestDist) { bestDist = dist; best = i }
+      }
+      setFsSlide(best)
+    }
+    window.addEventListener('scroll', onScroll, true)
+    const first = window.setTimeout(onScroll, 0)
+    return () => {
+      window.clearTimeout(first)
+      window.removeEventListener('scroll', onScroll, true)
+    }
+  }, [fullscreen])
 
   // A slide clicked in the all-slides grid opens there in the one-per-row view.
   const [pendingPage, setPendingPage] = useState<number | null>(null)
@@ -238,8 +322,8 @@ export function PptxView({
   }, [pendingPage, viewMode])
 
   // ── What the app can ask of this view ─────────────────────────────────────
-  const metrics = useRef({ rowWidth, fit, mode: viewMode })
-  useLayoutEffect(() => { metrics.current = { rowWidth, fit, mode: viewMode } })
+  const metrics = useRef({ rowWidth, fit, mode: viewMode, current, notes })
+  useLayoutEffect(() => { metrics.current = { rowWidth, fit, mode: viewMode, current, notes } })
   useEffect(() => {
     if (!pres) return
     handleRef.current = {
@@ -249,6 +333,14 @@ export function PptxView({
         return (m.rowWidth / pres.width) / m.fit
       },
       goTo,
+      // A deck with a script is read from its script, from the slide on
+      // screen on; slides without notes are passed over. A deck without one
+      // is read from what the slides say (null: the visible text).
+      speechText: () => {
+        const { notes: all, current: from } = metrics.current
+        if (!all?.some(Boolean)) return null
+        return all.slice(Math.max(0, from - 1)).filter(Boolean).join('\n\n')
+      },
       pdfJob: async (): Promise<PdfJob> => {
         renderAll.current()
         return pptxPdfJob(
@@ -295,6 +387,9 @@ export function PptxView({
             </section>
           ))}
         </div>
+        {hasNotes && (
+          <SlideCaptions text={notes?.[fsSlide] ?? ''} on={captionsOn} onToggle={toggleCaptions} />
+        )}
       </ReaderFullscreen>
     )
   }
@@ -336,6 +431,14 @@ export function PptxView({
                 className="wz-slide-number"
                 data-n={s.hidden ? `${i + 1} · ${t('office.slideHidden')}` : String(i + 1)}
               />
+              {showNotes && viewMode !== 'grid' && notes?.[i] && (
+                // The script for this slide, as PowerPoint's notes pane shows
+                // it. Real text, so find matches it and read-aloud highlights
+                // the sentence being read here.
+                <div className="wz-slide-notes" data-label={t('office.notes')}>
+                  {notes[i].split('\n').filter(line => line.trim()).map((line, n) => <p key={n}>{line}</p>)}
+                </div>
+              )}
             </figure>
           ))}
         </div>

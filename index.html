@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- ── SEO ─────────────────────────────────────────────────────────── -->
-    <title>WZ PDF — In-browser Viewer &amp; Editor for PDF, HWP, e-mail and images (free, no upload)</title>
-    <meta name="description" content="WZ PDF opens PDF, Korean HWP/HWPX, .eml mail and images entirely in your browser — no install, no upload. Convert HWP to PDF with selectable text, package any document as a standalone .exe, annotate, present, run on-device OCR, and embed the viewer in any website." />
+    <title>WZ PDF — In-browser Viewer for PDF, HWP, Word, PowerPoint, Excel, e-mail and images (free, no upload)</title>
+    <meta name="description" content="WZ PDF opens PDF, Korean HWP/HWPX, Word, PowerPoint, Excel, .eml mail and images entirely in your browser — no install, no upload, no Office needed. Save any of them as PDF with selectable text, present slides with speaker-note captions, annotate, run on-device OCR, and embed a view-only private viewer in any website." />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="theme-color" content="#0f172a" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="WZ PDF" />
     <meta property="og:title" content="WZ PDF — In-browser PDF Viewer &amp; Editor" />
-    <meta property="og:description" content="View and edit PDFs right in your browser — no install, no upload. Embeddable viewer demo." />
+    <meta property="og:description" content="PDF, HWP, Word, PowerPoint and Excel right in your browser — no install, no upload, no Office. Embeddable viewer demo." />
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -103,6 +103,7 @@
         <span class="spacer"></span>
         <a class="lnk" href="#demo">Demo</a>
         <a class="lnk" href="#embed">Embed</a>
+        <a class="lnk" href="#private">Private mode</a>
         <a class="lnk" href="https://github.com/whyzoo-lab/WZ-PDF" target="_blank" rel="noopener">GitHub</a>
         <a class="btn btn-primary" href="./app.html">Open app ↗</a>
       </div>
@@ -112,11 +113,12 @@
       <!-- Hero -->
       <div class="hero">
         <span class="pill">⚡ No install · No upload · 100% processed in your browser</span>
-        <h1>Open PDF, HWP, mail and images<br><span class="grad">right in your browser</span></h1>
-        <p>Convert <strong>HWP to PDF with text you can still select</strong>, package any document as a
-          <strong>standalone .exe</strong>, open <strong>.eml mail and save its attachments</strong>, annotate,
-          present fullscreen, and run on-device OCR.
-          Plus a viewer you can <strong>embed in any website to show a document inline — no download required</strong>.</p>
+        <h1>Open PDF, HWP, Word, PowerPoint and Excel<br><span class="grad">right in your browser</span></h1>
+        <p>Read <strong>Office documents without Office</strong> and save them <strong>as PDF with text you can still select</strong>,
+          convert HWP to PDF, open <strong>.eml mail</strong>, annotate, present slides with
+          <strong>speaker notes as captions</strong>, and run on-device OCR.
+          Plus a viewer you can <strong>embed in any website</strong> — even a <strong>private, view-only one</strong>
+          that shows just the documents your server designates.</p>
         <div class="cta">
           <a class="btn btn-primary" href="./app.html">Open app</a>
           <a class="btn btn-ghost" href="#demo">See embed demo</a>
@@ -127,9 +129,11 @@
       <!-- Features -->
       <div class="feats">
         <div class="feat"><div class="ic">🔒</div><h3>No upload</h3><p>Your file never leaves your device. Everything is processed inside the browser.</p></div>
+        <div class="feat"><div class="ic">📊</div><h3>Word · PowerPoint · Excel</h3><p>No Office needed: layout, tables, charts and pictures as written, every row of a huge sheet, and Save as PDF with selectable text.</p></div>
+        <div class="feat"><div class="ic">🎤</div><h3>Speaker notes</h3><p>A deck's script under each slide, and as captions in the slideshow (<code>C</code>). Read-aloud reads the script; <code>Alt+F5</code> starts from the slide in view.</p></div>
         <div class="feat"><div class="ic">🖊️</div><h3>Annotate &amp; edit</h3><p>Stamps, hand-drawn signatures, watermarks, inline text edits, and page reorder/insert/delete.</p></div>
         <div class="feat"><div class="ic">🎯</div><h3>Present &amp; OCR</h3><p>Fullscreen presenter tools (pen, laser, spotlight zoom) and offline text recognition.</p></div>
-        <div class="feat"><div class="ic">🧩</div><h3>Web embed</h3><p>A single <code>?url=</code> drops the viewer into any site — show a PDF without a download.</p></div>
+        <div class="feat"><div class="ic">🧩</div><h3>Web embed</h3><p>A single <code>?url=</code> drops the viewer into any site — or a private, view-only viewer for the documents you designate.</p></div>
       </div>
 
       <!-- Demo -->
@@ -152,10 +156,10 @@
       <!-- Embed -->
       <section class="block" id="embed">
         <h2>Add it to your site</h2>
-        <p class="sub">One <code>&lt;iframe&gt;</code> is all it takes. Put your PDF URL (encoded) in <code>url</code>.</p>
+        <p class="sub">One <code>&lt;iframe&gt;</code> is all it takes. Put your document's URL (encoded) in <code>url</code>.</p>
         <pre><code id="embedCode"></code></pre>
         <div class="params">
-          <code>url</code><span class="d">the PDF to display (encode with <code>encodeURIComponent</code>)</span>
+          <code>url</code><span class="d">the document to display — PDF, HWP, Word, PowerPoint, Excel, Markdown, mail or an image (encode with <code>encodeURIComponent</code>)</span>
           <code>file</code><span class="d">alias for <code>url</code></span>
           <code>embed=1</code><span class="d">hide the editing chrome (read-only). Omit it to open the full viewer.</span>
         </div>
@@ -164,6 +168,37 @@
           cross-origin access. <strong>The safest setup is to serve the viewer and the PDF from the same domain</strong> —
           upload the <code>npm run build</code> output (<code>dist/</code>) to your site and keep the PDF on the same origin.
           The desktop (Electron) app is not affected by CORS.
+        </div>
+      </section>
+
+      <!-- Private mode -->
+      <section class="block" id="private">
+        <h2>Private mode — only the documents you designate</h2>
+        <p class="sub"><code>embed=1</code> only hides buttons: anyone can edit the address and open something else.
+          For a viewer that shows <strong>just the documents your server chose, view only</strong>, host the web build
+          yourself and place a <code>private.json</code> next to <code>app.html</code>.</p>
+        <pre><code>{
+  "documents": {
+    "rfp":    "docs/RFP-2026.pdf",
+    "notice": { "url": "/files/get?id=17", "name": "notice.hwp" }
+  },
+  "print": false
+}</code></pre>
+        <pre><code>&lt;iframe src="https://your-site/viewer/app.html?doc=rfp"
+  style="width:100%; height:80vh; border:0;" allowfullscreen&gt;&lt;/iframe&gt;</code></pre>
+        <div class="params">
+          <code>doc</code><span class="d">which designated document to show (may be left out when there is only one)</span>
+          <code>documents</code><span class="d">id → URL, or <code>{ url, name }</code> when the URL has no file name. Paths are resolved against <code>private.json</code>.</span>
+          <code>print</code><span class="d"><code>true</code> to allow printing (off by default — printing is also "save as PDF")</span>
+        </div>
+        <ul style="color:var(--dim);font-size:14px;margin:0 0 6px;padding-left:20px">
+          <li><strong style="color:var(--tx)">Works:</strong> zoom, fit, rotation, page list, two-page and grid views, fullscreen, find, OCR.</li>
+          <li><strong style="color:var(--tx)">Switched off:</strong> opening any other document (file, drop, <code>?url=</code>, mail attachment), editing, saving, downloading.</li>
+          <li>It belongs to the deployment, not the link — there is no URL switch to remove. A <code>private.json</code> that exists but cannot be read keeps the viewer closed.</li>
+        </ul>
+        <div class="note">
+          🔐 <strong>Not access control:</strong> the browser downloads the document to show it. Who may see a document at all
+          is your server's decision (sign-in); private mode keeps the viewer from being a way to open, change or save anything else.
         </div>
       </section>
     </main>

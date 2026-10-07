@@ -17,7 +17,7 @@
     "sourceMap": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src/**/*", "../src/services/emlParser.ts"],
+  "include": ["src/**/*", "../src/services/emlParser.ts", "../src/services/ooxmlText.ts"],
   // Tests run from source through the repo-root vitest; compiling them into
   // dist/ would ship vitest imports in the published server.
   "exclude": ["src/**/*.test.ts"]

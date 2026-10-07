@@ -42,6 +42,12 @@ interface GlobalShortcutsDeps {
   /** Ctrl+S — save the open document. Absent where there is nothing to save. */
   onSave?: () => void
   /**
+   * False where printing is not allowed (a private deployment). Ctrl+P is then
+   * swallowed rather than passed on: the browser's own print of the page is a
+   * "save as PDF" too.
+   */
+  canPrint?: boolean
+  /**
    * Ctrl+C / Ctrl+X / Ctrl+V on stamps, signatures and text edits. Each returns
    * whether it did anything: when it did not (no stamp selected, or text is
    * selected), the key is left alone so copying document text still works.
@@ -96,7 +102,7 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
         setViewMode, setShowSearch, onEnterFullscreen, fileInputRef,
         removeAnnotation, clearMarkups, setActiveMode, selectAnnotation,
         onRunOcr, onRunOcrAll, onToggleSpeech,
-        onSpeechPrevious, onSpeechNext, onSpeechPlayPause, onUndo, onRedo, onSave,
+        onSpeechPrevious, onSpeechNext, onSpeechPlayPause, onUndo, onRedo, onSave, canPrint = true,
         onCopyAnnotation, onCutAnnotation, onPasteAnnotation,
       } = latest.current
       const tgt = e.target as HTMLElement | null
@@ -118,6 +124,7 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault()
+        if (!canPrint) return
         document.dispatchEvent(new CustomEvent('wz-print'))
         return
       }

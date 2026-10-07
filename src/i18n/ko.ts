@@ -289,4 +289,11 @@ export const ko = {
   'office.pptxFailed': '이 PowerPoint 파일을 표시할 수 없습니다.',
   'office.slide': '슬라이드 {n}',
   'office.slideHidden': '숨긴 슬라이드',
+  'office.notes': '발표자 노트',
+  'office.notesToggle': '발표자 노트 보기/숨기기 (슬라이드쇼에서는 C)',
+  'office.captionsToggle': '발표자 노트 자막 켜기/끄기 (C)',
+  'private.cannotOpen': '이 뷰어에서는 지정된 문서만 볼 수 있습니다.',
+  'private.unknownDocument': '열 수 없는 문서입니다. 이 뷰어에서는 서버에서 지정한 문서만 볼 수 있습니다.',
+  'private.configFailed': '뷰어 설정(private.json)을 읽지 못했습니다. 관리자에게 문의하세요.',
+  'private.loadFailed': '문서를 불러오지 못했습니다: {error}',
 } as const
