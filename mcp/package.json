@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "express": "^5.0.0",
     "fontkit": "^2.0.4",
     "hucre": "1.2.0",
