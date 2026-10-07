@@ -6,19 +6,21 @@
   "author": "WhyZOO",
   "private": true,
   "type": "module",
-  "main": "./dist/server.js",
+  "main": "./dist/mcp/src/server.js",
   "scripts": {
     "dev": "tsx src/server.ts",
     "dev:http": "tsx src/server-http.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
-    "start:http": "node dist/server-http.js"
+    "start": "node dist/mcp/src/server.js",
+    "start:http": "node dist/mcp/src/server-http.js"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "express": "^5.0.0",
     "fontkit": "^2.0.4",
+    "hucre": "1.2.0",
+    "jszip": "^3.10.2",
     "pdfjs-dist": "^6.3.289"
   },
   "devDependencies": {

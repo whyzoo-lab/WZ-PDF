@@ -264,6 +264,8 @@ export function pinnedRequest(target: PinnedTarget, signal: AbortSignal): Promis
 /** Formats whose first bytes identify them, so a renamed file can be caught. */
 const BINARY_DOCUMENT_EXTENSIONS = [
   'pdf', 'hwp', 'hwpx', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp',
+  // Office: zip packages, and legacy .xls in the same OLE2 container as .hwp.
+  'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods',
 ] as const
 
 /**
@@ -276,7 +278,7 @@ const BINARY_DOCUMENT_EXTENSIONS = [
  * renamed binary being handed back as a document, which can only be enforced
  * for formats that have one.
  */
-const TEXT_DOCUMENT_EXTENSIONS = ['eml', 'md', 'markdown', 'mdown', 'mkd'] as const
+const TEXT_DOCUMENT_EXTENSIONS = ['eml', 'md', 'markdown', 'mdown', 'mkd', 'csv'] as const
 
 export const DOCUMENT_EXTENSIONS: readonly string[] = [
   ...BINARY_DOCUMENT_EXTENSIONS, ...TEXT_DOCUMENT_EXTENSIONS,
@@ -301,8 +303,8 @@ export function hasSupportedDocumentSignature(bytes: Uint8Array): boolean {
   const at = (i: number, ...expected: number[]) => expected.every((b, n) => bytes[i + n] === b)
   return (
     at(0, 0x25, 0x50, 0x44, 0x46) ||                                // %PDF
-    at(0, 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1) ||        // OLE2 (.hwp)
-    at(0, 0x50, 0x4b, 0x03, 0x04) ||                                // ZIP (.hwpx)
+    at(0, 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1) ||        // OLE2 (.hwp, .xls)
+    at(0, 0x50, 0x4b, 0x03, 0x04) ||                                // ZIP (.hwpx, .docx, .xlsx, .ods)
     at(0, 0x89, 0x50, 0x4e, 0x47) ||                                // PNG
     at(0, 0xff, 0xd8, 0xff) ||                                      // JPEG
     at(0, 0x47, 0x49, 0x46, 0x38) ||                                // GIF8

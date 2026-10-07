@@ -275,6 +275,15 @@ export function useExporters({
     if (!bytesReady()) return
 
     setIsExporting(true)
+    // The first export downloads the portable it is made from (~130 MB) — say
+    // how far along it is, every 10 %, or the wait reads as a hang.
+    let shown = -1
+    const stopProgress = window.electronAPI.onViewerTemplateProgress?.(percent => {
+      const step = Math.floor(percent / 10) * 10
+      if (step === shown) return
+      shown = step
+      onSuccess(t('export.exeDownloading', { percent: step }))
+    })
     try {
       // A PDF, whatever was opened: the main process refuses anything else, so
       // a HWP or an image used to fail here with "Invalid PDF signature".
@@ -288,6 +297,7 @@ export function useExporters({
       console.error('EXE export error:', err)
       onError(t('export.exeError', { error: errorMessage(err) }))
     } finally {
+      stopProgress?.()
       setIsExporting(false)
     }
   }, [bytesReady, viewerPdfBytes, onSuccess, onError])

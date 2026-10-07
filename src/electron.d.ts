@@ -41,6 +41,10 @@ interface Window {
      * Appends the PDF bytes to a copy of the running portable exe.
      * Only works when running the packaged portable build.
      */
+    /** Percent of the Viewer EXE template downloaded on the first export. */
+    onViewerTemplateProgress?: (callback: (percent: number) => void) => () => void
+    /** This page, laid out for print, as PDF bytes (Office → PDF). */
+    printToPdf?: () => Promise<ArrayBuffer>
     exportExe: (pdfData: ArrayBuffer) => Promise<{
       success: boolean
       canceled?: boolean

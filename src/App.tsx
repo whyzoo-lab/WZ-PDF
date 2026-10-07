@@ -26,7 +26,8 @@ import { PasswordPrompt } from './components/modals/PasswordPrompt'
 import { PasswordSetPrompt } from './components/modals/PasswordSetPrompt'
 import type { Annotation, OmitId, PendingStamp } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
-import { isFlowKind } from './types/viewerDoc'
+import { isFlowKind, isOfficeKind } from './types/viewerDoc'
+import type { OfficePageInfo, OfficeViewHandle } from './components/office/officeView'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, PAGE_ATTR } from './utils/constants'
 import { classifyDocFile, DOCUMENT_ACCEPT } from './utils/detectDocType'
 import { pickSaveTarget, saveBlobTo, stripDocExt } from './utils/download'
@@ -66,6 +67,9 @@ const EmailView = lazy(() => import('./components/email/EmailView').then(m => ({
 // Markdown also renders as a document rather than pages; its chunk carries the
 // Markdown parser, so it only loads when a .md is opened.
 const MarkdownView = lazy(() => import('./components/markdown/MarkdownView').then(m => ({ default: m.MarkdownView })))
+const DocxView = lazy(() => import('./components/office/DocxView').then(m => ({ default: m.DocxView })))
+const SheetView = lazy(() => import('./components/office/SheetView').then(m => ({ default: m.SheetView })))
+const PptxView = lazy(() => import('./components/office/PptxView').then(m => ({ default: m.PptxView })))
 
 /**
  * Pull the viewer chunks in as soon as the shell has painted.
@@ -144,13 +148,19 @@ export default function App() {
   const mainRef = useRef<HTMLElement>(null)
 
   const {
-    pdfDoc, numPages, isLoading, error, kind, email, markdown,
+    pdfDoc, numPages, isLoading, error, kind, email, markdown, office,
     passwordPrompt, submitPassword, cancelPassword, documentPassword,
   } = usePdfDocument(file)
   // A reflowing document is loaded and on screen. Guarded on the payload as
   // well as the kind so it is false during the load, when there is nothing to
   // zoom, print or present yet.
-  const flowDoc = isFlowKind(kind) && (markdown !== null || email !== null)
+  const flowDoc = isFlowKind(kind) && (markdown !== null || email !== null || office !== null)
+  // Word, PowerPoint and spreadsheets: what their view offers the toolbar
+  // (fit width, page jumps, a PDF of the document), and — for the paged two —
+  // which page is on screen.
+  const officeHandleRef = useRef<OfficeViewHandle | null>(null)
+  const [officePages, setOfficePages] = useState<OfficePageInfo | null>(null)
+  const pagedOffice = office !== null && office.kind !== 'sheet' && officePages !== null
   const {
     annotations,
     selectedId,
@@ -371,7 +381,7 @@ export default function App() {
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey || !pdfDoc || viewMode === 'fullscreen' || viewMode === 'grid') return
+      if (!e.ctrlKey || !(pdfDoc || flowDoc) || viewMode === 'fullscreen' || viewMode === 'grid') return
       e.preventDefault()
       const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP
       setZoom(z => +(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z + delta)).toFixed(2)))
@@ -382,7 +392,7 @@ export default function App() {
     if (!el) return
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [pdfDoc, viewMode])
+  }, [pdfDoc, flowDoc, viewMode])
 
   // ── Scroll-pin guard ──────────────────────────────────────────────────────
   // The app shell (documentElement / body / #root / <main>) must never scroll —
@@ -657,12 +667,23 @@ export default function App() {
   // their DOM instead — see services/htmlPrint.ts for why that's the better
   // output, not just the easier one.
   const handlePrintAny = useCallback(async () => {
+    // Word, PowerPoint, sheets: printed on the paper their PDF uses — a slide
+    // per sheet at the slide's size, Word pages at their own size and margins.
+    const officeView = officeHandleRef.current
+    if (isOfficeKind(kind) && officeView) {
+      const { printOfficeJob } = await import('./services/officePdf')
+      const job = await officeView.pdfJob()
+      if (job.pieces === 1) { await printOfficeJob(job); return }
+      // Too many rows for one print layout; the rows on screen are printed,
+      // and the PDF save is the way to all of them.
+      showToast(t('office.printLarge'))
+    }
     if (isFlowKind(kind)) {
       const { printFlowDoc } = await import('./services/htmlPrint')
       if (await printFlowDoc()) return
     }
     handlePrint()
-  }, [kind, handlePrint])
+  }, [kind, handlePrint, showToast])
 
   useEffect(() => {
     if (!isFlowKind(kind)) return
@@ -778,7 +799,7 @@ export default function App() {
   // `!file` too: between picking a document and its loader reporting in there
   // is a render with no document and no loading flag, and the start screen
   // flashed up in it.
-  const nothingOpen = !file && !pdfDoc && !email && markdown === null && !isLoading && !error && !embed
+  const nothingOpen = !file && !pdfDoc && !email && markdown === null && !office && !isLoading && !error && !embed
   const handleMainDoubleClick = useCallback(() => {
     if (nothingOpen) fileInputRef.current?.click()
   }, [nothingOpen])
@@ -907,6 +928,68 @@ export default function App() {
     }
   }, [fileBytes, file, documentPassword, bytesUnavailable, showToast])
 
+  // ── Word / PowerPoint / spreadsheet → PDF ──────────────────────────────────
+  // The view lays its document out for paper (OfficeViewHandle.pdfJob) and the
+  // main process prints that to PDF — text stays text. The web build has no
+  // printToPDF, so it opens the print dialog on the same layout, where "Save as
+  // PDF" is one of the destinations.
+  const [savingOfficePdf, setSavingOfficePdf] = useState(false)
+  // A ref, not the state: Ctrl+S held down, or pressed twice, must not start
+  // a second save before the first has rendered its "saving" state — two
+  // print layouts in the page at once each printed both documents.
+  const officeSaveBusy = useRef(false)
+  const saveOfficePdf = useCallback(async (view: OfficeViewHandle): Promise<boolean> => {
+    const { canSaveOfficePdf, officeJobToPdf, printOfficeJob } = await import('./services/officePdf')
+    if (!canSaveOfficePdf()) {
+      await printOfficeJob(await view.pdfJob())
+      return false
+    }
+    const suggested = `${stripDocExt(file?.name ?? 'document')}.pdf`
+    // Asked first, while the click still counts as the reader's: a large
+    // document can take longer to print than that permission lasts.
+    const target = await pickSaveTarget(suggested, {
+      description: 'PDF document',
+      accept: { 'application/pdf': ['.pdf'] },
+    })
+    if (target.kind === 'canceled') return false
+    setSavingOfficePdf(true)
+    try {
+      const job = await view.pdfJob()
+      let lastShown = -1
+      const bytes = await officeJobToPdf(job, fraction => {
+        const percent = Math.floor(fraction * 100)
+        if (job.pieces > 1 && percent < 100 && percent >= lastShown + 10) {
+          lastShown = percent
+          showToast(t('office.pdfProgress', { percent }))
+        }
+      })
+      const saved = await saveBlobTo(target, new Blob([bytes as BlobPart], { type: 'application/pdf' }), suggested)
+      if (saved) showToast(t('office.pdfSaved', { name: suggested }))
+      return saved
+    } catch (err) {
+      console.error('Office PDF save failed:', err)
+      showToast(t('office.pdfFailed', { error: errorMessage(err) }))
+      return false
+    } finally {
+      setSavingOfficePdf(false)
+    }
+  }, [file, showToast])
+  const handleSaveOfficePdf = useCallback(async (): Promise<boolean> => {
+    const view = officeHandleRef.current
+    if (!view || officeSaveBusy.current) return false
+    officeSaveBusy.current = true
+    try {
+      return await saveOfficePdf(view)
+    } finally {
+      officeSaveBusy.current = false
+    }
+  }, [saveOfficePdf])
+
+  const handleOfficeFitWidth = useCallback(() => {
+    const z = officeHandleRef.current?.fitWidth()
+    if (z) setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, +z.toFixed(2))))
+  }, [])
+
   // Memoised. This object used to be rebuilt on every App render, which rebuilt
   // every page's highlight arrays and re-ran the text layer's scroll-to-match —
   // including on the render each scroll step causes through setCurrentPage.
@@ -948,8 +1031,9 @@ export default function App() {
     if (markdown !== null) {
       return appMode === 'editor' ? () => { void markdownSaveRef.current?.() } : undefined
     }
+    if (office !== null) return () => { void handleSaveOfficePdf() }
     return pdfDoc && !embed ? () => { void handleExportPdf() } : undefined
-  }, [markdown, appMode, pdfDoc, embed, handleExportPdf])
+  }, [markdown, office, appMode, pdfDoc, embed, handleExportPdf, handleSaveOfficePdf])
 
   // ── Copy / paste a stamp ──────────────────────────────────────────────────
   // For putting the same stamp in the same place on every page: copy it on
@@ -1099,9 +1183,23 @@ export default function App() {
     onPasteAnnotation: handlePasteAnnotation,
   })
 
+  const officeViewProps = {
+    zoom,
+    fullscreen: viewMode === 'fullscreen',
+    onExitFullscreen: handleFullscreenExit,
+    viewMode,
+    onViewModeChange: handleViewModeChange,
+    panelOpen: isPanelOpen,
+    handleRef: officeHandleRef,
+    onPageInfo: setOfficePages,
+  }
+
   const actionBarProps = {
     hasPdf: !!pdfDoc,
     flowDoc,
+    // Pages take stamps and page edits, Markdown its source. Word, sheets and
+    // mail have nothing to edit.
+    canEdit: !!pdfDoc || markdown !== null,
     embed,
     appMode,
     viewMode,
@@ -1109,9 +1207,12 @@ export default function App() {
     rotation,
     activeMode,
     selectedId,
-    isExporting,
-    numPages,
-    currentPage,
+    isExporting: isExporting || savingOfficePdf,
+    // A Word or PowerPoint document reports its own pages for the counter.
+    numPages: pagedOffice ? officePages!.count : numPages,
+    currentPage: pagedOffice ? officePages!.current : currentPage,
+    pagedFlow: pagedOffice,
+    onSaveOfficePdf: office !== null && !embed ? () => { void handleSaveOfficePdf() } : undefined,
     isPanelOpen,
     onTogglePanel: () => setIsPanelOpen(v => !v),
     onUpload: handleUpload,
@@ -1145,7 +1246,7 @@ export default function App() {
     onZoomOut: handleZoomOut,
     onZoomReset: handleZoomReset,
     onZoomSet: handleZoomSet,
-    onFitWidth: fitWidth,
+    onFitWidth: office !== null ? handleOfficeFitWidth : fitWidth,
     onRotate: handleRotate,
     onRotateLeft: handleRotateLeft,
     onModeChange: setActiveMode,
@@ -1378,6 +1479,29 @@ export default function App() {
                   onDirtyChange={setMarkdownDirty}
                   saveRef={markdownSaveRef}
                 />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {office && (
+            <ErrorBoundary>
+              <Suspense fallback={null}>
+                {office.kind === 'docx' ? (
+                  <DocxView
+                    bytes={office.bytes}
+                    {...officeViewProps}
+                  />
+                ) : office.kind === 'pptx' ? (
+                  <PptxView
+                    bytes={office.bytes}
+                    {...officeViewProps}
+                  />
+                ) : (
+                  <SheetView
+                    bytes={office.bytes}
+                    name={office.name}
+                    {...officeViewProps}
+                  />
+                )}
               </Suspense>
             </ErrorBoundary>
           )}

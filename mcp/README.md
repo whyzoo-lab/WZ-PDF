@@ -1,6 +1,6 @@
 # WZ PDF — MCP Server
 
-PDF 도구를 Claude에 노출하는 [Model Context Protocol](https://modelcontextprotocol.io) 서버입니다. WZ PDF의 핵심 로직(`pdf-lib`, `pdfjs-dist`, 한글 폰트)을 재사용해요.
+WZ PDF가 여는 문서 — PDF, 한글(HWP/HWPX), Word, PowerPoint, Excel·CSV, Markdown, 메일(.eml), 이미지 — 를 Claude가 읽고 PDF로 바꾸고 다룰 수 있게 해 주는 [Model Context Protocol](https://modelcontextprotocol.io) 서버입니다. WZ PDF의 핵심 로직(`pdf-lib`, `pdfjs-dist`, `hucre`, 메일 파서, 한글 폰트)을 재사용해요.
 
 ## 설치
 
@@ -19,7 +19,7 @@ npm run build
   "mcpServers": {
     "wz-pdf": {
       "command": "node",
-      "args": ["D:/Workspace/PdfEditor/mcp/dist/server.js"]
+      "args": ["D:/Workspace/PdfEditor/mcp/dist/mcp/src/server.js"]
     }
   }
 }
@@ -28,6 +28,19 @@ npm run build
 > 경로는 절대 경로로. Claude Desktop 재시작 후 사용 가능.
 
 ## 제공 도구
+
+### 모든 문서
+
+| 도구 | 설명 |
+|---|---|
+| `doc_get_text` | 문서의 글을 읽습니다. PDF·HWP(쪽 단위), Word(표는 칸을 탭으로 구분), PowerPoint(슬라이드별, 발표자 노트 포함), Excel·ODS·CSV(시트별, 칸은 탭, `startRow`/`maxRows`로 나눠 읽기), Markdown, 메일(제목·보낸 사람·첨부 목록과 본문) |
+| `doc_info` | 형식과 쪽·슬라이드(숨긴 슬라이드 포함)·시트(행 수), 메일의 제목·보낸 사람·첨부 |
+| `doc_to_pdf` | 앱에서 "PDF로 저장"한 것과 같은 PDF로 변환 (HWP, Word, PowerPoint, Excel·CSV, Markdown, 메일, 이미지). 글자를 선택·검색할 수 있는 PDF |
+| `hwp_to_pdf` | 한글 문서 → PDF (예전 이름; `doc_to_pdf`와 같은 결과) |
+
+`doc_to_pdf`, 그리고 HWP에 대한 `doc_get_text`는 WZ PDF 앱이 필요합니다(아래 참고). 나머지는 서버 혼자 처리합니다.
+
+### PDF
 
 | 도구 | 설명 |
 |---|---|
@@ -62,6 +75,15 @@ Claude Desktop에 위 설정을 추가한 뒤 채팅에서:
 > 📌 "D:/docs/manual.pdf에서 'AI 윤리'가 언급된 곳 다 찾아"
 > → `pdf_search({ query: "AI 윤리" })`
 
+> 📌 "D:/docs/발표자료.pptx 슬라이드별 내용과 발표자 노트 요약해줘"
+> → `doc_get_text({ file: "D:/docs/발표자료.pptx" })`
+
+> 📌 "D:/data/전국공장현황.xlsx에서 처음 100행만 보여줘"
+> → `doc_get_text({ file: "...", maxRows: 100 })` — 이어서 읽으려면 응답에 적힌 `startRow`로 다시 호출
+
+> 📌 "D:/docs/계약서.docx를 PDF로 바꿔서 '대외비' 워터마크 넣어줘"
+> → `doc_to_pdf` → `pdf_add_watermark`
+
 > ⚠️ 저장하는 도구는 `.pdf`로만 쓰고, 호출에 `overwrite: true`가 없으면 이미 있는
 > 파일을 덮어쓰지 않습니다. 에이전트가 PDF에서 읽은 글은 믿을 수 없는 입력이라,
 > 그 글에 속아 기존 문서를 덮어쓰는 일이 없어야 하기 때문입니다.
@@ -79,7 +101,7 @@ Claude Desktop에 위 설정을 추가한 뒤 채팅에서:
 
 ```bash
 npm run dev    # tsx로 watch 없이 즉시 실행
-npm run build  # TypeScript → dist/
+npm run build  # TypeScript → dist/ (서버는 dist/mcp/src/server.js — 앱의 메일 파서를 함께 컴파일하기 때문)
 npm start      # 컴파일된 서버 실행
 ```
 
@@ -146,13 +168,21 @@ Adjust both paths if you installed elsewhere. The installer deliberately does
 hold servers you configured yourself, and its location and format are outside
 our control.
 
-### `hwp_to_pdf`
+### `doc_to_pdf` and `hwp_to_pdf`
 
-The one tool that is not pure Node. Converting HWP needs a browser canvas, so it
-delegates to the desktop app in the same headless mode the `hwp2pdf` console tool
-uses — meaning the PDF an agent gets is the same file the GUI's Export → PDF
-produces, with a selectable text layer. `pdf_get_text` and `pdf_search` therefore
-work on the result immediately.
+The tools that are not pure Node. HWP renders into a browser canvas, and Word,
+PowerPoint, spreadsheets, Markdown and mail are laid out as HTML and printed by
+Chromium, so these delegate to the desktop app in the same headless mode the
+`topdf` / `hwp2pdf` console tools use — meaning the PDF an agent gets is the
+same file the app's "Save as PDF" produces, with selectable text.
+`pdf_get_text` and `pdf_search` therefore work on the result immediately.
+`doc_get_text` on a HWP document goes through the same conversion.
+
+Everything else `doc_get_text` and `doc_info` read in the server itself: Word
+and PowerPoint XML through JSZip, spreadsheets through hucre (the reader the app
+uses; a large sheet is read only as far as the requested rows), mail through the
+app's own parser (`src/services/emlParser.ts`), so EUC-KR bodies and encoded
+Korean subjects come out right.
 
 Set `WZPDF_APP` to the full path of `WZ PDF.exe` if the server cannot find it
 (running from a source checkout, or an unusual install layout).

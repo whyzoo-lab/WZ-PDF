@@ -25,6 +25,19 @@ export interface ActionBarProps {
   /** A reflowing document is open (Markdown / mail). It has no pages, so only
    *  the controls that mean something without page geometry are shown. */
   flowDoc: boolean
+  /**
+   * Whether the open document has anything the edit switch could change. False
+   * for Word, spreadsheets and mail, which are read-only views — a switch
+   * that turns on and does nothing reads as broken. Defaults to true.
+   */
+  canEdit?: boolean
+  /**
+   * A Word or PowerPoint document is open: reflowing HTML, but with pages, so
+   * the page controls a PDF has — layouts, page counter, page list — apply.
+   */
+  pagedFlow?: boolean
+  /** Save a Word, PowerPoint or spreadsheet document as PDF. */
+  onSaveOfficePdf?: () => void
   /** Embed mode (?embed): hide file-open, export and the viewer/editor toggle
    *  so the toolbar is a clean read-only viewer for website embedding. */
   embed?: boolean
@@ -108,6 +121,9 @@ export interface ActionBarProps {
 export function ActionBar({
   hasPdf,
   flowDoc,
+  canEdit = true,
+  pagedFlow = false,
+  onSaveOfficePdf,
   embed = false,
   appMode,
   viewMode,
@@ -197,7 +213,7 @@ export function ActionBar({
 
   // Re-measure the toolbar whenever the visible control set changes.
   const contentKey = [
-    hasPdf, flowDoc, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
+    hasPdf, flowDoc, pagedFlow, !!onSaveOfficePdf, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
   ].join('|')
   const { ref: headerRef, collapsed } = useToolbarCollapse(contentKey)
 
@@ -510,7 +526,7 @@ export function ActionBar({
   // because a padlock now means what it says everywhere else in this app: a
   // password. Two different locks in one bar was the confusing part.
   // Nothing to edit with nothing open, so no switch then.
-  const modeToggleCluster = !embed && (hasPdf || flowDoc) ? (
+  const modeToggleCluster = !embed && canEdit && (hasPdf || flowDoc) ? (
     <button
       role="switch"
       aria-checked={appMode === 'editor'}
@@ -710,7 +726,15 @@ export function ActionBar({
           PDF, Markdown or mail — shows its own name in the middle instead;
           Markdown and mail used to keep the logo, PDF did not. */}
       {!hasPdf && !flowDoc && brandingCluster}
-      {flowDoc && !isFullscreen && (<><Sep />{fullscreenButton}<Sep />{zoomCluster}</>)}
+      {flowDoc && !pagedFlow && !isFullscreen && (<><Sep />{fullscreenButton}<Sep />{zoomCluster}</>)}
+      {pagedFlow && (
+        <>
+          {viewCluster}
+          {!isFullscreen && (<><Sep />{pageCounter}</>)}
+          {!isFullscreen && viewMode !== 'grid' && (<><Sep />{zoomCluster}</>)}
+          {!isFullscreen && (<><Sep />{pagesButton}</>)}
+        </>
+      )}
       {hasPdf && (
         <>
           {viewCluster}
@@ -756,6 +780,17 @@ export function ActionBar({
       {speakButton}
       {ocrCluster}
 
+      {/* Word, PowerPoint and sheets have one save: a PDF of the document. */}
+      {onSaveOfficePdf && (
+        <button
+          onClick={onSaveOfficePdf}
+          disabled={isExporting}
+          className="flex items-center justify-center w-9 h-9 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 transition-all"
+          title={isExporting ? t('tool.exporting') : t('office.savePdf')}
+          aria-label={t('office.savePdf')}
+        ><IconSave /></button>
+      )}
+
       {/* Export — split button: main downloads PDF, chevron opens the format menu. */}
       {hasPdf && !embed && (
         <div ref={exportRef} className="relative flex items-stretch">
@@ -800,7 +835,10 @@ export function ActionBar({
           ><IconMenu /></button>
           {leftMenuOpen && (
             <div className="absolute left-2 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-2 z-50 flex flex-col gap-2">
-              {flowDoc && !isFullscreen && (<>{fullscreenButton}{zoomCluster}</>)}
+              {flowDoc && !pagedFlow && !isFullscreen && (<>{fullscreenButton}{zoomCluster}</>)}
+              {pagedFlow && viewCluster}
+              {pagedFlow && !isFullscreen && viewMode !== 'grid' && zoomCluster}
+              {pagedFlow && !isFullscreen && pagesButton}
               {hasPdf && viewCluster}
               {hasPdf && !isFullscreen && viewMode !== 'grid' && zoomCluster}
               {hasPdf && !isFullscreen && (
@@ -827,7 +865,7 @@ export function ActionBar({
       {fileName && (
         <span className="truncate text-xs text-gray-400 min-w-0">{nameLabel}</span>
       )}
-      {hasPdf && !isFullscreen && (
+      {(hasPdf || pagedFlow) && !isFullscreen && (
         <span className="shrink-0 text-xs text-gray-400 tabular-nums">
           {currentPage} / {numPages}
         </span>
@@ -849,7 +887,7 @@ export function ActionBar({
           {!embed && (
             <>
               {/* Same lock switch, as a labelled row inside the dropdown. */}
-              <button
+              {canEdit && <button
                 role="switch"
                 aria-checked={appMode === 'editor'}
                 onClick={() => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor')}
@@ -860,7 +898,7 @@ export function ActionBar({
                 <span className={`text-[11px] font-semibold ${appMode === 'editor' ? 'text-amber-300' : 'text-gray-400'}`}>
                   {appMode === 'editor' ? 'ON' : 'OFF'}
                 </span>
-              </button>
+              </button>}
               {hasPdf && (
                 <button onClick={() => { onPassword(); setRightMenuOpen(false) }} className={menuItem} disabled={isExporting}>
                   {saveLocked ? <IconLock /> : <IconLockOpen />}
@@ -894,6 +932,14 @@ export function ActionBar({
             <>
               <div className="my-1 border-t border-gray-600" />
               {exportMenuItems(() => setRightMenuOpen(false))}
+            </>
+          )}
+          {onSaveOfficePdf && (
+            <>
+              <div className="my-1 border-t border-gray-600" />
+              <button onClick={() => { onSaveOfficePdf(); setRightMenuOpen(false) }} disabled={isExporting} className={`${menuItem} disabled:opacity-40`}>
+                <IconSave /><span>{t('office.savePdf')}</span>
+              </button>
             </>
           )}
         </div>

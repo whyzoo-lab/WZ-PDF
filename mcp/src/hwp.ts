@@ -6,18 +6,22 @@ import { basename, dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * HWP/HWPX → PDF for the MCP server.
+ * Documents → PDF for the MCP server.
  *
- * The conversion cannot happen in this process. `@rhwp/core` renders into a
- * canvas and the PDF is composited from those canvases, so it needs the
- * desktop app's Chromium — the same reason the `hwp2pdf` console tool is a
- * launcher rather than a converter. This delegates to that same headless path,
- * so an agent gets exactly the file the GUI's Export → PDF produces, selectable
- * text layer and bundled Korean fonts included.
+ * The conversion cannot happen in this process. HWP renders into a canvas and
+ * the PDF is composited from it; Word, PowerPoint, spreadsheets, Markdown and
+ * mail are laid out as HTML and printed by Chromium. Both need the desktop
+ * app — the same reason the `hwp2pdf` / `topdf` console tools are launchers
+ * rather than converters. This delegates to that same headless path, so an
+ * agent gets exactly the file saving it from the app produces, selectable text
+ * included.
  */
 
-/** The app is a GUI binary; a conversion of a large document can take a while. */
-const CONVERT_TIMEOUT_MS = 180_000
+/**
+ * The app is a GUI binary, and some documents are large: a 215,897-row sheet
+ * is thousands of pages. The app's own per-file limit is 15 minutes.
+ */
+const CONVERT_TIMEOUT_MS = 960_000
 const APP_EXE = 'WZ PDF.exe'
 
 /**
@@ -104,10 +108,23 @@ export async function convertHwpToPdf(
   outputPath: string,
   serverDir = dirname(fileURLToPath(import.meta.url)),
 ): Promise<ConvertResult> {
+  return convertToPdf(inputPath, outputPath, '--hwp2pdf', serverDir)
+}
+
+/**
+ * Convert any document the app opens (`--topdf`), or HWP alone (`--hwp2pdf`),
+ * and place the PDF at `outputPath`.
+ */
+export async function convertToPdf(
+  inputPath: string,
+  outputPath: string,
+  flag: '--topdf' | '--hwp2pdf' = '--topdf',
+  serverDir = dirname(fileURLToPath(import.meta.url)),
+): Promise<ConvertResult> {
   const exe = findAppExecutable(serverDir)
   const scratch = await mkdtemp(join(tmpdir(), 'wzpdf-mcp-'))
   try {
-    const run = await runApp(exe, ['--hwp2pdf', inputPath, '-o', scratch, '-f', '-q'])
+    const run = await runApp(exe, [flag, inputPath, '-o', scratch, '-f', '-q'])
     const produced = (await readdir(scratch)).filter(name => name.toLowerCase().endsWith('.pdf'))
     if (produced.length === 0) {
       const detail = (run.stderr || run.stdout).trim().split('\n').slice(-3).join(' ')

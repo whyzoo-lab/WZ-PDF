@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FLOW_PRINT_ATTR } from '../services/htmlPrint'
 import { highlightApi, indexText, rangeAt } from '../services/domText'
+import { getFlowSearchProvider } from '../services/flowSearchProvider'
 
 /**
  * Find-in-document for the reflowing formats (Markdown, mail).
@@ -20,9 +21,9 @@ import { highlightApi, indexText, rangeAt } from '../services/domText'
  */
 
 /** Every match. Styled in index.css via `::highlight()`. */
-const HL_ALL = 'wz-find'
+export const HL_ALL = 'wz-find'
 /** Just the current one, so it stands out from the rest. */
-const HL_ACTIVE = 'wz-find-active'
+export const HL_ACTIVE = 'wz-find-active'
 
 export interface UseFlowSearchReturn {
   total: number
@@ -37,6 +38,9 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
   const [total, setTotal] = useState(0)
   const [activeIndex, setActiveIndex] = useState(0)
   const rangesRef = useRef<Range[]>([])
+  // How many matches there are, whichever engine found them — next/prev wrap
+  // on this, since a provider's matches are not Ranges.
+  const countRef = useRef(0)
 
   const paint = useCallback((ranges: Range[], active: number) => {
     const api = highlightApi()
@@ -53,7 +57,9 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
   }, [])
 
   const clear = useCallback(() => {
+    getFlowSearchProvider()?.clear()
     rangesRef.current = []
+    countRef.current = 0
     setTotal(0)
     setActiveIndex(0)
     paint([], 0)
@@ -61,8 +67,23 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
 
   const run = useCallback((query: string) => {
     const needle = query.trim().toLowerCase()
+    if (!enabled || needle.length === 0) { clear(); return }
+
+    // A view too large for the DOM searches its own data (see flowSearchProvider).
+    const provider = getFlowSearchProvider()
+    if (provider) {
+      rangesRef.current = []
+      paint([], 0)
+      const count = provider.find(needle)
+      countRef.current = count
+      setTotal(count)
+      setActiveIndex(0)
+      if (count > 0) provider.reveal(0)
+      return
+    }
+
     const root = document.querySelector<HTMLElement>(`[${FLOW_PRINT_ATTR}]`)
-    if (!enabled || !root || needle.length === 0) { clear(); return }
+    if (!root) { clear(); return }
 
     const idx = indexText(root)
     // Case-insensitive, but positions must line up with the original, so the
@@ -78,17 +99,19 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
     }
 
     rangesRef.current = found
+    countRef.current = found.length
     setTotal(found.length)
     setActiveIndex(0)
     paint(found, 0)
   }, [enabled, clear, paint])
 
   const next = useCallback(() => {
-    setActiveIndex(i => (rangesRef.current.length === 0 ? 0 : (i + 1) % rangesRef.current.length))
+    const n = countRef.current
+    setActiveIndex(i => (n === 0 ? 0 : (i + 1) % n))
   }, [])
 
   const prev = useCallback(() => {
-    const n = rangesRef.current.length
+    const n = countRef.current
     setActiveIndex(i => (n === 0 ? 0 : (i - 1 + n) % n))
   }, [])
 
@@ -96,6 +119,11 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
   // stepping through matches should land immediately, and a queued animation
   // per keypress reads as lag.
   useEffect(() => {
+    const provider = getFlowSearchProvider()
+    if (provider) {
+      if (countRef.current > 0) provider.reveal(activeIndex)
+      return
+    }
     const ranges = rangesRef.current
     if (ranges.length === 0) return
     paint(ranges, activeIndex)

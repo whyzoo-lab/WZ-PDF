@@ -57,6 +57,24 @@ async function decodeImages(root: HTMLElement): Promise<void> {
   }))
 }
 
+/**
+ * `cloneNode` copies a canvas element but not what is drawn on it, so a chart
+ * in a slide (ECharts draws to canvas) printed as an empty box. The clones are
+ * repainted from their sources, in document order — both trees have the same
+ * shape, so the n-th canvas of one is the n-th of the other.
+ */
+export function copyCanvases(source: HTMLElement, clone: HTMLElement): void {
+  const from = Array.from(source.querySelectorAll('canvas'))
+  const to = Array.from(clone.querySelectorAll('canvas'))
+  from.forEach((src, i) => {
+    const dst = to[i]
+    if (!dst || src.width === 0 || src.height === 0) return
+    dst.width = src.width
+    dst.height = src.height
+    try { dst.getContext('2d')?.drawImage(src, 0, 0) } catch { /* tainted or lost context */ }
+  })
+}
+
 /** One frame, so the print stylesheet is applied before the dialog opens. */
 export function nextFrame(): Promise<void> {
   return withDeadline(
@@ -77,7 +95,9 @@ export async function printFlowDoc(): Promise<boolean> {
 
   const root = document.createElement('div')
   root.id = 'wz-print-root'
-  root.appendChild(source.cloneNode(true))
+  const clone = source.cloneNode(true) as HTMLElement
+  copyCanvases(source, clone)
+  root.appendChild(clone)
 
   // The global `@page { margin: 0 }` exists so a rasterised page image can fill
   // the sheet edge to edge. Text needs real margins, and `@page` cannot be

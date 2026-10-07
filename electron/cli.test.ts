@@ -11,6 +11,7 @@ import {
   isConvertible,
   matchesWildcard,
   outputPathFor,
+  distinctOutputPath,
   parseCliArgs,
   usageFor,
 } from './cli.ts'
@@ -24,6 +25,7 @@ const specOf = (name: string): ConverterSpec => {
 const HWP2PDF = specOf('hwp2pdf')
 const HWP2HWPX = specOf('hwp2hwpx')
 const HWPX2HWP = specOf('hwpx2hwp')
+const TOPDF = specOf('topdf')
 
 /**
  * A fake tree, so no fixture files are needed. Keys are directories, values are
@@ -241,6 +243,23 @@ describe('input expansion', () => {
 
 describe('output paths', () => {
   const file = (p: string, base: string) => ({ path: path.resolve(p), base: path.resolve(base) })
+
+  it('keeps both of two inputs that differ only by extension', () => {
+    // topdf takes many formats: 보고서.docx and 보고서.hwp both map to 보고서.pdf.
+    const claimed = new Set<string>()
+    const first = distinctOutputPath(outputPathFor(file('C:/docs/보고서.docx', 'C:/docs'), null, TOPDF), 'C:/docs/보고서.docx', claimed)
+    claimed.add(path.resolve(first).toLowerCase())
+    const second = distinctOutputPath(outputPathFor(file('C:/docs/보고서.hwp', 'C:/docs'), null, TOPDF), 'C:/docs/보고서.hwp', claimed)
+    expect(first).toBe(path.resolve('C:/docs/보고서.pdf'))
+    expect(second).toBe(path.resolve('C:/docs/보고서.hwp.pdf'))
+  })
+
+  it('topdf takes every format the app opens, and not PDF itself', () => {
+    for (const ext of ['hwp', 'hwpx', 'docx', 'pptx', 'xlsx', 'xls', 'csv', 'md', 'eml', 'png']) {
+      expect(TOPDF.sourceExts, ext).toContain(ext)
+    }
+    expect(TOPDF.sourceExts).not.toContain('pdf')
+  })
 
   it('writes beside the input by default', () => {
     expect(outputPathFor(file('C:/docs/a.hwp', 'C:/docs'), null, HWP2HWPX))

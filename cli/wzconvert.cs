@@ -1,7 +1,7 @@
 // Console front end for WZ PDF's batch converters.
 //
-// One source, compiled to three executables — hwp2pdf.exe, hwp2hwpx.exe and
-// hwpx2hwp.exe (see scripts/build-cli.cjs). Each decides what to do from its
+// One source, compiled to four executables — hwp2pdf.exe, topdf.exe,
+// hwp2hwpx.exe and hwpx2hwp.exe (see scripts/build-cli.cjs). Each decides what to do from its
 // own file name, so the delicate part — re-quoting the command line — exists
 // once instead of three times.
 //
@@ -28,7 +28,7 @@ static class WzConvert
     // The switches the app accepts. Checking the file name against this list
     // rather than passing "--" + name means a renamed copy of this launcher
     // cannot hand the app an arbitrary switch.
-    static readonly string[] Tools = { "hwp2pdf", "hwp2hwpx", "hwpx2hwp" };
+    static readonly string[] Tools = { "hwp2pdf", "topdf", "hwp2hwpx", "hwpx2hwp" };
 
     static int Main(string[] args)
     {

@@ -12,7 +12,7 @@ npm run test:run     # Vitest single run (CI)
 npx vitest run src/path/to/file.test.tsx   # Run a single test file
 npm run build        # Production build (tsc + vite build)
 npm run build:exe    # Build both Windows artifacts (portable first, then NSIS installer
-                     # — the NSIS afterPack hook bundles the portable as viewer-template.exe)
+                     # — the NSIS afterPack hook records the portable's hash in viewer-template.json)
 npm run lint         # ESLint
 ```
 
@@ -47,11 +47,15 @@ PDF bytes   → pdfjs-dist (Worker)  → HTMLCanvasElement → Konva Stage (Konv
 HWP/HWPX    → @rhwp/core (WASM)    → HTMLCanvasElement → Konva Stage (KonvaImage)
 image bytes → browser decoder      → HTMLCanvasElement → Konva Stage (KonvaImage)
 EML bytes   → emlParser            → sanitized HTML    → EmailView (NOT this pipeline)
+DOCX bytes  → docx-preview         → sanitized HTML    → DocxView  (NOT this pipeline)
+PPTX bytes  → pptx-renderer        → slide DOM         → PptxView  (NOT this pipeline)
+XLSX/XLS/ODS/CSV → hucre           → generated table   → SheetView (NOT this pipeline)
 ```
 
-Everything except mail becomes a `ViewerDoc`, so zoom / rotate / fit / annotations
-/ print / OCR / every export work through one set of paths. Mail is the deliberate
-exception: it reflows and has no page geometry (see "Email (.eml)").
+Everything except mail, Markdown and Office becomes a `ViewerDoc`, so zoom /
+rotate / fit / annotations / print / OCR / every export work through one set of
+paths. The others are the deliberate exception: they reflow and have no page
+geometry (see "Email (.eml)" and "Word and spreadsheets").
 
 Key points:
 - **pdfjs worker** is built in `src/services/pdfjsWorker.ts` — a blob URL wrapper that polyfills `Uint8Array.prototype.toHex` and `Map.prototype.getOrInsertComputed` before importing the real worker (both are absent in the Electron Chromium version but required by pdfjs 5.x). That module imports no pdfjs itself, so it stays off the startup path; `usePdfDocument` pulls it in with pdfjs on first document open.
@@ -198,7 +202,7 @@ get `target=_blank` + `rel=noopener`.
 **Attachments** download through `utils/download.ts`, and a PDF/HWP/image
 attachment can be opened straight into the viewer.
 
-### What the reflowing formats share (mail, Markdown)
+### What the reflowing formats share (mail, Markdown, Office)
 
 Neither becomes a `ViewerDoc`, and the whole toolbar used to hang off
 `hasPdf = !!pdfDoc` — so opening a `.md` or `.eml` silently hid print, zoom and
@@ -293,6 +297,191 @@ the render result uses. Locking again re-renders from the edited text, so the
 view and the source stay in step. Saving goes through the shared
 `pickSaveTarget`/`saveBlobTo` helpers, and only reports success once the write
 actually completed.
+
+### Office: Word, PowerPoint, spreadsheets (.docx / .pptx / .xlsx .xlsm .xls .ods .csv)
+
+Read-only views, kinds `docx`, `pptx` and `sheet`, on the same reflowing path as
+Markdown (`isFlowKind`, `isOfficeKind`): zoom (buttons, field, Ctrl+wheel), fit
+width, print, fullscreen, find and read-aloud work, and **Save as PDF** (below);
+there is no edit switch (`ActionBar` `canEdit`, false for these and for mail).
+Word and PowerPoint also get the page controls a PDF has (`ActionBar`
+`pagedFlow`): single / two-page / all-pages layouts, the page counter and the
+page list (`OfficePagePanel`). Each view fills `OfficeViewHandle`
+(`components/office/officeView.ts`) — `fitWidth`, `goTo`, `pdfJob` — through
+`handleRef`, and reports `{ count, current }` through `onPageInfo`; App routes
+the toolbar to it. Zoom 1 is the view's own fit (a whole slide; a Word page at
+100 % or the column's width), so the counter, fit and layouts behave as for a
+PDF. A zoom or layout change keeps the reading position (scroll fraction),
+not the pixel offset — otherwise "fit width" on slide 12 landed on slide 6.
+`usePdfDocument` hands the
+bytes over as `office: { kind, name, bytes }` and the views parse them, so
+no library is anywhere near another format's path — each lives only in its
+lazy `DocxView` / `PptxView` / `SheetView` chunk (entry chunk +1.2 KB for the
+wiring). **This viewer is for people who do not have Office**: nothing may be
+cut short with a "see the rest in Excel" — see the spreadsheet section.
+
+Libraries were chosen on last release, maintenance and advisories (Oct 2026):
+**docx-preview 0.4.1** (Apache-2.0) and **hucre 1.2.0** (MIT, zero deps). Not
+SheetJS: the npm build (0.18.5) carries two unpatched HIGH advisories, fixes
+ship only from its own CDN, and the free edition reads no styles. Not exceljs:
+no release since 2023. hucre also reads legacy `.xls` (BIFF5/8 — values and
+merges, no styles), which is why `.xls` is supported and `.doc`/`.ppt` are not.
+**@aiden0z/pptx-renderer 1.3.0** (Apache-2.0) for PowerPoint, picked for the
+visual regression suite it runs against PowerPoint's own output; it bundles
+ECharts/zrender for charts and MPL-2.0 `mtx-decompressor` (see
+THIRD_PARTY_NOTICES). Measured chunks: docx-preview 75 KB + DocxView 5 KB,
+SheetView 183 KB (all of hucre's readers), PptxView 1.11 MB (342 KB gzip,
+~610 KB of it ECharts).
+
+**Detection.** Office files are zips (`.xls` is OLE2, like `.hwp`).
+`detectDocType` reads the zip's central directory at the tail for
+`word/document.xml` / `ppt/presentation.xml` / `xl/workbook.xml`, after the
+HWPX `mimetype` check; OLE2 goes to the sheet reader only when named `.xls`
+and stays HWP otherwise.
+
+**Checked against the real thing.** Three real Korean proposal decks (7, 25,
+29 slides) were exported slide by slide with PowerPoint itself (COM
+`Slide.Export`) and compared with ours: layout, tables, badges, images and
+Korean text match; table cells occasionally wrap at a different word (font
+metrics). Six real Word forms and six real spreadsheets (a quote with logo and
+seal, a 215,897-row export, CP949 CSVs) were opened in the app. Driving Word
+over COM for reference PDFs hung on a hidden dialog — kill the process it
+started by PID if you try again.
+
+**Word is sanitized three ways** (`services/docxDoc.ts`), because docx-preview
+renders, it does not sanitize: it copies relationship targets into `<a href>`
+(`javascript:` included), shows altChunks in `<iframe srcdoc>`, and builds its
+stylesheet by string concatenation from values in the file.
+1. `renderDocument` into detached nodes (not `renderAsync`, which attaches),
+   with altChunks, comments and embedded fonts off.
+2. The body goes through DOMPurify plus a deny-by-default loading gate: only
+   `blob:` and `data:image` resources survive — all docx-preview makes itself.
+3. The CSS is parsed into a **constructed `CSSStyleSheet`** (never adopted, so
+   nothing applies or loads; `replaceSync` ignores `@import`) and rebuilt rule by
+   rule: every selector must contain `.wz-docx`, each `url()` must be local after
+   **resolving CSS escapes** (`\75 rl(` is `url(`). Escapes are not banned
+   outright — docx-preview writes `content: "\9"` for list suffixes. jsdom does
+   not parse `<style>` in a `createHTMLDocument` document, which is why this is
+   a constructed sheet: it is the one parser both Chromium and the tests have.
+
+**Word bullets are a private-use character.** A bulleted list stores
+`U+F0B7` in the Symbol font; Chromium draws nothing for it, so every list came
+out without bullets. `mapSymbolBullets` maps the Symbol/Wingdings code points to
+the Unicode characters they stand for, in our wrapper (docx-preview untouched).
+
+**Spreadsheets are a generated table** (`services/sheetDoc.ts`), built as an
+escaped string — tens of thousands of cells through React would be the slow
+part. Values come from `Sheet.rows` (dense, A1-origin), style from `cells`.
+What it reproduces: column widths (`w*7+5` px) and row heights, fonts, fills,
+theme/indexed colours, number formats (`formatValue`, plus our own Excel
+"General" — JS prints 16 digits), merges over hidden rows/columns, hidden
+sheets, hyperlinks (http/mailto only), formulas by their cached result.
+Font names are reduced to letters/digits/space/dash and colours to hex before
+they reach a style attribute, so a file cannot write its own CSS.
+Things that had to be decided rather than drawn:
+- **Borders are resolved per edge**, in a non-collapsing table: the heavier of
+  the two cells' sides, else a gridline, drawn once by the left/upper cell.
+  CSS's collapsing rules break a tie between a thin border and a gridline by
+  position, which dropped thin left borders.
+- **Text runs over empty neighbours** (`wz-spill`), as Excel draws a title in
+  A1. That needs an **explicit table width** (sum of columns): with
+  `width: max-content` the spilling text widened its own column instead.
+- **Column letters and row numbers are CSS** (`content: attr(data-l)`), so find,
+  copy and read-aloud see only cells.
+- **Pictures** (a logo, the red company seal on a quote) are drawn as an
+  absolutely positioned `<img>` inside the cell they are anchored to
+  (`td.wz-anchor`), so they land where the rows really are once laid out.
+  `data:` URLs; SVG is not drawn.
+- CSV is shown **as written** (`typeInference: false` — "007" stays "007"),
+  decoded as UTF-8 with a strict decoder and CP949 as the fallback, which is
+  what Korean Excel writes. Numeric-looking CSV text is right-aligned.
+- An encrypted workbook says so (`EncryptedWorkbookError`) rather than failing
+  generically.
+
+**Every row is shown — a big sheet is drawn a window at a time.** The first
+version capped a sheet at 200k cells and said "only the first 5,263 rows; see
+the rest in Excel" — meaningless in a viewer for people without Excel. Now:
+- `loadWorkbook` reads the whole workbook. Measured on a 58 MB, 215,897 x 38
+  export in an unthrottled Electron window: **7.4 s** to read (most of it
+  inflating a 277 MB sheet part), 24 ms to lay out, 18 ms to draw 300 rows.
+  hucre returns such a sheet without per-cell styles; values are all there.
+- `layoutSheet` returns everything row-independent (`tableOpen`, `rowTop`
+  prefix sums of declared heights) plus `rows(from, to)`. Over
+  `WHOLE_SHEET_CELLS` (60k) `SheetView` draws 100-row blocks around what is on
+  screen, with spacer rows standing in for the rest, and re-draws when scrolling
+  crosses a block. Position is measured from the page (`thead` height against its
+  declared 22 px gives the scale), so it holds at any zoom and in fullscreen.
+- A merge cut by the top of a window is **carried**: its anchor is re-emitted
+  in the first drawn row with the rows that remain (`covered` maps each
+  covered cell to its anchor).
+- **Find searches the data, not the DOM** (`services/flowSearchProvider.ts`).
+  `useFlowSearch` walks the DOM, which here holds only the drawn rows, so a
+  windowed `SheetView` registers a provider: `find` scans `layout.textAt` over
+  every cell (capped at 100k matching cells), `reveal` draws the block around
+  a match and paints it with the same `::highlight()` names. It scrolls to a
+  match **once per activation** (`scrolledSeq`) — scrolling on every re-draw
+  is exactly the snap-back bug recorded for PDF find.
+- Still windowed, and known: print and read-aloud cover the rows drawn.
+
+**PowerPoint** (`services/pptxDoc.ts`, `PptxView`). Each slide is rendered
+with `renderSlide` into a box React lays out, not through the library's
+`PptxViewer`, which owns its container's size and scroll. A slide is
+its intrinsic-size element scaled by `--wz-slide-scale` (`.wz-slide`), so zoom
+and resize change one custom property and re-render nothing; the default fits a
+whole slide in the window (a portrait A4 deck fitted to width alone was taller
+than the screen). **One slide costs 300–650 ms** — the library attaches it to
+the page to measure its text — so `PptxView` renders the slides on screen first
+and the rest on `requestIdleCallback`; front-to-back froze scrolling for ~10 s
+on a 25-slide deck. Fullscreen is a slideshow (`ReaderFullscreen
+layout="slides"`): one screen-sized snap section per slide, each key moves
+exactly one screen, drawings are wiped per slide, hidden slides are skipped.
+Pictures, video and audio a slide *links to* (`TargetMode="External"`) are
+loaded from the network by the library; the desktop CSP refuses them and
+`stripExternalMedia` removes them from the relationship parts before the model
+is built, for the web build. Printing re-fits slides to the page width
+(`--wz-slide-scale` in print CSS), and `printFlowDoc` repaints cloned canvases
+(`copyCanvases`), since `cloneNode` copies a chart's canvas but not its pixels.
+
+The views zoom with CSS `zoom` on a wrapper (sizes are absolute: pt, mm, px),
+and **not** on the element marked `FLOW_PRINT_ATTR` — print clones that element.
+`ReaderFullscreen` takes `layout="page"` for Word and sheets: no white card,
+scaled with `zoom` instead of font size. The slideshow (`layout="slides"`)
+**hides its scrollbar** (`.wz-no-scrollbar`): it took its width from the screen
+and a slide fitted to the whole screen overflowed into a scroll.
+
+**Word pages are split by height** (`services/docxPaginate.ts`). docx-preview
+breaks only where the file says — explicit breaks and Word's own
+`lastRenderedPageBreak` marks (`ignoreLastRenderedPageBreak: false`). A file
+Word never laid out (tool-generated; all six real samples) has neither and was
+one endless page: "1 / 1", one thumbnail, a PDF without margins after page 1.
+`paginateDocx` measures each page in the live DOM and moves what overflows the
+paper to a new page with the same header and footer, block by block and row by
+row through a table; a single block taller than a page stays put. It runs in
+`DocxView`'s layout effect, again whenever the body is remounted (fullscreen).
+
+**Save as PDF** (`services/officePdf.ts`). Each view builds a `PdfJob` — print-
+ready DOM plus `@page` rules — and `officeJobToPdf` puts it in `#wz-print-root`
+(the print stylesheet hides the app) and asks the main process to
+`printToPDF` the page (`print-to-pdf` IPC: `preferCSSPageSize`, zero margins,
+no options from the renderer). Text stays selectable. Checked in Electron with
+real files and read back with pdfjs: 25-slide deck → 25 pages at slide size
+(4.6 s, hidden slides left out, as PowerPoint does); landscape Word document →
+4 landscape pages, each Word page printed at its own size through a named
+`@page` (`wzpN`) with margin 0, since the page already carries Word's margins,
+header and footer (1.3 s); the quote with logo and seal → 1 page (0.5 s);
+50,000-row CSV → 1,050 pages (36.6 s). Sheets print as Excel saves a PDF: A4,
+18/19 mm margins, no gridlines or headings (`layoutSheet(..., { print: true })`,
+gridlines only if `pageSetup.showGridLines`), scaled to the paper's width,
+landscape when the sheet is wider than portrait — and a large sheet in
+3,000-row pieces, printed in turn and joined with pdf-lib.
+- **One print layout at a time.** printToPDF prints the whole page; two layouts
+  in it at once (Ctrl+S pressed twice) gave a deck PDF with every slide twice
+  and a next document's PDF that began with the deck. `withPrintLayout` queues,
+  and App guards the save with a ref (`officeSaveBusy`), not state.
+- Printing uses the same job (`printOfficeJob` → `window.print()`), so a slide
+  prints on slide-size paper; only a many-piece sheet falls back to the rows on
+  screen, with a toast pointing at the PDF save. The web build has no
+  printToPDF: its save opens the print dialog on the same layout.
 
 ### Coordinate system
 
@@ -418,6 +607,9 @@ The renderer bundle is split so the initial chunk only contains code needed for 
 | `services/imageExporter` | Export → Images | JSZip (~100 KB) only needed at export time |
 | `services/pdfPageService` | Page CRUD ops | Shares pdf-lib with the PDF exporter |
 | `services/hwpEngine` | Opening a HWP/HWPX file | @rhwp/core WASM; not loaded for PDF-only use |
+| `components/office/DocxView` | Opening a .docx | docx-preview (~75 KB) |
+| `components/office/SheetView` | Opening a spreadsheet | hucre readers (~180 KB) |
+| `components/office/PptxView` | Opening a .pptx | pptx-renderer + ECharts (~1.1 MB) |
 | `components/modals/SignaturePad` | Editor → Signature | Canvas drawing UI |
 | `components/modals/WatermarkConfig` | Editor → Watermark | Form UI |
 
@@ -894,15 +1086,36 @@ scattered selection — never a range that would claim pages it does not contain
 
 The current PDF can be exported as a standalone viewer exe in **both** the
 portable run and the NSIS-installed app. The trick: a portable SFX template
-is required as the base — the NSIS installer ships one in its resources.
+is required as the base — and since 1.24.0 the installer no longer ships one.
 
 `electron/main.ts` exposes `findViewerTemplate()` which resolves the template path:
 
 1. **Portable run:** `process.env.PORTABLE_EXECUTABLE_FILE` is set by electron-builder
    and points to the running SFX itself. Use that.
-2. **NSIS-installed run:** the env var is absent, but the installer bundled the
-   portable as `<install>/resources/viewer-template.exe` (see afterPack hook below).
-3. **Dev mode:** neither exists; `export-exe` IPC returns an error explaining the user must build first.
+2. **NSIS-installed run:** a verified copy in `userData/viewer-template/`. The
+   first time, `obtainViewerTemplate` asks (native dialog: download ~120 MB /
+   choose the file / cancel), then downloads `WZ_PDF_<version>.exe` from this
+   version's GitHub release (`electron/viewerTemplate.ts`, the same pinned,
+   re-vetted-per-redirect request as the TTS weights) — or adopts a file the
+   reader picks, for a machine without internet. Either is kept only if it
+   matches `resources/viewer-template.json`, which `scripts/afterPack.cjs`
+   writes from the very portable the release uploads (size + SHA-512), so the
+   expected hash comes from the installed app, never from the network.
+   Progress goes to the taskbar and to toasts (`viewer-template:progress`).
+   A `resources/viewer-template.exe` an update from ≤1.23.0 left behind is
+   ignored on purpose — it would be the old version's portable.
+3. **Dev mode:** none exists; `export-exe` IPC returns an error explaining the user must build first.
+
+**Why it is not bundled any more:** the bundled portable was ~136 MB of a
+~289 MB installer, for a feature most installs never use — and, changing with
+every release, it also made each automatic update download it again.
+
+**Testing the dialog over CDP:** call it through the UI (a real click on the
+export menu's EXE item). Invoking `window.electronAPI.exportExe` from
+`Runtime.evaluate` left the handler pending with no dialog — on 1.23.0 as well
+— so that path proves nothing either way. A dev or local build can never
+complete a download: its portable's hash differs from the released one, and the
+mismatch is refused (verified: "does not match this version", nothing kept).
 
 Export pipeline (regardless of source):
 
@@ -1015,16 +1228,34 @@ session once.
 `--win portable` then `--win nsis`. The order matters: NSIS's afterPack hook
 needs the portable artifact already on disk to embed.
 
-- `release/WZ_PDF_${version}.exe` — Portable single-file exe (~140 MB)
+- `release/WZ_PDF_${version}.exe` — Portable single-file exe (~119 MB)
   - Built first
-  - Acts as both a standalone launcher AND the template embedded by NSIS
+  - Acts as both a standalone launcher AND the Viewer EXE template the installed app downloads
   - `PORTABLE_EXECUTABLE_FILE` env-var is set automatically when launched
 
-- `release/WZ_PDF_Setup_${version}.exe` — NSIS installer (~280 MB; recommended for daily use)
+- `release/WZ_PDF_Setup_${version}.exe` — NSIS installer (~132 MB; recommended for daily use)
   - User chooses install path, creates Desktop + Start Menu shortcuts
   - Registers as a handler for `.pdf` files (`fileAssociations` in `electron-builder.json5`)
   - Maximum LZMA compression; only en-US/ko Electron locales bundled
-  - **Bundles the portable** as `resources/viewer-template.exe` so the installed app can still produce Viewer EXE exports — see `scripts/afterPack.cjs`
+  - Carries `resources/viewer-template.json` (the portable's name, size and SHA-512) instead of the portable itself — see "Viewer EXE feature"
+
+**What the installer weighs, and what was cut (1.24.0: 289.5 → 132.1 MB;
+portable 136.2 → 119.1 MB; installed 498 → 426 MB).** Measured, not guessed:
+the Electron binary alone is ~70 MB of installer and cannot shrink. Removed:
+- the bundled portable (above), −136 MB of installer;
+- `dxcompiler.dll` + `dxil.dll` (Chromium's WebGPU shader compiler, ~27 MB on
+  disk) in `afterPack` — nothing here uses WebGPU; `d3dcompiler_47.dll` stays,
+  ANGLE needs it;
+- wasm copies nothing loads, via `!` patterns in `files`: Vite emits the wasm
+  each library would fetch by default, but both engines are pointed at their
+  own folders (`wasmPaths` → `dist/ocr/wasm`, `hwpEngine` → `dist/hwp`), and
+  onnxruntime-web loads its JSEP build, never the plain one (~60 MB on disk).
+Each removal was checked by deleting the files from a packaged build and
+running OCR (recognised "INVOICE 2026 TOTAL 12500") and opening a HWPX, with no
+errors. Not removed, deliberately: OCR models (offline OCR is a promise),
+`LICENSES.chromium.html` (required, and 0.1 MB compressed). Still open: each of
+the two OCR chunks inlines its own ~10 MB OpenCV (main thread and worker), and
+`onnxruntime.dll` (~27 MB, read-aloud only) could be downloaded with the voice.
 
 The OS passes the double-clicked PDF path as a CLI argument; `electron/main.ts`
 picks it up via `process.argv` and sends `open-file` to the renderer.
@@ -1341,15 +1572,27 @@ useful or merely noisy on a long document; whether the read-aloud announcement
 that names the keys is heard before the speech starts talking over it; and
 whether the OCR announcements land at a helpful rate.
 
-### Console converters (`hwp2pdf`, `hwp2hwpx`, `hwpx2hwp`)
+### Console converters (`hwp2pdf`, `topdf`, `hwp2hwpx`, `hwpx2hwp`)
 
-Three batch converters installed beside the app and put on PATH by the
-installer. They share everything except how the conversion itself runs:
+Four batch converters installed beside the app and put on PATH by the
+installer. They share everything except how the conversion itself runs.
+
+**`topdf`** takes everything the app opens — HWP, Word, PowerPoint,
+spreadsheets, Markdown, mail, images — and is what the MCP server's
+`doc_to_pdf` drives. `cliBridge.documentToPdf` dispatches on the detected type
+and builds the same `PdfJob`s the views use (`officePdfJobs.ts`, `sheetPdf.ts`),
+so a file converted without a window is the file "Save as PDF" writes: Word is
+rendered, mounted and paginated in the hidden page before printing, a deck has
+every slide rendered, a workbook prints every visible non-empty sheet and joins
+them. Measured with the packaged app: 8 formats in one run, ~6 s in all. Two
+inputs that map to one output (`보고서.docx` and `보고서.hwp`) no longer collide:
+the later keeps its extension (`보고서.hwp.pdf`, `distinctOutputPath`). The
+per-file limit is 15 minutes, since a 215,897-row sheet is thousands of pages.
 
 - `cli/wzconvert.cs` → `build/<tool>.exe` (~6 KB each), built by
   `scripts/build-cli.cjs` with the **csc.exe that ships with Windows**, so the
   project still needs nothing but Node to build. **One source compiled under
-  three names**: each launcher picks its converter from its own file name
+  four names**: each launcher picks its converter from its own file name
   (checked against an allowlist, so a renamed copy cannot pass the app an
   arbitrary switch), which keeps the delicate part — re-quoting the command
   line — in one place. They exist only because `WZ PDF.exe` is a GUI-subsystem
@@ -1421,10 +1664,24 @@ Three things that cost real time to learn:
 
 ### MCP server (`mcp/`)
 
-Twelve tools; eleven are pure Node over pdf-lib/pdfjs, and `hwp_to_pdf` is not —
-converting HWP needs a browser canvas, so it shells out to the app's headless
-mode exactly as the `hwp2pdf` console tool does. That is why an agent gets the
-same PDF the GUI exports, text layer included.
+Fifteen tools. Eleven are pure Node over pdf-lib/pdfjs; `doc_get_text` and
+`doc_info` read every format the app opens; `doc_to_pdf` (any format) and
+`hwp_to_pdf` shell out to the app's headless mode exactly as the `topdf` /
+`hwp2pdf` console tools do, so an agent gets the same PDF the app saves, text
+included.
+
+**Reading documents runs in the server** (`mcp/src/docText.ts`): Word and
+PowerPoint XML through JSZip (`ooxmlText`: runs, paragraphs, table cells as
+tabs), slides in `sldIdLst` order with hidden ones marked and speaker notes
+from the notes page's body placeholder, spreadsheets through hucre with row
+paging (`startRow`/`maxRows`; a big sheet is read only one row past the
+window — the first rows of the 215,897-row export in 10 s), mail through the
+app's own `src/services/emlParser.ts`. Only HWP text needs the app (convert,
+then pdfjs). Reusing the parser across the package boundary is why
+`mcp/tsconfig.json` has `rootDir: ".."` and its tsc output is
+`dist/mcp/src/server.js`; the shipped bundle (esbuild) is unaffected. Checked on
+real files and through the shipped bundle over stdio; `tools.docs.test.ts`
+builds a fixture of each format.
 
 **Writes are `.pdf` only and never overwrite unless asked** (`overwrite: true`,
 advertised on every tool that writes). Without `MCP_SANDBOX_DIR` — the stdio
@@ -1723,10 +1980,10 @@ TypeScript's `Omit<T, K>` does not distribute over union types (it resolves to c
 `type OmitId<T> = T extends any ? Omit<T, 'id'> : never`
 
 ### Viewer EXE export — template resolution
-The `export-exe` IPC handler can't work in dev mode because no SFX template exists. In portable runs it uses `PORTABLE_EXECUTABLE_FILE`; in NSIS-installed runs it uses the bundled `resources/viewer-template.exe`. See `findViewerTemplate()` in `electron/main.ts`. To test the feature you must run a packaged build (either artifact).
+The `export-exe` IPC handler can't work in dev mode because no SFX template exists. In portable runs it uses `PORTABLE_EXECUTABLE_FILE`; in NSIS-installed runs it uses a verified copy in userData, fetched on first use (see "Viewer EXE feature"). See `findViewerTemplate()` in `electron/main.ts`. To test the feature you must run a packaged build (either artifact).
 
 ### build:exe sequencing — portable MUST build first
-The script in `package.json` runs `electron-builder --win portable` *and then* `electron-builder --win nsis` deliberately, not as one combined invocation. The NSIS `afterPack` hook (`scripts/afterPack.cjs`) embeds the portable artifact as `viewer-template.exe`, which requires the portable to already exist on disk. A combined invocation would share `win-unpacked/` and the template wouldn't be ready when NSIS packs.
+The script in `package.json` runs `electron-builder --win portable` *and then* `electron-builder --win nsis` deliberately, not as one combined invocation. The NSIS `afterPack` hook (`scripts/afterPack.cjs`) hashes the portable artifact into `viewer-template.json`, which requires the portable to already exist on disk. A combined invocation would share `win-unpacked/` and the template wouldn't be ready when NSIS packs.
 
 ### OCR assets + dev-vs-prod wasm path
 OCR models + onnxruntime-web wasm (~56 MB) live under `public/ocr/` and are **gitignored** — regenerate with `npm run setup:ocr` (`scripts/build-ocr-assets.py`, needs Python + pyyaml) before building. Similarly, the HWP WASM (`public/hwp/`) is **gitignored** — regenerate with `npm run setup:hwp` before building (this runs automatically as part of `build` and `build:exe`). It downloads the PP-OCRv5 detection tar, repackages the community Korean ONNX rec model (`monkt/paddleocr-onnx`) into the SDK's `inference.onnx`+`inference.yml` tar layout (image_shape **[3,48,320]** — the ONNX input height is 48, not the 32 its config.json claims), and copies the ort wasm.
@@ -1791,6 +2048,14 @@ green against code that no longer existed, and a brand-new export read as
 "not a function" until the electron project was recompiled. `vite.config.ts`
 now lists `.ts` first in `resolve.extensions`. If a main-process test ever
 fails in a way the source cannot explain, run `npm run electron:compile` first.
+
+### A running portable build stalls `build:exe` forever
+A portable exe started from `release/` to try a build keeps its own file open
+while the app is open. The next build writes the same name (same version), and
+electron-builder prints "output file is locked for writing (maybe by virus
+scanner) => waiting for unlock..." and waits with no end.
+`scripts/check-release-unlocked.cjs` runs first in `build:exe` and fails at
+once instead, naming the processes started from `release/`.
 
 ### Claude Code file locks during build
 The `claude.exe` agent process can hold open file handles to `release/win-unpacked/resources/app.asar` from previous Glob/Read tool calls, causing electron-builder to fail with "process cannot access the file because it is being used by another process". Before a `build:exe` run, either restart the Claude Code session or delete `release/` from a separate admin terminal. Also add the project folder to Windows Defender exclusions if real-time scanning is locking newly written asars.

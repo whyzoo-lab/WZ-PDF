@@ -9,6 +9,15 @@ interface ReaderFullscreenProps {
   children: React.ReactNode
   /** Called once the browser has actually left fullscreen. */
   onExit: () => void
+  /**
+   * `card` (the default) sets reflowing text on a white sheet and scales it by
+   * font size. `page` is for content that brings its own pages and sizes in
+   * absolute units — Word pages, a spreadsheet — so it is scaled as a whole.
+   * `slides` is a slideshow: the content brings one screen-sized section per
+   * slide, each key moves exactly one screen and snaps to it, and drawings are
+   * wiped on the way, since they belonged to the slide they were drawn on.
+   */
+  layout?: 'card' | 'page' | 'slides'
 }
 
 /** Presenting starts larger than reading: a slide is read from across a room. */
@@ -30,7 +39,7 @@ type Spot = { scale: number; x: number; y: number } | null
  * pages — `PresentationOverlay`, `PresentationHud` and the ZoomIt-style tool
  * keymap are all page-agnostic, so the presenter tools behave identically here.
  */
-export function ReaderFullscreen({ children, onExit }: ReaderFullscreenProps) {
+export function ReaderFullscreen({ children, onExit, layout = 'card' }: ReaderFullscreenProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(DEFAULT_SCALE)
   const [tool, setTool] = useState<PresentToolState>(DEFAULT_TOOL_STATE)
@@ -70,11 +79,13 @@ export function ReaderFullscreen({ children, onExit }: ReaderFullscreenProps) {
     return () => kb?.unlock?.()
   }, [])
 
+  const slides = layout === 'slides'
   const scrollByScreen = useCallback((dir: 1 | -1) => {
     const el = scrollRef.current
     if (!el) return
-    el.scrollBy({ top: dir * el.clientHeight * PAGE_SCROLL_RATIO, behavior: 'smooth' })
-  }, [])
+    if (slides) setStrokes([])
+    el.scrollBy({ top: dir * el.clientHeight * (slides ? 1 : PAGE_SCROLL_RATIO), behavior: 'smooth' })
+  }, [slides])
 
   // ── Presenter keymap ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -118,12 +129,16 @@ export function ReaderFullscreen({ children, onExit }: ReaderFullscreenProps) {
       if (e.key === 'PageUp' || e.key === 'ArrowLeft' || e.key === 'Backspace') {
         e.preventDefault(); scrollByScreen(-1); return
       }
-      if (e.key === 'Home') { e.preventDefault(); el?.scrollTo({ top: 0, behavior: 'smooth' }); return }
-      if (e.key === 'End') { e.preventDefault(); el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }
+      if (e.key === 'Home') {
+        e.preventDefault(); if (slides) setStrokes([]); el?.scrollTo({ top: 0, behavior: 'smooth' }); return
+      }
+      if (e.key === 'End') {
+        e.preventDefault(); if (slides) setStrokes([]); el?.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tool, strokes, spot, safeExit, scrollByScreen])
+  }, [tool, strokes, spot, safeExit, scrollByScreen, slides])
 
   // ── Spotlight follows the cursor ──────────────────────────────────────────
   useEffect(() => {
@@ -154,15 +169,22 @@ export function ReaderFullscreen({ children, onExit }: ReaderFullscreenProps) {
     <div className="fixed inset-0 z-50 bg-gray-900">
       <div
         ref={scrollRef}
-        className="h-full overflow-auto"
+        // A slideshow shows no scrollbar: it would take its width from the
+        // screen, and a slide fitted to the whole screen then overflowed it.
+        className={`h-full overflow-auto ${slides ? 'snap-y snap-mandatory wz-no-scrollbar' : ''}`}
         // While a drawing tool is armed the pointer belongs to the overlay, so
         // text selection under it would only produce accidental highlights.
         style={{ userSelect: isDrawingTool(tool.kind) ? 'none' : undefined }}
       >
         <div
-          className="mx-auto my-10 max-w-4xl bg-white px-12 py-10 shadow-2xl"
+          className={
+            slides ? ''
+              : layout === 'page' ? 'mx-auto my-10 w-fit'
+                : 'mx-auto my-10 max-w-4xl bg-white px-12 py-10 shadow-2xl'
+          }
           style={{
-            fontSize: `${scale}rem`,
+            // A slide is already fitted to the screen; +/- has nothing to size.
+            ...(slides ? {} : layout === 'page' ? { zoom: scale } : { fontSize: `${scale}rem` }),
             ...(spot ? spotZoomStyle(spot.scale, spot.x, spot.y) : {}),
           }}
         >

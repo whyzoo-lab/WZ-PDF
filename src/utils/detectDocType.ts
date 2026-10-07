@@ -22,6 +22,12 @@ function startsWith(bytes: Uint8Array, sig: number[]): boolean {
  */
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'avif', 'ico']
 const MARKDOWN_EXTS = ['md', 'markdown', 'mdown', 'mkd']
+/** Word documents. Only the XML format: legacy .doc has no light reader. */
+export const WORD_EXTS = ['docx']
+/** PowerPoint decks. Likewise XML only — no legacy .ppt. */
+export const SLIDE_EXTS = ['pptx']
+/** Spreadsheets hucre reads — legacy .xls included (values and merges only). */
+export const SHEET_EXTS = ['xlsx', 'xlsm', 'xls', 'ods', 'csv']
 
 /**
  * The `accept` list for every file picker that opens a document. It lived in
@@ -30,10 +36,12 @@ const MARKDOWN_EXTS = ['md', 'markdown', 'mdown', 'mkd']
  * from the menu filtered it out while F2 and double-click let it through.
  */
 export const DOCUMENT_ACCEPT =
-  'application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp,.md,.markdown,text/markdown'
+  'application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp,.md,.markdown,text/markdown,'
+  + '.docx,.pptx,.xlsx,.xlsm,.xls,.ods,.csv,text/csv'
 
 export function classifyDocFile(file: File): {
   isPdf: boolean; isHwp: boolean; isEml: boolean; isImage: boolean; isMarkdown: boolean
+  isOffice: boolean
   supported: boolean
 } {
   const name = file.name.toLowerCase()
@@ -43,9 +51,10 @@ export function classifyDocFile(file: File): {
   const isEml = file.type === 'message/rfc822' || name.endsWith('.eml')
   const isImage = file.type.startsWith('image/') || IMAGE_EXTS.includes(ext)
   const isMarkdown = file.type === 'text/markdown' || MARKDOWN_EXTS.includes(ext)
+  const isOffice = WORD_EXTS.includes(ext) || SLIDE_EXTS.includes(ext) || SHEET_EXTS.includes(ext)
   return {
-    isPdf, isHwp, isEml, isImage, isMarkdown,
-    supported: isPdf || isHwp || isEml || isImage || isMarkdown,
+    isPdf, isHwp, isEml, isImage, isMarkdown, isOffice,
+    supported: isPdf || isHwp || isEml || isImage || isMarkdown || isOffice,
   }
 }
 
@@ -62,17 +71,40 @@ function looksLikeEmail(head: string): boolean {
     .test(head)
 }
 
+/**
+ * Which Office package a zip is, from the part names in its central directory.
+ *
+ * The directory sits at the end of the archive and names every part, so its
+ * tail is where `word/document.xml` or `xl/workbook.xml` can be found without
+ * unzipping anything. A package too large for the window falls back to the
+ * extension, which is no worse than before.
+ */
+function officeZipKind(bytes: ArrayBuffer): 'docx' | 'pptx' | 'sheet' | null {
+  const tail = new TextDecoder('latin1').decode(
+    new Uint8Array(bytes.slice(Math.max(0, bytes.byteLength - 256 * 1024))),
+  )
+  if (tail.includes('word/document.xml')) return 'docx'
+  if (tail.includes('ppt/presentation.xml')) return 'pptx'
+  if (tail.includes('xl/workbook.xml') || tail.includes('xl/workbook.bin')) return 'sheet'
+  const head = new TextDecoder('latin1').decode(new Uint8Array(bytes.slice(0, 256)))
+  if (head.includes('application/vnd.oasis.opendocument.spreadsheet')) return 'sheet'
+  return null
+}
+
 /** Identify a document by magic bytes, with the file extension as tiebreaker. */
 export function detectDocType(
   name: string,
   bytes: ArrayBuffer,
-): 'pdf' | 'hwp' | 'eml' | 'image' | 'md' | 'unknown' {
+): 'pdf' | 'hwp' | 'eml' | 'image' | 'md' | 'docx' | 'pptx' | 'sheet' | 'unknown' {
   const head = new Uint8Array(bytes.slice(0, 16))
   const ext = name.toLowerCase().split('.').pop() ?? ''
 
   // Magic bytes are authoritative (a wrong/forced extension must not override them).
   if (startsWith(head, PDF)) return 'pdf'                    // %PDF
-  if (startsWith(head, OLE2)) return 'hwp'                   // .hwp binary (OLE2)
+  // OLE2 is a container, not a format: .hwp and legacy .xls both use it, and
+  // what tells them apart is a stream name deep inside. The extension decides
+  // between the two; anything else stays HWP, as it always was.
+  if (startsWith(head, OLE2)) return ext === 'xls' ? 'sheet' : 'hwp'
   if (startsWith(head, ZIP)) {
     // .hwpx is an OCF zip: the first entry is an uncompressed `mimetype` holding
     // `application/hwp+zip`. Sniffing that beats trusting the name — the Viewer
@@ -82,6 +114,8 @@ export function detectDocType(
       .decode(new Uint8Array(bytes.slice(0, 256)))
     if (zipHead.includes('application/hwp+zip')) return 'hwp'
     if (ext === 'hwpx') return 'hwp'
+    const office = officeZipKind(bytes)
+    if (office) return office
   }
   if (startsWith(head, PNG) || startsWith(head, JPEG) ||
       startsWith(head, GIF) || startsWith(head, BMP)) return 'image'
@@ -104,5 +138,8 @@ export function detectDocType(
   if (IMAGE_EXTS.includes(ext)) return 'image'
   // Markdown is plain text with no signature, so the name is all we have.
   if (MARKDOWN_EXTS.includes(ext)) return 'md'
+  if (WORD_EXTS.includes(ext)) return 'docx'
+  if (SLIDE_EXTS.includes(ext)) return 'pptx'
+  if (SHEET_EXTS.includes(ext)) return 'sheet'
   return 'unknown'
 }

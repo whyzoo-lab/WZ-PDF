@@ -5,6 +5,7 @@ import {
   expandInputs,
   isConvertible,
   outputPathFor,
+  distinctOutputPath,
   parseCliArgs,
   usageFor,
 } from './cli'
@@ -114,8 +115,11 @@ export async function runConversion(
   try {
     await withTimeout(backend.warmup(), backend.warmupTimeoutMs, 'startup')
 
+    // Outputs this run has written, so two inputs never land on one file.
+    const claimed = new Set<string>()
     for (const file of files) {
-      const output = outputPathFor(file, options.outDir, spec)
+      const output = distinctOutputPath(outputPathFor(file, options.outDir, spec), file.path, claimed)
+      claimed.add(path.resolve(output).toLowerCase())
       const name = path.basename(file.path)
 
       if (!isConvertible(file.path, spec)) {

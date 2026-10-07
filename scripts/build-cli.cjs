@@ -1,9 +1,9 @@
 /**
  * Compile the console launchers (cli/wzconvert.cs → build/<tool>.exe).
  *
- * One source becomes three executables — hwp2pdf, hwp2hwpx, hwpx2hwp — because
- * each decides what to convert from its own file name. Only the output name
- * differs between the three compilations.
+ * One source becomes four executables — hwp2pdf, topdf, hwp2hwpx, hwpx2hwp —
+ * because each decides what to convert from its own file name. Only the output
+ * name differs between the compilations.
  *
  * Uses the C# compiler that is part of Windows itself (.NET Framework 4.x), so
  * building WZ PDF still needs nothing beyond Node — no Visual Studio, no Rust,
@@ -25,7 +25,7 @@ const OUT_DIR = path.join(ROOT, 'build')
 
 /** Must match the `Tools` allowlist in cli/wzconvert.cs and the `flag` values
  *  of CONVERTERS in electron/cli.ts. */
-const TOOLS = ['hwp2pdf', 'hwp2hwpx', 'hwpx2hwp']
+const TOOLS = ['hwp2pdf', 'topdf', 'hwp2hwpx', 'hwpx2hwp']
 
 /** Both compilers ship with Windows; prefer the 64-bit one. */
 const CSC_CANDIDATES = [

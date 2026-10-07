@@ -9,6 +9,17 @@ import {
 } from '../services/documentSource'
 import { t } from '../i18n'
 
+/**
+ * A Word or spreadsheet file, handed to its view as bytes. The views parse
+ * them, since docx-preview needs the DOM to draw into anyway — and keeping
+ * both libraries out of this hook keeps them out of every other format's path.
+ */
+export interface OfficeSource {
+  kind: 'docx' | 'pptx' | 'sheet'
+  name: string
+  bytes: ArrayBuffer
+}
+
 interface UsePdfDocumentReturn {
   pdfDoc: ViewerDoc | null
   numPages: number
@@ -19,6 +30,8 @@ interface UsePdfDocumentReturn {
   email: ParsedEmail | null
   /** Raw Markdown source; set only when kind === 'md' (pdfDoc stays null). */
   markdown: string | null
+  /** Set only for kind 'docx' / 'pptx' / 'sheet' (pdfDoc stays null). */
+  office: OfficeSource | null
   /**
    * The document is encrypted and pdfjs is waiting for a password. `wrong` is
    * true on a second and later ask, i.e. the last attempt was rejected.
@@ -57,6 +70,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
   const [kind, setKind] = useState<DocKind>('pdf')
   const [email, setEmail] = useState<ParsedEmail | null>(null)
   const [markdown, setMarkdown] = useState<string | null>(null)
+  const [office, setOffice] = useState<OfficeSource | null>(null)
   const [passwordPrompt, setPasswordPrompt] = useState<{ wrong: boolean } | null>(null)
   const [documentPassword, setDocumentPassword] = useState<string | null>(null)
   /**
@@ -81,7 +95,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
       // Clearing document state when the source file is removed — intentional
       // effect-driven reset, not a cascading-render smell.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPdfDoc(null); setNumPages(0); setIsLoading(false); setError(null); setKind('pdf'); setEmail(null); setMarkdown(null)
+      setPdfDoc(null); setNumPages(0); setIsLoading(false); setError(null); setKind('pdf'); setEmail(null); setMarkdown(null); setOffice(null)
       return
     }
     let cancelled = false
@@ -110,6 +124,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
     type Loaded = {
       doc: ViewerDoc | null; kind: DocKind
       email: ParsedEmail | null; markdown: string | null
+      office?: OfficeSource
     }
 
     /**
@@ -256,6 +271,9 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
         }
         return { doc: null, kind: 'md', email: null, markdown: text }
       }
+      if (type === 'docx' || type === 'pptx' || type === 'sheet') {
+        return { doc: null, kind: type, email: null, markdown: null, office: { kind: type, name: file.name, bytes: buffer } }
+      }
       if (type === 'image') {
         // Images are page-like, so they become a one-page ViewerDoc and reuse
         // the whole viewer/annotate/export pipeline unchanged.
@@ -272,7 +290,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
     }
 
     load()
-      .then(({ doc, kind, email, markdown }) => {
+      .then(({ doc, kind, email, markdown, office }) => {
         loadedDoc = doc
         if (cancelled) { release(); return }
         setPdfDoc(doc)
@@ -280,6 +298,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
         setKind(kind)
         setEmail(email)
         setMarkdown(markdown)
+        setOffice(office ?? null)
         setIsLoading(false)
       })
       .catch(err => {
@@ -301,7 +320,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
   }, [file])
 
   return {
-    pdfDoc, numPages, isLoading, error, kind, email, markdown,
+    pdfDoc, numPages, isLoading, error, kind, email, markdown, office,
     passwordPrompt, submitPassword, cancelPassword, documentPassword,
   }
 }

@@ -16,8 +16,11 @@ import type { ConversionBackend } from './convertRunner'
 /** Loading the engine and the ~12 MB Korean fonts happens once, and on a cold
  *  machine takes far longer than any single conversion. */
 const WARMUP_TIMEOUT_MS = 300_000
-/** Give up on a single document rather than hanging the whole batch. */
-const PER_FILE_TIMEOUT_MS = 120_000
+/**
+ * Give up on a single document rather than hanging the whole batch. Long, now
+ * that `topdf` takes spreadsheets: a 215,897-row export is ~4,500 pages.
+ */
+const PER_FILE_TIMEOUT_MS = 900_000
 /** How long the hidden page gets to load at all. */
 const PAGE_LOAD_TIMEOUT_MS = 60_000
 /** How long to wait for the page to publish its converter entry point. */

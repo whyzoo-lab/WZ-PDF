@@ -10,7 +10,8 @@
  * Claude to relay to the user.
  */
 
-import { readFile, writeFile, realpath, stat } from 'node:fs/promises'
+import { readFile, writeFile, realpath, stat, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { realpathSync } from 'node:fs'
 import { resolve, basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,7 +23,10 @@ import { PDFDocument, PDFFont, StandardFonts, rgb, degrees } from '@cantoo/pdf-l
 import * as fontkit from 'fontkit'
 import { pdfjs, pdfWorkerSrc } from './pdfjs.js'
 
-import { convertHwpToPdf, pdfNameFor } from './hwp.js'
+import { convertHwpToPdf, convertToPdf, pdfNameFor } from './hwp.js'
+import {
+  DOCUMENT_EXTS, detectFormat, docxText, emlText, decodeText, pptxText, sheetText, type DocFormat,
+} from './docText.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -122,12 +126,14 @@ async function resolveOutputPath(p: string, overwrite = false): Promise<string> 
 // number fail with ENOENT in the shipped app. It reads the app's own copy out
 // of app.asar instead: the server runs on the app binary (ELECTRON_RUN_AS_NODE),
 // whose fs reads inside an asar, so the installer carries the font once.
-// In a checkout both src/ and the build/mcp bundle sit two levels below public/.
+// In a checkout both src/ and the build/mcp bundle sit two levels below public/;
+// mcp's own tsc output (dist/mcp/src/, see tsconfig.json) sits four.
 const KOREAN_FONT_CANDIDATES = process.env.MCP_KOREAN_FONT_PATH
   ? [resolve(process.env.MCP_KOREAN_FONT_PATH)]
   : [
       resolve(__dirname, '../app.asar/dist/fonts/NotoSansKR-Regular.otf'),
       resolve(__dirname, '../../public/fonts/NotoSansKR-Regular.otf'),
+      resolve(__dirname, '../../../../public/fonts/NotoSansKR-Regular.otf'),
     ]
 
 let _koFontBytes: Buffer | null = null
@@ -209,7 +215,10 @@ async function pdfInfo(args: { file: string }): Promise<string> {
 // ── Tool: pdf_get_text ──────────────────────────────────────────────────────
 
 async function pdfGetText(args: { file: string; pages?: number[] }): Promise<string> {
-  const bytes = await readInputFile(args.file)
+  return pdfTextFromBytes(await readInputFile(args.file), args.pages)
+}
+
+async function pdfTextFromBytes(bytes: Uint8Array, pages?: number[]): Promise<string> {
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(bytes),
     useWorkerFetch: false,
@@ -217,7 +226,7 @@ async function pdfGetText(args: { file: string; pages?: number[] }): Promise<str
   })
   const pdf = await loadingTask.promise
   try {
-    const targetPages = args.pages ?? Array.from({ length: pdf.numPages }, (_, i) => i + 1)
+    const targetPages = pages ?? Array.from({ length: pdf.numPages }, (_, i) => i + 1)
 
     const sections: string[] = []
     for (const pageNum of targetPages) {
@@ -704,6 +713,59 @@ export const tools = [
     },
   },
   {
+    name: 'doc_get_text',
+    description:
+      'Read the text of any document WZ PDF opens: PDF, HWP/HWPX, Word (.docx), PowerPoint (.pptx, '
+      + 'slide by slide with speaker notes), Excel/ODS/CSV (sheet by sheet, cells tab-separated, paged '
+      + 'by rows), Markdown and e-mail (.eml). HWP needs the WZ PDF desktop app.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Absolute path to the document.' },
+        pages: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'PDF/HWP: 1-based pages. PowerPoint: 1-based slides. Omit for all.',
+        },
+        sheet: {
+          type: ['string', 'number'],
+          description: 'Spreadsheets: sheet name or 1-based index. Omit for every visible sheet.',
+        },
+        startRow: { type: 'number', description: 'Spreadsheets: 1-based first row. Default 1.' },
+        maxRows: { type: 'number', description: 'Spreadsheets: rows per sheet. Default 500.' },
+        notes: { type: 'boolean', description: 'PowerPoint: include speaker notes. Default true.' },
+      },
+      required: ['file'],
+    },
+  },
+  {
+    name: 'doc_info',
+    description:
+      'Describe a document: its format, and pages, slides (and which are hidden), sheets (with row '
+      + 'counts), or an e-mail\'s subject, sender and attachments.',
+    inputSchema: {
+      type: 'object',
+      properties: { file: { type: 'string', description: 'Absolute path to the document.' } },
+      required: ['file'],
+    },
+  },
+  {
+    name: 'doc_to_pdf',
+    description:
+      'Convert a document to PDF exactly as the WZ PDF app saves it: HWP/HWPX, Word, PowerPoint '
+      + '(one slide per page, hidden slides left out), Excel/ODS/CSV (every visible sheet, as Excel '
+      + 'saves a PDF), Markdown, e-mail and images. Text stays selectable, so pdf_get_text and '
+      + 'pdf_search work on the result. Requires the WZ PDF desktop app.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Absolute path to the document.' },
+        output: { type: 'string', description: 'Where to write the PDF. Defaults to the same name beside the input.' },
+      },
+      required: ['file'],
+    },
+  },
+  {
     name: 'hwp_to_pdf',
     description:
       'Convert a Korean HWP or HWPX document to PDF. The result carries a real selectable text layer, '
@@ -752,6 +814,139 @@ async function hwpToPdf(args: Record<string, unknown>): Promise<string> {
     + `(${Math.round(result.bytes / 1024)} KB, selectable text)`
 }
 
+// ── Tools: any document ─────────────────────────────────────────────────────
+
+/** Read a caller's document after the same checks as every other input. */
+async function readDocument(file: string): Promise<{ path: string; bytes: Buffer; format: DocFormat }> {
+  if (!file) throw new Error('file is required')
+  const path = await realpath(lexicalSafePath(file))
+  assertInsideSandbox(path, file)
+  const ext = extname(path).toLowerCase().slice(1)
+  if (!DOCUMENT_EXTS.includes(ext)) {
+    throw new Error(`not a document WZ PDF opens (.${ext}); accepted: ${DOCUMENT_EXTS.map(e => '.' + e).join(' ')}`)
+  }
+  const bytes = await readInputFile(file)
+  return { path, bytes, format: detectFormat(path, bytes) }
+}
+
+/** HWP text: the app converts it (with its text layer) and pdfjs reads that. */
+async function hwpText(path: string, pages?: number[]): Promise<string> {
+  const scratch = await mkdtemp(join(tmpdir(), 'wzpdf-mcp-text-'))
+  try {
+    const pdf = join(scratch, pdfNameFor(path))
+    await convertToPdf(path, pdf, '--hwp2pdf')
+    return await pdfTextFromBytes(await readFile(pdf), pages)
+  } finally {
+    await rm(scratch, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+const kb = (bytes: number) => `${Math.round(bytes / 1024)} KB`
+
+async function docGetText(args: Record<string, unknown>): Promise<string> {
+  const { path, bytes, format } = await readDocument(String(args.file ?? ''))
+  const pages = Array.isArray(args.pages) ? args.pages.map(Number).filter(n => Number.isInteger(n)) : undefined
+  switch (format) {
+    case 'pdf':
+      return pdfTextFromBytes(bytes, pages)
+    case 'hwp':
+      return hwpText(path, pages)
+    case 'docx':
+      return (await docxText(bytes)).text || '(no text)'
+    case 'pptx': {
+      const withNotes = args.notes !== false
+      const slides = (await pptxText(bytes)).filter(s => !pages || pages.includes(s.number))
+      return slides.map(s => [
+        `── Slide ${s.number}${s.hidden ? ' (hidden)' : ''} ──`,
+        s.text || '(no text)',
+        withNotes && s.notes ? `[Notes]\n${s.notes}` : '',
+      ].filter(Boolean).join('\n')).join('\n\n')
+    }
+    case 'sheet': {
+      const sheet = typeof args.sheet === 'number' || typeof args.sheet === 'string' ? args.sheet : undefined
+      const sheets = await sheetText(bytes, basename(path), {
+        sheet,
+        startRow: typeof args.startRow === 'number' ? args.startRow : undefined,
+        maxRows: typeof args.maxRows === 'number' ? args.maxRows : undefined,
+      })
+      return sheets.map(s => {
+        const total = `${s.rowCount}${s.more ? '+' : ''}`
+        const span = s.toRow ? `rows ${s.fromRow}-${s.toRow} of ${total}` : `no rows in range (${total} rows)`
+        const next = s.more ? `\n(more rows follow: call again with startRow ${s.toRow + 1})` : ''
+        return `── Sheet "${s.name}"${s.hidden ? ' (hidden)' : ''}, ${span} ──\n${s.text}${next}`
+      }).join('\n\n')
+    }
+    case 'md':
+      return decodeText(bytes)
+    case 'eml': {
+      const m = emlText(bytes)
+      const head = [
+        `Subject: ${m.subject}`, `From: ${m.from}`, m.to && `To: ${m.to}`, m.cc && `Cc: ${m.cc}`, m.date && `Date: ${m.date}`,
+        m.attachments.length ? `Attachments: ${m.attachments.map(a => `${a.filename} (${kb(a.size)})`).join(', ')}` : '',
+      ].filter(Boolean).join('\n')
+      return `${head}\n\n${m.body}`
+    }
+    case 'image':
+      throw new Error('an image has no text layer; open it in WZ PDF and run OCR (R), then save it as PDF')
+    default:
+      throw new Error(`cannot read this file as a document: ${basename(path)}`)
+  }
+}
+
+async function docInfo(args: Record<string, unknown>): Promise<string> {
+  const { path, bytes, format } = await readDocument(String(args.file ?? ''))
+  const head = `${basename(path)} — ${kb(bytes.length)}`
+  switch (format) {
+    case 'pdf':
+      return pdfInfo({ file: String(args.file) })
+    case 'hwp':
+      return `${head}\nFormat: HWP/HWPX (Hancom). doc_get_text reads its text; doc_to_pdf converts it.`
+    case 'docx': {
+      const doc = await docxText(bytes)
+      const words = doc.text.split(/\s+/).filter(Boolean).length
+      return `${head}\nFormat: Word (.docx)\nPages: ${doc.pages ?? 'not recorded in the file'}\nWords: ${words}`
+    }
+    case 'pptx': {
+      const slides = await pptxText(bytes)
+      const hidden = slides.filter(s => s.hidden).map(s => s.number)
+      return `${head}\nFormat: PowerPoint (.pptx)\nSlides: ${slides.length}`
+        + (hidden.length ? `\nHidden slides: ${hidden.join(', ')}` : '')
+        + `\nSlides with speaker notes: ${slides.filter(s => s.notes).length}`
+    }
+    case 'sheet': {
+      // Every row is read to count them; the text itself is not kept.
+      const sheets = await sheetText(bytes, basename(path), { maxRows: Number.MAX_SAFE_INTEGER - 2 })
+      return `${head}\nFormat: spreadsheet\nSheets:\n`
+        + sheets.map((s, i) => `  ${i + 1}. "${s.name}" — ${s.rowCount} rows`).join('\n')
+    }
+    case 'md': {
+      const text = decodeText(bytes)
+      const headings = text.split('\n').filter(l => /^#{1,3}\s/.test(l)).slice(0, 30)
+      return `${head}\nFormat: Markdown\nLines: ${text.split('\n').length}`
+        + (headings.length ? `\nHeadings:\n${headings.map(h => '  ' + h).join('\n')}` : '')
+    }
+    case 'eml': {
+      const m = emlText(bytes)
+      return `${head}\nFormat: e-mail (.eml)\nSubject: ${m.subject}\nFrom: ${m.from}\nDate: ${m.date}\n`
+        + `Attachments: ${m.attachments.length ? m.attachments.map(a => a.filename).join(', ') : 'none'}`
+    }
+    case 'image':
+      return `${head}\nFormat: image. doc_to_pdf turns it into a one-page PDF.`
+    default:
+      return `${head}\nFormat: not recognised`
+  }
+}
+
+async function docToPdf(args: Record<string, unknown>): Promise<string> {
+  const { path, format } = await readDocument(String(args.file ?? ''))
+  if (format === 'pdf') throw new Error('already a PDF')
+  if (format === 'unknown') throw new Error(`cannot convert this file: ${basename(path)}`)
+  const requested = args.output ? String(args.output) : join(dirname(path), pdfNameFor(path))
+  const output = await resolveOutputPath(requested, args.overwrite === true)
+  const result = await convertToPdf(path, output, '--topdf')
+  return `Converted ${basename(path)} -> ${result.outputPath} (${kb(result.bytes)}, selectable text)`
+}
+
 // Every tool that writes gets the same opt-in to replace an existing file.
 for (const tool of tools) {
   const props = tool.inputSchema.properties as Record<string, unknown>
@@ -778,6 +973,9 @@ const handlers = {
   pdf_reorder_pages: pdfReorderPages,
   pdf_insert_blank: pdfInsertBlank,
   hwp_to_pdf: hwpToPdf,
+  doc_get_text: docGetText,
+  doc_info: docInfo,
+  doc_to_pdf: docToPdf,
 }
 
 export async function callTool(name: string, args: Record<string, unknown>): Promise<string> {

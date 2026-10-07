@@ -1,57 +1,64 @@
 /**
- * electron-builder afterPack hook.
+ * electron-builder afterPack hook — runs for each target, after win-unpacked
+ * is prepared and before it is packaged.
  *
- * Bundles the portable WZ_PDF_${version}.exe (built in an earlier
- * `electron-builder --win portable` run) into the NSIS-installed app's
- * `resources/` directory as `viewer-template.exe`. The main process uses
- * this template to create standalone "Viewer EXE" exports — without it,
- * the EXE Viewer feature only works from the portable launcher.
+ * 1. Removes Chromium's WebGPU shader compiler (dxcompiler.dll, dxil.dll —
+ *    ~27 MB on disk, ~7 MB in the installer). Nothing here uses WebGPU: OCR
+ *    runs onnxruntime-web on the wasm backend and read-aloud is native. Checked
+ *    in the packaged build with both removed: OCR recognized a test page and a
+ *    HWPX opened, with no errors. d3dcompiler_47.dll stays — ANGLE (the GPU
+ *    path for ordinary 2D drawing) needs it.
  *
- * Sequencing: `build:exe` runs portable first, then NSIS. afterPack is
- * called after each target's win-unpacked is prepared, before the final
- * package is assembled:
+ * 2. Describes the Viewer EXE template instead of carrying it. The installed
+ *    app used to bundle the portable as resources/viewer-template.exe —
+ *    ~136 MB of a ~289 MB installer, for a feature most installs never use,
+ *    and re-downloaded by every automatic update. The NSIS pass now writes
+ *    resources/viewer-template.json (file name, size, SHA-512 of the portable
+ *    this same build produced), and the app fetches and verifies the portable
+ *    the first time it is needed (electron/viewerTemplate.ts).
  *
- *   1. Portable build → nothing to bundle → this hook clears any stale copy.
- *   2. Portable artifact written to `release/WZ_PDF_${version}.exe`.
- *   3. NSIS build → this hook copies that artifact into resources.
- *
- * The pass is identified by the target being packed, NOT by whether the
- * portable artifact happens to exist. That older test was only correct on a
- * clean tree: rebuilding the same version meant the artifact already existed
- * during the portable pass, so the hook copied a 115 MB template into the
- * portable's own resources and the portable then packaged it — doubling both
- * artifacts on every rebuild (114 MB → 230 MB → 460 MB). CI never saw it
- * because each run starts from a fresh checkout.
+ * Sequencing: `build:exe` runs portable first, then NSIS, sharing
+ * win-unpacked. The pass is identified by the target being packed, never by
+ * whether the portable artifact exists — that older test copied a template
+ * into the portable's own resources on a rebuild and doubled both artifacts.
  */
 
-const fs   = require('fs')
-const path = require('path')
+const crypto = require('crypto')
+const fs     = require('fs')
+const path   = require('path')
+
+/** Chromium files only WebGPU needs. */
+const WEBGPU_ONLY = ['dxcompiler.dll', 'dxil.dll']
 
 exports.default = async function (context) {
   const { appOutDir, packager, targets } = context
   const version = packager.appInfo.version
-  const destPath = path.join(appOutDir, 'resources', 'viewer-template.exe')
+  const resources = path.join(appOutDir, 'resources')
+  const manifestPath = path.join(resources, 'viewer-template.json')
   const isNsisPass = (targets || []).some(target => target.name === 'nsis')
 
-  if (!isNsisPass) {
-    // Portable pass. win-unpacked is shared between the two invocations, so a
-    // template left behind by an earlier NSIS pass would be packaged into the
-    // portable itself. Remove it instead.
-    fs.rmSync(destPath, { force: true })
-    return
+  for (const name of WEBGPU_ONLY) {
+    const file = path.join(appOutDir, name)
+    if (fs.existsSync(file)) {
+      fs.rmSync(file, { force: true })
+      console.log(`[afterPack] Removed ${name} (WebGPU only)`)
+    }
   }
 
-  const portableTemplate = path.join(
-    packager.projectDir,
-    'release',
-    `WZ_PDF_${version}.exe`,
-  )
-  if (!fs.existsSync(portableTemplate)) {
-    console.warn('[afterPack] portable template missing — EXE Viewer export will be unavailable')
+  // Whatever an earlier pass left in the shared win-unpacked. The bundled
+  // template is gone for good; the manifest belongs to the installer only.
+  fs.rmSync(path.join(resources, 'viewer-template.exe'), { force: true })
+  fs.rmSync(manifestPath, { force: true })
+  if (!isNsisPass) return
+
+  const file = `WZ_PDF_${version}.exe`
+  const portable = path.join(packager.projectDir, 'release', file)
+  if (!fs.existsSync(portable)) {
+    console.warn('[afterPack] portable artifact missing — the installed app cannot make Viewer EXEs')
     return
   }
-
-  const sizeMB = (fs.statSync(portableTemplate).size / 1024 / 1024).toFixed(1)
-  fs.copyFileSync(portableTemplate, destPath)
-  console.log(`[afterPack] Bundled viewer-template.exe (${sizeMB} MB) → ${destPath}`)
+  const sha512 = crypto.createHash('sha512').update(fs.readFileSync(portable)).digest('base64')
+  const manifest = { version, file, size: fs.statSync(portable).size, sha512 }
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
+  console.log(`[afterPack] viewer-template.json → ${file} (${(manifest.size / 1048576).toFixed(1)} MB, fetched on first use)`)
 }

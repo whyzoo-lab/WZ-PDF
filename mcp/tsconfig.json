@@ -4,7 +4,11 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "outDir": "dist",
-    "rootDir": "src",
+    // The repo root, not src/: docText.ts reuses the app's mail parser
+    // (../src/services/emlParser.ts), so the build emits dist/mcp/src/… and
+    // dist/src/services/emlParser.js. The shipped server is bundled by
+    // scripts/build-mcp.cjs and does not depend on this layout.
+    "rootDir": "..",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -13,7 +17,7 @@
     "sourceMap": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../src/services/emlParser.ts"],
   // Tests run from source through the repo-root vitest; compiling them into
   // dist/ would ship vitest imports in the published server.
   "exclude": ["src/**/*.test.ts"]

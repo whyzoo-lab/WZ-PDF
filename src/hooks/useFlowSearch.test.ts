@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useFlowSearch } from './useFlowSearch'
 import { FLOW_PRINT_ATTR } from '../services/htmlPrint'
+import { setFlowSearchProvider } from '../services/flowSearchProvider'
 
 /**
  * The hook finds matches in whatever is marked as the printable document, so
@@ -117,5 +118,27 @@ describe('useFlowSearch', () => {
 
     act(() => { result.current.run('hong@example.com') })
     expect(result.current.total).toBe(1)
+  })
+
+  it('hands the search to a view that searches its own data', () => {
+    // A large sheet draws only the rows in sight, so the DOM holds none of the
+    // matches; the view registers a provider and the find bar steps through it.
+    mount('<p>nothing here matches</p>')
+    const revealed: number[] = []
+    const find = vi.fn(() => 3)
+    setFlowSearchProvider({ find, reveal: i => { revealed.push(i) }, clear: () => undefined })
+    try {
+      const { result } = renderHook(() => useFlowSearch(true))
+      act(() => { result.current.run('회사') })
+      expect(find).toHaveBeenCalledWith('회사')
+      expect(result.current.total).toBe(3)
+      act(() => { result.current.next() })
+      act(() => { result.current.next() })
+      act(() => { result.current.next() })
+      expect(result.current.activeIndex).toBe(0)
+      expect(revealed).toContain(2)
+    } finally {
+      setFlowSearchProvider(null)
+    }
   })
 })

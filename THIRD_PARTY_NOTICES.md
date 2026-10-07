@@ -61,6 +61,51 @@ offline under `public/ocr/` (models + onnxruntime-web wasm).
 
 ---
 
+## docx-preview — Apache License 2.0
+
+> Copyright Volodymyr Baydalka. Licensed under the Apache License, Version 2.0.
+> Source: <https://github.com/VolodymyrBaydalka/docxjs>. Used unmodified to
+> display Word (.docx) documents.
+
+Full license: `node_modules/docx-preview/LICENSE`
+
+---
+
+## @aiden0z/pptx-renderer — Apache License 2.0
+
+> Copyright aiden0z. Licensed under the Apache License, Version 2.0.
+> Source: <https://github.com/aiden0z/pptx-renderer>. Used unmodified to
+> display PowerPoint (.pptx) presentations.
+
+Full license: `node_modules/@aiden0z/pptx-renderer/LICENSE`. It bundles the
+components below, also unmodified; its own notices are in
+`node_modules/@aiden0z/pptx-renderer/THIRD_PARTY_NOTICES.md`.
+
+- **mtx-decompressor 1.8.0 — Mozilla Public License 2.0.** Distributed in
+  executable (bundled, minified) form without source modifications. The
+  corresponding source is available at
+  <https://github.com/ChristopherVR/mtx-decompressor/tree/v1.8.0>; the license
+  text is `node_modules/@aiden0z/pptx-renderer/licenses/mtx-decompressor-MPL-2.0.txt`.
+- **ECMA-376 DrawingML preset geometry** — a generated subset of the shape
+  definitions; notice in
+  `node_modules/@aiden0z/pptx-renderer/licenses/ECMA-text-copyright-notice.txt`.
+- **Apache ECharts 6.1.0 — Apache License 2.0** (charts in slides), and its
+  renderer **zrender 6.1.0 — BSD 3-Clause**. Copyright The Apache Software
+  Foundation / Baidu Inc. Full licenses: `node_modules/echarts/LICENSE`,
+  `node_modules/zrender/LICENSE`.
+
+---
+
+## hucre — MIT License
+
+> Copyright (c) 2026 productdevbook. Licensed under the MIT License.
+> Source: <https://github.com/productdevbook/hucre>. Used unmodified to read
+> spreadsheets (.xlsx, .xls, .ods, .csv).
+
+Full license: `node_modules/hucre/LICENSE`
+
+---
+
 ## ONNX Runtime Web — onnxruntime-web — MIT License
 
 > Copyright (c) Microsoft Corporation. Licensed under the MIT License.

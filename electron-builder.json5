@@ -109,7 +109,18 @@
     "node_modules/lazy-val/**/*",
     "node_modules/lodash.escaperegexp/**/*",
     "node_modules/lodash.isequal/**/*",
-    "node_modules/tiny-typed-emitter/**/*"
+    "node_modules/tiny-typed-emitter/**/*",
+    // Copies nothing loads, verified by removing them from a packaged build and
+    // running OCR and opening a HWPX (no errors, same results):
+    //  - Vite emits the wasm a library would fetch by default, but the app
+    //    points both engines at their own folders (wasmPaths -> dist/ocr/wasm,
+    //    hwpEngine -> dist/hwp), so these hashed copies are never requested;
+    //  - onnxruntime-web loads its JSEP build, so the plain one is never used.
+    // ~60 MB on disk, ~7 MB in the installer.
+    "!dist/assets/ort-wasm-simd-threaded.jsep-*.wasm",
+    "!dist/assets/rhwp_bg-*.wasm",
+    "!dist/ocr/wasm/ort-wasm-simd-threaded.wasm",
+    "!dist/ocr/wasm/ort-wasm-simd-threaded.mjs"
   ],
 
   // Keep the big, lazily-loaded binaries OUT of the asar. They are only read
@@ -166,6 +177,11 @@
     { "ext": "eml",      "name": "WZPDF.eml",     "description": "E-mail Message",             "role": "Viewer", "icon": "build/icon.ico" },
     { "ext": "md",       "name": "WZPDF.md",      "description": "Markdown Document",          "role": "Viewer", "icon": "build/icon.ico" },
     { "ext": "markdown", "name": "WZPDF.markdown","description": "Markdown Document",          "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "docx",     "name": "WZPDF.docx",    "description": "Word Document",              "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "pptx",     "name": "WZPDF.pptx",    "description": "PowerPoint Presentation",    "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "xlsx",     "name": "WZPDF.xlsx",    "description": "Excel Workbook",             "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "xls",      "name": "WZPDF.xls",     "description": "Excel 97-2003 Workbook",     "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "csv",      "name": "WZPDF.csv",     "description": "CSV File",                   "role": "Viewer", "icon": "build/icon.ico" },
     // Images open as one-page documents, so they belong here too. If owning
     // picture files ever feels intrusive, these six lines are the whole change.
     { "ext": "png",      "name": "WZPDF.png",     "description": "PNG Image",                  "role": "Viewer", "icon": "build/icon.ico" },
@@ -181,10 +197,11 @@
   // exactly one. Sequencing matters: NSIS's afterPack hook needs the portable
   // artifact already on disk to bundle it as viewer-template.exe.
   // The console launchers sit beside WZ PDF.exe (each locates the app relative
-  // to itself, and picks its converter from its own file name). All three are
-  // the same ~5 KB program compiled under three names by scripts/build-cli.cjs.
+  // to itself, and picks its converter from its own file name). All four are
+  // the same ~5 KB program compiled under four names by scripts/build-cli.cjs.
   "extraFiles": [
     { "from": "build/hwp2pdf.exe",  "to": "hwp2pdf.exe" },
+    { "from": "build/topdf.exe",    "to": "topdf.exe" },
     { "from": "build/hwp2hwpx.exe", "to": "hwp2hwpx.exe" },
     { "from": "build/hwpx2hwp.exe", "to": "hwpx2hwp.exe" }
   ],

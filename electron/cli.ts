@@ -47,6 +47,18 @@ export const CONVERTERS: readonly ConverterSpec[] = [
     summary: 'convert HWP/HWPX documents to PDF',
   },
   {
+    // Everything the app opens, through the same layouts as saving it from the
+    // app: Word, PowerPoint, spreadsheets, Markdown, mail, images, and HWP.
+    flag: '--topdf',
+    name: 'topdf',
+    sourceExts: [
+      'hwp', 'hwpx', 'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods', 'csv',
+      'md', 'markdown', 'eml', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp',
+    ],
+    targetExt: 'pdf',
+    summary: 'convert documents (HWP, Word, PowerPoint, Excel, CSV, Markdown, mail, images) to PDF',
+  },
+  {
     flag: '--hwp2hwpx',
     name: 'hwp2hwpx',
     sourceExts: ['hwp'],
@@ -320,6 +332,19 @@ export function expandInputs({ inputs, spec, recurse = true, probe = nodeProbe }
 }
 
 /** Where the converted file for `file` goes. */
+/**
+ * The output for an input whose plain name another input of the same run has
+ * already taken. `topdf` takes many formats, so `보고서.docx` and `보고서.hwp` in
+ * one folder both map to `보고서.pdf`: the second used to be skipped as
+ * "exists" — or, with -f, written over the first. It keeps its source
+ * extension instead (`보고서.hwp.pdf`), so both survive.
+ */
+export function distinctOutputPath(output: string, inputPath: string, claimed: Set<string>): string {
+  const key = (p: string) => path.resolve(p).toLowerCase()
+  if (!claimed.has(key(output))) return output
+  return path.join(path.dirname(output), path.basename(inputPath) + path.extname(output))
+}
+
 export function outputPathFor(
   file: ExpandedFile,
   outDir: string | null,

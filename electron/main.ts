@@ -6,6 +6,10 @@ import path from 'path'
 import fs from 'fs'
 import { RecentFilesStore, isRecentCandidate } from './recentFiles'
 import { registerUpdateIpc, startAutoUpdate } from './autoUpdate'
+import {
+  TemplateMismatchError, adoptTemplate, cachedTemplate, downloadTemplate, pruneOtherVersions, readManifest,
+  type TemplateManifest,
+} from './viewerTemplate'
 import { cliToolName, hasCliFlag, runCli } from './cliRunner'
 import { shutdown as shutdownTts, synthesize as synthesizeSpeech } from './ttsEngine'
 import { downloadModel, isVoiceId, modelStatus } from './ttsModel'
@@ -262,34 +266,87 @@ async function readExactly(
 }
 
 /**
- * Find the portable-SFX template to use as the viewer EXE base.
+ * The portable exe a Viewer EXE is made from.
  *
- * Two scenarios:
+ * 1. Running from the portable itself (`PORTABLE_EXECUTABLE_FILE`) — use it.
+ * 2. Otherwise a verified copy kept in userData (see electron/viewerTemplate.ts).
  *
- * 1. Running from the portable exe itself — `PORTABLE_EXECUTABLE_FILE` is
- *    set by electron-builder and points to the running SFX. Use that.
+ * A `resources/viewer-template.exe` bundled by an install up to 1.23.0 is
+ * deliberately not used: if an update left it behind it would be the *old*
+ * version's portable, and every Viewer EXE would quietly be built from it.
  *
- * 2. Running from the NSIS-installed app — no env var, but the installer
- *    bundled the portable as `<resources>/viewer-template.exe` via the
- *    afterPack hook. Use that.
- *
- * Returns `null` in dev mode (no template available; the feature is gated
- * on `window.electronAPI` in the renderer anyway).
+ * Null when none is on disk yet; `manifest` then says what to fetch (absent in
+ * a development run, where there is no release to fetch from).
  */
-function findViewerTemplate(): string | null {
+async function findViewerTemplate(): Promise<{ path: string | null; manifest: TemplateManifest | null }> {
   const portableEnv = process.env['PORTABLE_EXECUTABLE_FILE']
-  if (portableEnv && fs.existsSync(portableEnv)) {
-    return portableEnv
-  }
+  if (portableEnv && fs.existsSync(portableEnv)) return { path: portableEnv, manifest: null }
+  if (!app.isPackaged) return { path: null, manifest: null }
+  const manifest = await readManifest(process.resourcesPath, app.getVersion())
+  if (!manifest) return { path: null, manifest: null }
+  return { path: await cachedTemplate(app.getPath('userData'), manifest), manifest }
+}
 
-  if (app.isPackaged) {
-    const bundled = path.join(process.resourcesPath, 'viewer-template.exe')
-    if (fs.existsSync(bundled)) {
-      return bundled
+/**
+ * Get the portable onto this machine the first time a Viewer EXE is made: ask,
+ * then download it — or take one the reader picks, for a machine without
+ * internet. Resolves the template path, or null if the reader declined.
+ */
+async function obtainViewerTemplate(sender: Electron.WebContents, manifest: TemplateManifest): Promise<string | null> {
+  const owner = BrowserWindow.fromWebContents(sender)
+  const ko = app.getLocale().toLowerCase().startsWith('ko')
+  const mb = Math.round(manifest.size / 1048576)
+  const options = {
+    type: 'question' as const,
+    buttons: ko ? [`내려받기 (약 ${mb}MB)`, '파일 직접 선택…', '취소'] : [`Download (about ${mb} MB)`, 'Choose the file…', 'Cancel'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+    title: 'WZ PDF',
+    message: ko ? '뷰어 EXE를 만들려면 원본 프로그램이 필요합니다' : 'Making a Viewer EXE needs the portable program',
+    detail: ko
+      ? `처음 한 번만 WZ PDF 무설치판(${manifest.file}, 약 ${mb}MB)을 GitHub에서 내려받아 이 PC에 보관합니다. 다음부터는 바로 만들어집니다.\n\n인터넷이 안 되는 PC라면 같은 버전의 무설치판 파일을 직접 선택하세요.`
+      : `Just once, the WZ PDF portable (${manifest.file}, about ${mb} MB) is downloaded from GitHub and kept on this PC. After that, Viewer EXEs are made straight away.\n\nOn a PC without internet, choose the portable file of the same version instead.`,
+  }
+  const { response } = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options)
+  const userData = app.getPath('userData')
+  await pruneOtherVersions(userData, manifest)
+
+  if (response === 1) {
+    const { filePaths, canceled } = await dialog.showOpenDialog({
+      title: manifest.file,
+      filters: [{ name: 'WZ PDF', extensions: ['exe'] }],
+      properties: ['openFile'],
+    })
+    if (canceled || !filePaths[0]) return null
+    try {
+      return await adoptTemplate(userData, manifest, filePaths[0])
+    } catch (err) {
+      throw new Error(ko ? `선택한 파일이 이 버전의 무설치판(${manifest.file})이 아닙니다.` : `That file is not this version's portable (${manifest.file}).`, { cause: err })
     }
   }
+  if (response !== 0) return null
 
-  return null
+  let lastPercent = -1
+  try {
+    return await downloadTemplate(userData, manifest, AbortSignal.timeout(30 * 60 * 1000), fraction => {
+      const percent = Math.floor(fraction * 100)
+      if (percent === lastPercent) return
+      lastPercent = percent
+      owner?.setProgressBar(fraction)
+      if (!sender.isDestroyed()) sender.send('viewer-template:progress', percent)
+    })
+  } catch (err) {
+    if (err instanceof TemplateMismatchError) {
+      throw new Error(ko
+        ? `내려받은 파일이 이 버전(${manifest.version})의 무설치판과 일치하지 않아 사용하지 않았습니다.`
+        : `The downloaded file is not this version's (${manifest.version}) portable, so it was not used.`, { cause: err })
+    }
+    const reason = err instanceof Error ? err.message : String(err)
+    throw new Error(ko ? `원본 프로그램을 내려받지 못했습니다 (${reason}).` : `Could not download the portable (${reason}).`, { cause: err })
+  } finally {
+    owner?.setProgressBar(-1)
+  }
 }
 
 async function extractEmbeddedPdf(): Promise<Buffer | null> {
@@ -335,6 +392,23 @@ async function extractEmbeddedPdf(): Promise<Buffer | null> {
 }
 
 // ── IPC: export-exe ─────────────────────────────────────────────────────────
+// ── Office → PDF ──────────────────────────────────────────────────────────
+// Prints the renderer's own page to PDF. The renderer has already put the
+// document into #wz-print-root with its @page rules (src/services/officePdf.ts);
+// this only asks Chromium to lay that out on paper. Nothing here takes a path or
+// options from the renderer: the page size and margins come from that page's
+// CSS (`preferCSSPageSize`), and the bytes go back to be saved where the reader
+// picks. Text stays text — selectable and searchable in the result.
+ipcMain.handle('print-to-pdf', async (event) => {
+  assertTrustedIpcSender(event)
+  const pdf = await event.sender.printToPDF({
+    preferCSSPageSize: true,
+    printBackground: true,
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
+  })
+  return pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength)
+})
+
 ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
   assertTrustedIpcSender(event)
   if (!(pdfData instanceof ArrayBuffer)) {
@@ -348,7 +422,16 @@ ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
     throw new Error('Invalid PDF signature')
   }
 
-  const baseExe = findViewerTemplate()
+  const found = await findViewerTemplate()
+  let baseExe = found.path
+  if (!baseExe && found.manifest) {
+    try {
+      baseExe = await obtainViewerTemplate(event.sender, found.manifest)
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
+    if (!baseExe) return { success: false, canceled: true }
+  }
   if (!baseExe) {
     return {
       success: false,

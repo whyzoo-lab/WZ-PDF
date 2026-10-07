@@ -2,8 +2,8 @@
 export const ko = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'PDF를 쉽고 빠르게',
-  'empty.desktop': 'PDF · HWP · EML · 이미지 · Markdown을 여기에 드래그하거나 파일 열기 버튼 또는 F2를 누르세요',
-  'empty.mobile': '탭하거나 파일 열기 버튼으로 PDF · HWP · EML · 이미지 · Markdown을 여세요',
+  'empty.desktop': 'PDF · HWP · Word · Excel · PowerPoint · EML · 이미지 · Markdown을 여기에 드래그하거나 파일 열기 버튼 또는 F2를 누르세요',
+  'empty.mobile': '탭하거나 파일 열기 버튼으로 PDF · HWP · Word · Excel · PowerPoint · EML · 이미지 · Markdown을 여세요',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': '한 장 보기',
@@ -67,6 +67,7 @@ export const ko = {
   'export.htmlDone': 'HTML 저장 완료 — {name}',
   'export.imagesDone': '이미지 저장 완료 — {name}',
   'export.exeDone': 'EXE Viewer 저장 완료',
+  'export.exeDownloading': '뷰어 EXE 원본을 내려받는 중… {percent}%',
   'export.imagesFailed': '이미지 내보내기 실패: {error}',
   'export.htmlFailed': 'HTML 내보내기 실패: {error}',
   'export.htmlTooLarge': '{limit}가 넘는 PDF는 HTML로 내보낼 수 없습니다. 받는 쪽 브라우저가 열 수 있는 크기를 넘습니다.',
@@ -274,4 +275,18 @@ export const ko = {
   'history.redone': '다시 실행했습니다',
   'panel.deleted': '{n}쪽을 삭제했습니다. Ctrl+Z로 되돌릴 수 있습니다.',
   'md.editHint': '편집 잠금을 풀면 원본을 그대로 수정할 수 있습니다.',
+  // ── Word / Excel (read-only views) ────────────────────────────────────────
+  'office.docxFailed': '이 Word 문서를 표시할 수 없습니다.',
+  'office.sheetFailed': '이 스프레드시트를 표시할 수 없습니다.',
+  'office.sheetEncrypted': '암호로 보호된 통합 문서는 열 수 없습니다. Excel에서 암호를 해제한 뒤 다시 열어 주세요.',
+  'office.sheetEmpty': '빈 시트입니다.',
+  'office.sheets': '시트',
+  'office.savePdf': 'PDF로 저장 (Ctrl+S)',
+  'office.pdfProgress': 'PDF로 저장하는 중… {percent}%',
+  'office.pdfSaved': 'PDF로 저장했습니다 — {name}',
+  'office.pdfFailed': 'PDF로 저장하지 못했습니다: {error}',
+  'office.printLarge': '행이 많아 화면에 보이는 부분만 인쇄합니다. 시트 전체는 "PDF로 저장"으로 만든 뒤 인쇄하세요.',
+  'office.pptxFailed': '이 PowerPoint 파일을 표시할 수 없습니다.',
+  'office.slide': '슬라이드 {n}',
+  'office.slideHidden': '숨긴 슬라이드',
 } as const

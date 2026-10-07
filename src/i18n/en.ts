@@ -2,8 +2,8 @@
 export const en = {
   // ── Branding / empty state ────────────────────────────────────────────────
   'app.tagline': 'Fast and simple PDF',
-  'empty.desktop': 'Drag a PDF · HWP · EML · image · Markdown here, or click Open / press F2',
-  'empty.mobile': 'Tap or use the Open button to open a PDF · HWP · EML · image · Markdown',
+  'empty.desktop': 'Drag a PDF · HWP · Word · Excel · PowerPoint · EML · image · Markdown here, or click Open / press F2',
+  'empty.mobile': 'Tap or use the Open button to open a PDF · HWP · Word · Excel · PowerPoint · EML · image · Markdown',
 
   // ── Toolbar tooltips (title / aria-label) ─────────────────────────────────
   'tool.single': 'Single page',
@@ -67,6 +67,7 @@ export const en = {
   'export.htmlDone': 'HTML saved — {name}',
   'export.imagesDone': 'Images saved — {name}',
   'export.exeDone': 'EXE Viewer saved',
+  'export.exeDownloading': 'Downloading the Viewer EXE template… {percent}%',
   'export.imagesFailed': 'Image export failed: {error}',
   'export.htmlFailed': 'HTML export failed: {error}',
   'export.htmlTooLarge': 'A PDF over {limit} cannot be exported as HTML: it is more than a browser can open that way.',
@@ -274,4 +275,18 @@ export const en = {
   'history.redone': 'Redone',
   'panel.deleted': 'Deleted {n} page(s). Press Ctrl+Z to undo.',
   'md.editHint': 'Unlock editing to change the source directly.',
+  // ── Word / Excel (read-only views) ────────────────────────────────────────
+  'office.docxFailed': 'This Word document cannot be displayed.',
+  'office.sheetFailed': 'This spreadsheet cannot be displayed.',
+  'office.sheetEncrypted': 'Password-protected workbooks cannot be opened. Remove the password in Excel and open it again.',
+  'office.sheetEmpty': 'This sheet is empty.',
+  'office.sheets': 'Sheets',
+  'office.savePdf': 'Save as PDF (Ctrl+S)',
+  'office.pdfProgress': 'Saving as PDF… {percent}%',
+  'office.pdfSaved': 'Saved as PDF — {name}',
+  'office.pdfFailed': 'Could not save as PDF: {error}',
+  'office.printLarge': 'This sheet has too many rows to print at once, so the rows on screen are printed. Save it as PDF to print all of it.',
+  'office.pptxFailed': 'This PowerPoint file cannot be displayed.',
+  'office.slide': 'Slide {n}',
+  'office.slideHidden': 'hidden slide',
 } as const

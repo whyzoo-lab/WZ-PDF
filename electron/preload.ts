@@ -59,6 +59,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Copies the running portable exe and appends the PDF bytes to it.
    * Only works in the packaged portable build (PORTABLE_EXECUTABLE_FILE must be set).
    */
+  /** Percent of the Viewer EXE template downloaded, while the first export fetches it. */
+  onViewerTemplateProgress: (callback: (percent: number) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, percent: unknown) => {
+      if (typeof percent === 'number') callback(percent)
+    }
+    ipcRenderer.on('viewer-template:progress', handler)
+    return () => ipcRenderer.removeListener('viewer-template:progress', handler)
+  },
   exportExe: (pdfData: ArrayBuffer): Promise<{
     success: boolean
     canceled?: boolean
@@ -68,6 +76,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // (No print IPC: the renderer calls window.print() directly so the Chrome
   // print-preview UI shows up in the desktop app instead of the OS dialog.)
+
+  /**
+   * This page, as laid out for print, as PDF bytes — how Word, PowerPoint and
+   * spreadsheets are saved as PDF (see src/services/officePdf.ts).
+   */
+  printToPdf: (): Promise<ArrayBuffer> => ipcRenderer.invoke('print-to-pdf'),
 
   // ── Help ────────────────────────────────────────────────────────────────
   /** Open the help document in the user's default browser (lang: 'ko' | 'en'). */

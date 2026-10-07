@@ -91,3 +91,38 @@ describe('detectDocType — content wins over a misleading name', () => {
     expect(detectDocType('document.pdf', enc('%PDF-1.7\nFrom: x'))).toBe('pdf')
   })
 })
+
+describe('detectDocType — Office', () => {
+  const zipWith = (...names: string[]) => {
+    // A zip's central directory names every part; a tail holding those names is
+    // all the sniffer reads.
+    const text = names.join('\0')
+    const bytes = new Uint8Array(4 + text.length)
+    bytes.set([0x50, 0x4B, 0x03, 0x04])
+    for (let i = 0; i < text.length; i++) bytes[4 + i] = text.charCodeAt(i)
+    return bytes.buffer
+  }
+  it('tells Word from Excel by the parts inside, whatever the name says', () => {
+    expect(detectDocType('a.zip', zipWith('[Content_Types].xml', 'word/document.xml'))).toBe('docx')
+    expect(detectDocType('report.docx', zipWith('[Content_Types].xml', 'xl/workbook.xml'))).toBe('sheet')
+    expect(detectDocType('deck.zip', zipWith('[Content_Types].xml', 'ppt/presentation.xml'))).toBe('pptx')
+  })
+  it('still sends a HWPX zip to the HWP engine', () => {
+    expect(detectDocType('a.docx', zipWith('mimetypeapplication/hwp+zip'))).toBe('hwp')
+  })
+  it('routes OLE2 named .xls to the spreadsheet reader and everything else to HWP', () => {
+    const ole2 = buf(0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1)
+    expect(detectDocType('old.xls', ole2)).toBe('sheet')
+    expect(detectDocType('a.hwp', ole2)).toBe('hwp')
+  })
+  it('opens CSV by its extension', () => {
+    expect(detectDocType('a.csv', buf(0x61, 0x2C, 0x62))).toBe('sheet')
+  })
+  it('accepts Office files at the open dialog', () => {
+    for (const name of ['a.docx', 'a.pptx', 'a.xlsx', 'a.xls', 'a.ods', 'a.csv']) {
+      expect(classifyDocFile(new File([], name)).supported, name).toBe(true)
+    }
+    expect(classifyDocFile(new File([], 'a.doc')).supported).toBe(false)
+    expect(classifyDocFile(new File([], 'a.ppt')).supported).toBe(false)
+  })
+})
