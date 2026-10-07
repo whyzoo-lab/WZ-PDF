@@ -15,7 +15,12 @@
     "resolveJsonModule": true,
     "declaration": false,
     "sourceMap": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    // ../src/services/ooxmlText.ts imports jszip, and from there the lookup
+    // reaches the repo root's node_modules — absent where only mcp/ is
+    // installed (the CI job). Point it at this package's own copy; at run
+    // time dist/src/services/ resolves upward to mcp/node_modules anyway.
+    "paths": { "jszip": ["./node_modules/jszip"] }
   },
   "include": ["src/**/*", "../src/services/emlParser.ts", "../src/services/ooxmlText.ts"],
   // Tests run from source through the repo-root vitest; compiling them into

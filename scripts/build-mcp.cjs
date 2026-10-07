@@ -50,6 +50,9 @@ function bundle() {
     format: 'esm',
     outfile: path.join(OUT, 'wz-pdf-mcp.mjs'),
     external: ['pdfjs-dist'],
+    // src/services/ooxmlText.ts (shared with the app) imports jszip; where only
+    // mcp/ is installed, the lookup from there would not find it.
+    nodePaths: [path.join(MCP, 'node_modules')],
     // The bundle is ESM but its dependencies still call require(); give them one.
     banner: { js: "import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);" },
     logLevel: 'warning',
