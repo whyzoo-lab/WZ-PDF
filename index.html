@@ -203,6 +203,25 @@
           is your server's decision (sign-in); private mode keeps the viewer from being a way to open, change or save anything else.
         </div>
       </section>
+
+      <!-- Private mode demo -->
+      <section class="block" id="private-demo">
+        <h2>Private mode, live</h2>
+        <p class="sub">The same viewer, deployed with a <a href="./private-demo/private.json" target="_blank" rel="noopener"><code>private.json</code></a>
+          that designates one document. Look for the open, save, print and edit buttons — they are not there.</p>
+        <div class="demo-shell">
+          <div class="demo-bar">
+            <span class="dot" style="background:#f87171"></span>
+            <span class="dot" style="background:#fbbf24"></span>
+            <span class="dot" style="background:#34d399"></span>
+            <span class="demo-url" id="privateUrl">your-website.com/viewer/</span>
+          </div>
+          <iframe class="demo-frame" id="privateFrame" title="WZ PDF private mode demo" allowfullscreen></iframe>
+        </div>
+        <p class="demo-cap">Try it: drop a file on it, or press <code>F2</code>, <code>Ctrl+O</code>, <code>Ctrl+S</code> or <code>Ctrl+P</code> — nothing opens, saves or prints.
+          Zoom, the page list, two-page view, find and fullscreen still work. ·
+          <a href="./private-demo/app.html?doc=other" id="privateOther" target="_blank" rel="noopener">Ask it for a document it was not given</a></p>
+      </section>
     </main>
 
     <footer class="wrap">
@@ -219,6 +238,11 @@
         var sample = base + 'sample.pdf';
         var demoSrc = app + '?embed=1&url=' + encodeURIComponent(sample);
         document.getElementById('demoFrame').src = demoSrc;
+        // Private-mode demo: its own folder and private.json (scripts/build-private-demo.cjs).
+        var privateApp = base + 'private-demo/app.html';
+        document.getElementById('privateFrame').src = privateApp + '?doc=sample';
+        document.getElementById('privateOther').href = privateApp + '?doc=other';
+        try { document.getElementById('privateUrl').textContent = location.host + new URL('private-demo/', base).pathname; } catch (e) {}
         document.getElementById('openFull').href = app + '?url=' + encodeURIComponent(sample);
         try { document.getElementById('demoUrl').textContent = location.host + new URL('.', location.href).pathname; } catch (e) {}
 

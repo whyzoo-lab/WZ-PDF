@@ -137,6 +137,62 @@ describe('undo and redo keys', () => {
   })
 })
 
+describe('a private (read-only) viewer', () => {
+  const key = (init: KeyboardEventInit) => {
+    const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+    window.dispatchEvent(event)
+    return event
+  }
+
+  it("swallows Ctrl+S and Ctrl+O instead of handing them to the browser's save and open", () => {
+    const d = setup('single', 1)
+    d.rerender({ ...d, readOnly: true } as never)
+    expect(key({ key: 's', ctrlKey: true }).defaultPrevented).toBe(true)
+    expect(key({ key: 'o', ctrlKey: true }).defaultPrevented).toBe(true)
+    // With the Korean IME on, the letter arrives as Hangul; the key code does not change.
+    expect(key({ key: 'ㄴ', code: 'KeyS', ctrlKey: true }).defaultPrevented).toBe(true)
+  })
+
+  it('does not print when printing is not allowed', () => {
+    const d = setup('single', 1)
+    d.rerender({ ...d, readOnly: true, canPrint: false } as never)
+    const printed = vi.fn()
+    document.addEventListener('wz-print', printed)
+    expect(key({ key: 'p', ctrlKey: true }).defaultPrevented).toBe(true)
+    document.removeEventListener('wz-print', printed)
+    expect(printed).not.toHaveBeenCalled()
+  })
+
+  it('runs no undo, stamp clipboard or markup tool, and opens no file on F2', () => {
+    const d = setup('single', 1)
+    const onUndo = vi.fn(), onRedo = vi.fn(), onCopyAnnotation = vi.fn(() => true), onCutAnnotation = vi.fn(() => true), onPasteAnnotation = vi.fn(() => true)
+    const input = document.createElement('input')
+    const click = vi.spyOn(input, 'click')
+    d.rerender({ ...d, readOnly: true, onUndo, onRedo, onCopyAnnotation, onCutAnnotation, onPasteAnnotation, fileInputRef: { current: input } } as never)
+    for (const k of ['z', 'y', 'c', 'x', 'v']) key({ key: k, ctrlKey: true })
+    key({ key: '1' })
+    key({ key: '2' })
+    key({ key: 'F2' })
+    expect(onUndo).not.toHaveBeenCalled()
+    expect(onRedo).not.toHaveBeenCalled()
+    expect(onCopyAnnotation).not.toHaveBeenCalled()
+    expect(onCutAnnotation).not.toHaveBeenCalled()
+    expect(onPasteAnnotation).not.toHaveBeenCalled()
+    expect(d.setActiveMode).not.toHaveBeenCalled()
+    expect(click).not.toHaveBeenCalled()
+  })
+
+  it('leaves Ctrl+C on selected text to the browser, and keeps the viewing keys', () => {
+    const d = setup('single', 3)
+    d.rerender({ ...d, readOnly: true } as never)
+    expect(key({ key: 'c', ctrlKey: true }).defaultPrevented).toBe(false)
+    key({ key: 'f', ctrlKey: true })
+    key({ key: 'F5', altKey: true })
+    expect(d.setShowSearch).toHaveBeenCalledWith(true)
+    expect(d.onEnterFullscreen).toHaveBeenCalledWith(3)
+  })
+})
+
 describe('Ctrl+S', () => {
   it('saves, even from inside a text field (the Markdown editor)', () => {
     const d = setup('single', 1)

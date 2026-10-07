@@ -1102,12 +1102,23 @@ off unless `"print": true`. Decisions behind it:
   through `openDocument` directly. The rest is chrome: `chromeless` (embed or
   locked) hides open/save/edit/password and the page panel's 선택 저장, and
   Ctrl+S saves nothing — which also fixed Office documents being savable with
-  Ctrl+S in plain embed mode. No print button, Ctrl+P swallowed, and
+  Ctrl+S in plain embed mode. **Shortcuts** get `readOnly`
+  (`useGlobalShortcuts`): Ctrl+S and Ctrl+O are swallowed, not left to the
+  browser — its "save page as" and "open file" are the very save and open
+  this mode forbids — and undo/redo, stamp copy/cut/paste, F2 and the 1/2
+  markup tools do nothing; viewing keys and Ctrl+C on text stay. No print
+  button, Ctrl+P swallowed, and
   `data-wz-no-print` blanks the browser's own print; no context menu on pages;
   mail attachments neither open nor download.
 - **Not access control**, and the docs say so: the browser downloads the file
   to show it. `public/private.json` is gitignored so a test config can never
   ship in the Pages build.
+- **The config is looked up next to the page (`location`), not its
+  `<base>`.** Identical on an ordinary deployment; it is what lets the Pages
+  site run a live demo: `scripts/build-private-demo.cjs` (pages.yml only)
+  writes `private-demo/app.html` — app.html with `<base href="../">`, so every
+  asset, wasm, font and cmap still comes from the parent — and its own
+  `private-demo/private.json`. The rest of the site stays a full viewer.
 - **The example ships in every build**: `public/private.example.json` lands
   next to `app.html` and works once copied to `private.json` (a test parses
   it, `_readme` key included — unknown keys are ignored). Its name keeps it

@@ -129,7 +129,11 @@ export default function App() {
   useEffect(() => {
     if (window.electronAPI) return
     let cancelled = false
-    void loadPrivateMode(document.baseURI).then(mode => { if (!cancelled) setPrivateMode(mode) })
+    // Next to the page itself, not its <base>: the same thing on an ordinary
+    // deployment, but it lets a copy of app.html in a sub-folder share the
+    // parent's assets through <base href="../"> while carrying a config of its
+    // own (the Pages site's private-mode demo, scripts/build-private-demo.cjs).
+    void loadPrivateMode(window.location.href).then(mode => { if (!cancelled) setPrivateMode(mode) })
     return () => { cancelled = true }
   }, [])
   // Locked until the server has answered as well: a document dropped in that
@@ -1255,6 +1259,7 @@ export default function App() {
     onRedo: canEditHistory ? handleRedo : undefined,
     onSave: handleSaveShortcut,
     canPrint,
+    readOnly: locked,
     onCopyAnnotation: handleCopyAnnotation,
     onCutAnnotation: handleCutAnnotation,
     onPasteAnnotation: handlePasteAnnotation,

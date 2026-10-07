@@ -69,6 +69,11 @@ jobs:
       - name: Build (web)
         run: npm run build
 
+      # The landing page's live private-mode demo: private-demo/ with its own
+      # private.json. Pages only — see the script for why it is a sub-folder.
+      - name: Add the private-mode demo
+        run: node scripts/build-private-demo.cjs dist
+
       # configure-pages with enablement turns Pages on (source = Actions) if it
       # isn't already; harmless once enabled.
       - uses: actions/configure-pages@v5

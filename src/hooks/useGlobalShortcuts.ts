@@ -48,6 +48,15 @@ interface GlobalShortcutsDeps {
    */
   canPrint?: boolean
   /**
+   * A private viewer (services/privateMode.ts): nothing is opened, changed or
+   * saved from the keyboard either. Ctrl+S and Ctrl+O are swallowed rather
+   * than passed on — the browser's own "save page as" and "open file" are
+   * exactly the save and open this mode forbids — and undo/redo, stamp
+   * copy/cut/paste and the 1 / 2 markup tools do nothing. Viewing keys (zoom,
+   * find, F5, OCR) keep working; Ctrl+C still copies selected text.
+   */
+  readOnly?: boolean
+  /**
    * Ctrl+C / Ctrl+X / Ctrl+V on stamps, signatures and text edits. Each returns
    * whether it did anything: when it did not (no stamp selected, or text is
    * selected), the key is left alone so copying document text still works.
@@ -103,7 +112,7 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
         removeAnnotation, clearMarkups, setActiveMode, selectAnnotation,
         onRunOcr, onRunOcrAll, onToggleSpeech,
         onSpeechPrevious, onSpeechNext, onSpeechPlayPause, onUndo, onRedo, onSave, canPrint = true,
-        onCopyAnnotation, onCutAnnotation, onPasteAnnotation,
+        readOnly = false, onCopyAnnotation, onCutAnnotation, onPasteAnnotation,
       } = latest.current
       const tgt = e.target as HTMLElement | null
       const inInput = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)
@@ -128,6 +137,10 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
         document.dispatchEvent(new CustomEvent('wz-print'))
         return
       }
+      if (readOnly && (e.ctrlKey || e.metaKey) && !e.altKey && (e.code === 'KeyS' || e.code === 'KeyO' || /^[so]$/i.test(e.key))) {
+        e.preventDefault()
+        return
+      }
       // Ctrl/Cmd+F → open the find bar (replaces the browser's native find).
       // Highlighting is single-view only, so switch out of grid/spread.
       if ((e.ctrlKey || e.metaKey) && e.key === 'f' && (pdfDoc || flowDoc) && viewMode !== 'fullscreen') {
@@ -145,7 +158,7 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
       }
       // Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes — not while typing, where
       // the field's own undo applies, and not while presenting.
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !inInput && viewMode !== 'fullscreen') {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !inInput && viewMode !== 'fullscreen' && !readOnly) {
         const k = e.key.toLowerCase()
         if (k === 'z' && !e.shiftKey && onUndo) { e.preventDefault(); onUndo(); return }
         if (((k === 'z' && e.shiftKey) || k === 'y') && onRedo) { e.preventDefault(); onRedo(); return }
@@ -159,7 +172,7 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
       }
       if (e.key === 'F2' && viewMode !== 'fullscreen') {
         e.preventDefault()
-        fileInputRef.current?.click()
+        if (!readOnly) fileInputRef.current?.click()
         return
       }
       if (e.key === 'F5' && (pdfDoc || flowDoc) && viewMode !== 'fullscreen') {
@@ -266,6 +279,7 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
       }
 
       // "1" → highlighter pen, "2" → red rectangle. Toggle off when re-pressed.
+      if (readOnly) return
       if (e.key === '1' && !inPresentation) {
         setActiveMode(activeMode === 'pen' ? null : 'pen')
         return
