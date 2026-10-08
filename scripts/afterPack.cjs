@@ -51,7 +51,7 @@ exports.default = async function (context) {
   fs.rmSync(manifestPath, { force: true })
   if (!isNsisPass) return
 
-  const file = `WZ_PDF_${version}.exe`
+  const file = `WZ_Reader_${version}.exe`
   const portable = path.join(packager.projectDir, 'release', file)
   if (!fs.existsSync(portable)) {
     console.warn('[afterPack] portable artifact missing — the installed app cannot make Viewer EXEs')

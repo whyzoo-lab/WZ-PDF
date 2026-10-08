@@ -1,4 +1,4 @@
-; Custom NSIS steps for the WZ PDF installer.
+; Custom NSIS steps for the WZ Reader installer.
 ;
 ; Adds the install directory to the user's PATH so the console converters
 ; (hwp2pdf, topdf, hwp2hwpx, hwpx2hwp) run from any terminal, and takes it back out

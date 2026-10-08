@@ -46,7 +46,7 @@ export function findAppExecutable(fromDir: string, exists: (p: string) => boolea
   const found = candidates.find(exists)
   if (!found) {
     throw new Error(
-      `Cannot find "${APP_EXE}". Install WZ PDF, or set WZPDF_APP to its full path.`,
+      `Cannot find "${APP_EXE}". Install WZ Reader, or set WZPDF_APP to its full path.`,
     )
   }
   return found

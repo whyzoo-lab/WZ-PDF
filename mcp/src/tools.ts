@@ -1,5 +1,5 @@
 /**
- * MCP tool definitions + implementations for WZ PDF.
+ * MCP tool definitions + implementations for WZ Reader.
  *
  * Each entry in `tools` is the public-facing schema Claude sees; the matching
  * function in `handlers` does the actual work. Keeping them paired here means
@@ -616,7 +616,7 @@ export const tools = [
   {
     name: 'pdf_add_text_overlay',
     description:
-      'Cover an area with a filled rectangle and draw new text on top (WZ PDF textEdit). Korean supported.',
+      'Cover an area with a filled rectangle and draw new text on top (WZ Reader textEdit). Korean supported.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -715,9 +715,9 @@ export const tools = [
   {
     name: 'doc_get_text',
     description:
-      'Read the text of any document WZ PDF opens: PDF, HWP/HWPX, Word (.docx), PowerPoint (.pptx, '
+      'Read the text of any document WZ Reader opens: PDF, HWP/HWPX, Word (.docx), PowerPoint (.pptx, '
       + 'slide by slide with speaker notes), Excel/ODS/CSV (sheet by sheet, cells tab-separated, paged '
-      + 'by rows), Markdown and e-mail (.eml). HWP needs the WZ PDF desktop app.',
+      + 'by rows), Markdown and e-mail (.eml). HWP needs the WZ Reader desktop app.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -752,10 +752,10 @@ export const tools = [
   {
     name: 'doc_to_pdf',
     description:
-      'Convert a document to PDF exactly as the WZ PDF app saves it: HWP/HWPX, Word, PowerPoint '
+      'Convert a document to PDF exactly as the WZ Reader app saves it: HWP/HWPX, Word, PowerPoint '
       + '(one slide per page, hidden slides left out), Excel/ODS/CSV (every visible sheet, as Excel '
       + 'saves a PDF), Markdown, e-mail and images. Text stays selectable, so pdf_get_text and '
-      + 'pdf_search work on the result. Requires the WZ PDF desktop app.',
+      + 'pdf_search work on the result. Requires the WZ Reader desktop app.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -769,7 +769,7 @@ export const tools = [
     name: 'hwp_to_pdf',
     description:
       'Convert a Korean HWP or HWPX document to PDF. The result carries a real selectable text layer, '
-      + 'so pdf_get_text and pdf_search work on it afterwards. Requires the WZ PDF desktop app.',
+      + 'so pdf_get_text and pdf_search work on it afterwards. Requires the WZ Reader desktop app.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -823,7 +823,7 @@ async function readDocument(file: string): Promise<{ path: string; bytes: Buffer
   assertInsideSandbox(path, file)
   const ext = extname(path).toLowerCase().slice(1)
   if (!DOCUMENT_EXTS.includes(ext)) {
-    throw new Error(`not a document WZ PDF opens (.${ext}); accepted: ${DOCUMENT_EXTS.map(e => '.' + e).join(' ')}`)
+    throw new Error(`not a document WZ Reader opens (.${ext}); accepted: ${DOCUMENT_EXTS.map(e => '.' + e).join(' ')}`)
   }
   const bytes = await readInputFile(file)
   return { path, bytes, format: detectFormat(path, bytes) }
@@ -887,7 +887,7 @@ async function docGetText(args: Record<string, unknown>): Promise<string> {
       return `${head}\n\n${m.body}`
     }
     case 'image':
-      throw new Error('an image has no text layer; open it in WZ PDF and run OCR (R), then save it as PDF')
+      throw new Error('an image has no text layer; open it in WZ Reader and run OCR (R), then save it as PDF')
     default:
       throw new Error(`cannot read this file as a document: ${basename(path)}`)
   }

@@ -2,7 +2,7 @@
 setlocal
 
 REM ============================================================
-REM  WZ PDF - Web Deploy Script
+REM  WZ Reader - Web Deploy Script
 REM
 REM  Server:  YOUR_USER@YOUR_SERVER:/opt/wz-pdf
 REM  URL:     http://YOUR_SERVER:PORT
@@ -26,7 +26,7 @@ if "%MODE%"=="" set MODE=auto
 
 echo.
 echo ============================================================
-echo  WZ PDF Deploy  --^>  %SERVER%:%REMOTE%
+echo  WZ Reader Deploy  --^>  %SERVER%:%REMOTE%
 echo ============================================================
 echo.
 
@@ -74,7 +74,7 @@ if "%MODE%"=="fast" (
 )
 
 set INSTALLER=
-for /f "delims=" %%F in ('dir /b /o-d %INSTALLER_DIR%\WZ_PDF_Setup_*.exe 2^>nul') do (
+for /f "delims=" %%F in ('dir /b /o-d %INSTALLER_DIR%\WZ_Reader_Setup_*.exe 2^>nul') do (
     if not defined INSTALLER set INSTALLER=%INSTALLER_DIR%\%%F
 )
 

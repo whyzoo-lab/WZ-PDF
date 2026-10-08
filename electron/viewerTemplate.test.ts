@@ -20,8 +20,13 @@ describe('viewer-template.json', () => {
     expect(parseManifest(raw, '1.25.0')).toBeNull()
   })
 
+  it('accepts the portable under its name since 1.25.0, WZ_Reader_', () => {
+    const renamed = { ...manifest, version: '1.25.0', file: 'WZ_Reader_1.25.0.exe' }
+    expect(parseManifest(JSON.stringify(renamed), '1.25.0')).toEqual(renamed)
+  })
+
   it('refuses a file name that could point anywhere else, or a malformed hash', () => {
-    for (const file of ['../evil.exe', 'C:\\Windows\\x.exe', 'WZ_PDF_1.24.0.exe/../../x.exe', 'other.exe']) {
+    for (const file of ['../evil.exe', 'C:\\Windows\\x.exe', 'WZ_PDF_1.24.0.exe/../../x.exe', 'WZ_Reader_1.25.0.exe/../x.exe', 'other.exe']) {
       expect(parseManifest(JSON.stringify({ ...manifest, file }), '1.24.0'), file).toBeNull()
     }
     expect(parseManifest(JSON.stringify({ ...manifest, sha512: 'abc' }), '1.24.0')).toBeNull()

@@ -1,7 +1,7 @@
 /** English messages (default / fallback). Keys are shared across all locales. */
 export const en = {
   // ── Branding / empty state ────────────────────────────────────────────────
-  'app.tagline': 'Fast and simple PDF',
+  'app.tagline': 'Every document, fast and simple',
   'empty.desktop': 'Drag a PDF · HWP · Word · Excel · PowerPoint · EML · image · Markdown here, or click Open / press F2',
   'empty.mobile': 'Tap or use the Open button to open a PDF · HWP · Word · Excel · PowerPoint · EML · image · Markdown',
 
@@ -75,7 +75,7 @@ export const en = {
   'export.exeError': 'EXE export error: {error}',
   'export.exeUnknownError': 'Unknown error',
   'export.exeWebPrompt':
-    'EXE Viewer is a desktop-app feature.\n\nDownload the WZ PDF installer?',
+    'EXE Viewer is a desktop-app feature.\n\nDownload the WZ Reader installer?',
 
   // ── Print ─────────────────────────────────────────────────────────────────
   'print.preparing': 'Preparing to print…',

@@ -1,7 +1,7 @@
 /** Korean messages. Keys mirror en.ts exactly. */
 export const ko = {
   // ── Branding / empty state ────────────────────────────────────────────────
-  'app.tagline': 'PDF를 쉽고 빠르게',
+  'app.tagline': '모든 문서를 쉽고 빠르게',
   'empty.desktop': 'PDF · HWP · Word · Excel · PowerPoint · EML · 이미지 · Markdown을 여기에 드래그하거나 파일 열기 버튼 또는 F2를 누르세요',
   'empty.mobile': '탭하거나 파일 열기 버튼으로 PDF · HWP · Word · Excel · PowerPoint · EML · 이미지 · Markdown을 여세요',
 
@@ -75,7 +75,7 @@ export const ko = {
   'export.exeError': 'EXE 내보내기 오류: {error}',
   'export.exeUnknownError': '알 수 없는 오류',
   'export.exeWebPrompt':
-    'EXE Viewer 기능은 데스크탑 앱 전용입니다.\n\nWZ PDF 설치 프로그램을 다운로드 받으시겠습니까?',
+    'EXE Viewer 기능은 데스크탑 앱 전용입니다.\n\nWZ Reader 설치 프로그램을 다운로드 받으시겠습니까?',
 
   // ── Print ─────────────────────────────────────────────────────────────────
   'print.preparing': '인쇄 준비 중…',

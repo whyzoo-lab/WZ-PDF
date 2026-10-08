@@ -1,4 +1,4 @@
-# WZ PDF
+# WZ Reader
 
 **Open PDF, Korean HWP, Word, PowerPoint, Excel, e-mail, images and Markdown — present, annotate, OCR and convert. 100% in your browser. No upload.**
 
@@ -16,7 +16,10 @@ Introduce : https://whyzoo.com/WzPDF/ · Demo : https://whyzoo-lab.github.io/WZ-
 > A presentation-focused viewer, editor, and distribution platform for the
 > documents that actually land in your inbox.
 
-WZ PDF is a fast, **fully client-side** document tool. Open a PDF, a Korean
+*Called **WZ PDF** until 1.25.0 — it outgrew the name. Installed copies update
+in place, and the program file is still `WZ PDF.exe`.*
+
+WZ Reader is a fast, **fully client-side** document tool. Open a PDF, a Korean
 `.hwp` / `.hwpx`, a saved e-mail (`.eml`) or an image — read and select the text,
 mark it up, run OCR, present it fullscreen, and export it in several formats —
 all in the browser or as a desktop app. **No backend, no upload: your file never
@@ -30,7 +33,7 @@ OCR runtime. Ships with an optional
 
 ---
 
-## Why WZ PDF
+## Why WZ Reader
 
 - 🔒 **Private by design** — everything runs in the browser/desktop. Nothing is uploaded.
 - 📄 **PDF _and_ HWP/HWPX** — open Korean word-processor files exactly like a PDF, with **native selectable text** (no OCR needed).

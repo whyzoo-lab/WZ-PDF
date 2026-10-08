@@ -31,9 +31,9 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" v
 
   <!-- Wordmark + tagline -->
   <text x="410" y="288" font-family="Arial, Helvetica, sans-serif" font-size="120"
-        font-weight="800" letter-spacing="-3" fill="url(#wordmark)">WZ PDF</text>
+        font-weight="800" letter-spacing="-3" fill="url(#wordmark)">WZ Reader</text>
   <text x="414" y="360" font-family="Arial, Helvetica, sans-serif" font-size="36"
-        font-weight="600" fill="#e2e8f0">PDF Viewer · Editor · Annotator</text>
+        font-weight="600" fill="#e2e8f0">PDF · HWP · Word · PowerPoint · Excel</text>
   <text x="414" y="412" font-family="Arial, Helvetica, sans-serif" font-size="26"
         fill="#94a3b8">Free · No upload · Runs entirely in your browser</text>
 

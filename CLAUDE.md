@@ -64,7 +64,7 @@ Key points:
 
 ### HWP / HWPX viewing
 
-WZ PDF can open Korean `.hwp` (OLE2 binary) and `.hwpx` (zip-based XML) documents alongside PDF files. The full viewer pipeline (page panel, zoom, spread/grid/fullscreen, annotations, OCR, print) works unchanged.
+WZ Reader can open Korean `.hwp` (OLE2 binary) and `.hwpx` (zip-based XML) documents alongside PDF files. The full viewer pipeline (page panel, zoom, spread/grid/fullscreen, annotations, OCR, print) works unchanged.
 
 **Detection** — `src/utils/detectDocType.ts` reads magic bytes first (OLE2 `D0 CF 11 E0` → hwp; `%PDF` → pdf); file extension is a fallback only. This ensures a `.pdf`-named HWP file is still routed correctly.
 
@@ -1235,7 +1235,7 @@ is required as the base — and since 1.24.0 the installer no longer ships one.
    and points to the running SFX itself. Use that.
 2. **NSIS-installed run:** a verified copy in `userData/viewer-template/`. The
    first time, `obtainViewerTemplate` asks (native dialog: download ~120 MB /
-   choose the file / cancel), then downloads `WZ_PDF_<version>.exe` from this
+   choose the file / cancel), then downloads `WZ_Reader_<version>.exe` from this
    version's GitHub release (`electron/viewerTemplate.ts`, the same pinned,
    re-vetted-per-redirect request as the TTS weights) — or adopts a file the
    reader picks, for a machine without internet. Either is kept only if it
@@ -1363,18 +1363,43 @@ When profiling the packaged app, disable Chromium's background throttling
 document loads 10× slower than they are — that artefact cost a whole debugging
 session once.
 
+### The name: WZ Reader (WZ PDF until 1.25.0)
+
+Renamed once it opened far more than PDF. **Only what a reader sees changed**:
+window title, logo, shortcuts and "Apps & features" (`productName`,
+`shortcutName`), installer and portable file names (`WZ_Reader_Setup_<v>.exe`,
+`WZ_Reader_<v>.exe`), help pages, landing page, MCP descriptions. What
+installed copies depend on stayed, deliberately:
+- **`appId` `com.wz.pdfeditor`** — the NSIS installer finds the existing
+  install (and its folder) through it, so an update lands in place; a new
+  appId would install a second copy beside the first.
+- **The exe is still `WZ PDF.exe`** (`executableName`). Users' MCP client
+  configs, the console launchers (`AppExe` in `cli/wzconvert.cs`), `mcp/src/hwp.ts`
+  and pinned taskbar shortcuts start it by name.
+- **userData is pinned to `%APPDATA%\wz-pdf`** in `electron/main.ts`
+  (`app.setPath` before anything reads it). Electron derives that folder from
+  the app's name; renaming would have orphaned the 383 MB speech model, saved
+  stamps and recent files.
+- The `WZPDF.*` ProgIDs, the `WZPDF_*` environment variables, the
+  `WZPDF_VIEWER_V01` marker in exported viewer exes, the `wz-pdf` MCP server
+  name and the GitHub repo `WZ-PDF` (the update feed).
+- `viewerTemplate.ts` accepts both `WZ_Reader_` and `WZ_PDF_` portable names.
+
+A fresh install defaults to `C:\Program Files\WZ Reader\`; an updated one keeps
+`C:\Program Files\WZ PDF\`. Both hold `WZ PDF.exe`.
+
 ### Distribution (Windows)
 
 `npm run build:exe` runs **two electron-builder invocations sequentially** —
 `--win portable` then `--win nsis`. The order matters: NSIS's afterPack hook
 needs the portable artifact already on disk to embed.
 
-- `release/WZ_PDF_${version}.exe` — Portable single-file exe (~119 MB)
+- `release/WZ_Reader_${version}.exe` — Portable single-file exe (~119 MB)
   - Built first
   - Acts as both a standalone launcher AND the Viewer EXE template the installed app downloads
   - `PORTABLE_EXECUTABLE_FILE` env-var is set automatically when launched
 
-- `release/WZ_PDF_Setup_${version}.exe` — NSIS installer (~132 MB; recommended for daily use)
+- `release/WZ_Reader_Setup_${version}.exe` — NSIS installer (~132 MB; recommended for daily use)
   - User chooses install path, creates Desktop + Start Menu shortcuts
   - Registers as a handler for `.pdf` files (`fileAssociations` in `electron-builder.json5`)
   - Maximum LZMA compression; only en-US/ko Electron locales bundled

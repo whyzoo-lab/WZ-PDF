@@ -32,6 +32,13 @@ import {
   type PinnedResponse,
 } from './security'
 
+// The settings folder is fixed by name, not derived from the product's name.
+// It holds the speech model (383 MB), saved stamps and the recent files, and
+// Electron derives it from the app's name — which has changed once already
+// (WZ PDF → WZ Reader, 1.25.0). Pinned to the folder every release so far has
+// used, before anything can read it.
+app.setPath('userData', path.join(app.getPath('appData'), 'wz-pdf'))
+
 let win: BrowserWindow | null = null
 let pendingFile: string | null = null
 
@@ -174,7 +181,7 @@ function createWindow({ opening = false }: { opening?: boolean } = {}) {
     // the renderer), but we still stop the window from shrinking absurdly.
     minWidth: 480,
     minHeight: 360,
-    title: 'WZ PDF',
+    title: 'WZ Reader',
     // ── Custom title bar ────────────────────────────────────────────────
     // Hide the native title bar so the ActionBar visually becomes the chrome.
     // On Windows/Linux we use Window Controls Overlay: the OS still draws
@@ -230,7 +237,7 @@ function createWindow({ opening = false }: { opening?: boolean } = {}) {
       defaultId: 0,
       cancelId: 0,
       noLink: true,
-      title: 'WZ PDF',
+      title: 'WZ Reader',
       message: ko ? '저장하지 않은 변경 내용이 있습니다' : 'You have unsaved changes',
       detail: ko
         ? '지금 닫으면 도장·서명·페이지 편집 같은 변경 내용이 사라집니다. 저장하려면 취소를 누른 뒤 저장하세요.'
@@ -303,11 +310,11 @@ async function obtainViewerTemplate(sender: Electron.WebContents, manifest: Temp
     defaultId: 0,
     cancelId: 2,
     noLink: true,
-    title: 'WZ PDF',
+    title: 'WZ Reader',
     message: ko ? '뷰어 EXE를 만들려면 원본 프로그램이 필요합니다' : 'Making a Viewer EXE needs the portable program',
     detail: ko
-      ? `처음 한 번만 WZ PDF 무설치판(${manifest.file}, 약 ${mb}MB)을 GitHub에서 내려받아 이 PC에 보관합니다. 다음부터는 바로 만들어집니다.\n\n인터넷이 안 되는 PC라면 같은 버전의 무설치판 파일을 직접 선택하세요.`
-      : `Just once, the WZ PDF portable (${manifest.file}, about ${mb} MB) is downloaded from GitHub and kept on this PC. After that, Viewer EXEs are made straight away.\n\nOn a PC without internet, choose the portable file of the same version instead.`,
+      ? `처음 한 번만 WZ Reader 무설치판(${manifest.file}, 약 ${mb}MB)을 GitHub에서 내려받아 이 PC에 보관합니다. 다음부터는 바로 만들어집니다.\n\n인터넷이 안 되는 PC라면 같은 버전의 무설치판 파일을 직접 선택하세요.`
+      : `Just once, the WZ Reader portable (${manifest.file}, about ${mb} MB) is downloaded from GitHub and kept on this PC. After that, Viewer EXEs are made straight away.\n\nOn a PC without internet, choose the portable file of the same version instead.`,
   }
   const { response } = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options)
   const userData = app.getPath('userData')
@@ -316,7 +323,7 @@ async function obtainViewerTemplate(sender: Electron.WebContents, manifest: Temp
   if (response === 1) {
     const { filePaths, canceled } = await dialog.showOpenDialog({
       title: manifest.file,
-      filters: [{ name: 'WZ PDF', extensions: ['exe'] }],
+      filters: [{ name: 'WZ Reader', extensions: ['exe'] }],
       properties: ['openFile'],
     })
     if (canceled || !filePaths[0]) return null
@@ -382,10 +389,10 @@ async function extractEmbeddedPdf(): Promise<Buffer | null> {
     const pdf = Buffer.alloc(pdfSize)   // dedicated ArrayBuffer (exact size for IPC transfer)
     await readExactly(handle, pdf, pdfOffset)
     if (!hasSupportedDocumentSignature(pdf) || pdf.subarray(0, 4).toString('ascii') !== '%PDF') return null
-    console.log('[WZ PDF] Embedded PDF detected — size:', pdfSize, 'bytes')
+    console.log('[WZ Reader] Embedded PDF detected — size:', pdfSize, 'bytes')
     return pdf
   } catch (err) {
-    console.warn('[WZ PDF] extractEmbeddedPdf failed:', err)
+    console.warn('[WZ Reader] extractEmbeddedPdf failed:', err)
     return null
   } finally {
     await handle?.close()
@@ -484,7 +491,7 @@ ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
 
   const { filePath, canceled } = await dialog.showSaveDialog({
     title: 'Viewer EXE로 저장',
-    defaultPath: 'WZ_PDF_Viewer.exe',
+    defaultPath: 'WZ_Reader_Viewer.exe',
     filters: [{ name: 'Executable', extensions: ['exe'] }],
   })
   if (canceled || !filePath) return { success: false, canceled: true }
@@ -506,7 +513,7 @@ ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
     await fs.promises.appendFile(filePath, EMBED_MARKER)
 
     const outputSize = (await fs.promises.stat(filePath)).size
-    console.log('[WZ PDF] Viewer EXE exported to:', filePath, '— total size:', outputSize)
+    console.log('[WZ Reader] Viewer EXE exported to:', filePath, '— total size:', outputSize)
     return { success: true, outputPath: filePath }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -849,7 +856,7 @@ ipcMain.handle('open-help', async (event, lang?: unknown) => {
     return { success: true }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[WZ PDF] open-help failed:', msg)
+    console.error('[WZ Reader] open-help failed:', msg)
     return { success: false, error: msg }
   }
 })

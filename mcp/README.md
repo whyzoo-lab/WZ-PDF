@@ -1,6 +1,6 @@
-# WZ PDF — MCP Server
+# WZ Reader — MCP Server
 
-WZ PDF가 여는 문서 — PDF, 한글(HWP/HWPX), Word, PowerPoint, Excel·CSV, Markdown, 메일(.eml), 이미지 — 를 Claude가 읽고 PDF로 바꾸고 다룰 수 있게 해 주는 [Model Context Protocol](https://modelcontextprotocol.io) 서버입니다. WZ PDF의 핵심 로직(`pdf-lib`, `pdfjs-dist`, `hucre`, 메일 파서, 한글 폰트)을 재사용해요.
+WZ Reader가 여는 문서 — PDF, 한글(HWP/HWPX), Word, PowerPoint, Excel·CSV, Markdown, 메일(.eml), 이미지 — 를 Claude가 읽고 PDF로 바꾸고 다룰 수 있게 해 주는 [Model Context Protocol](https://modelcontextprotocol.io) 서버입니다. WZ Reader의 핵심 로직(`pdf-lib`, `pdfjs-dist`, `hucre`, 메일 파서, 한글 폰트)을 재사용해요.
 
 ## 설치
 
@@ -38,7 +38,7 @@ npm run build
 | `doc_to_pdf` | 앱에서 "PDF로 저장"한 것과 같은 PDF로 변환 (HWP, Word, PowerPoint, Excel·CSV, Markdown, 메일, 이미지). 글자를 선택·검색할 수 있는 PDF |
 | `hwp_to_pdf` | 한글 문서 → PDF (예전 이름; `doc_to_pdf`와 같은 결과) |
 
-`doc_to_pdf`, 그리고 HWP에 대한 `doc_get_text`는 WZ PDF 앱이 필요합니다(아래 참고). 나머지는 서버 혼자 처리합니다.
+`doc_to_pdf`, 그리고 HWP에 대한 `doc_get_text`는 WZ Reader 앱이 필요합니다(아래 참고). 나머지는 서버 혼자 처리합니다.
 
 ### PDF
 
@@ -49,7 +49,7 @@ npm run build
 | `pdf_search` | 키워드 검색 (페이지 + 컨텍스트 반환) |
 | `pdf_add_watermark` | 모든 페이지에 워터마크 (한글 OK) |
 | `pdf_add_stamp` | 도장/이미지 배치 |
-| `pdf_add_text_overlay` | 흰 박스 + 새 텍스트 덮어쓰기 (WZ PDF의 textEdit) |
+| `pdf_add_text_overlay` | 흰 박스 + 새 텍스트 덮어쓰기 (WZ Reader의 textEdit) |
 | `pdf_split` | 페이지/범위별 분할 |
 | `pdf_merge` | 여러 PDF 병합 |
 | `pdf_delete_pages` | 페이지 삭제 |
@@ -90,7 +90,7 @@ Claude Desktop에 위 설정을 추가한 뒤 채팅에서:
 
 ## 좌표 시스템
 
-`pdf-lib`은 **왼쪽 아래 원점** (PDF 표준). WZ PDF 앱의 좌표(왼쪽 위 원점)와 반대예요. 도장이나 텍스트 오버레이의 `y` 좌표를 지정할 때 주의:
+`pdf-lib`은 **왼쪽 아래 원점** (PDF 표준). WZ Reader 앱의 좌표(왼쪽 위 원점)와 반대예요. 도장이나 텍스트 오버레이의 `y` 좌표를 지정할 때 주의:
 
 ```
 페이지 높이가 842pt (A4)이고, 상단에서 100pt 위치에 도장을 찍으려면
@@ -137,7 +137,7 @@ MCP_HOST=0.0.0.0 MCP_SANDBOX_DIR=/trusted/workspace MCP_AUTH_TOKEN=replace-with-
 
 ## Using the server that ships with the desktop app
 
-Installing WZ PDF puts a ready-to-run server at:
+Installing WZ Reader puts a ready-to-run server at:
 
 ```
 <install folder>
@@ -146,7 +146,7 @@ esources\mcp\wz-pdf-mcp.mjs
 
 **No Node.js install is required.** The app's own binary doubles as the Node
 runtime through `ELECTRON_RUN_AS_NODE`, so the server runs on machines that have
-nothing but WZ PDF.
+nothing but WZ Reader.
 
 Register it by adding this to your client's MCP configuration — for Claude
 Desktop that is `%APPDATA%\Claude\claude_desktop_config.json`:
@@ -155,15 +155,18 @@ Desktop that is `%APPDATA%\Claude\claude_desktop_config.json`:
 {
   "mcpServers": {
     "wz-pdf": {
-      "command": "C:\Program Files\WZ PDF\WZ PDF.exe",
-      "args": ["C:\Program Files\WZ PDF\resources\mcp\wz-pdf-mcp.mjs"],
+      "command": "C:\\Program Files\\WZ Reader\\WZ PDF.exe",
+      "args": ["C:\\Program Files\\WZ Reader\\resources\\mcp\\wz-pdf-mcp.mjs"],
       "env": { "ELECTRON_RUN_AS_NODE": "1" }
     }
   }
 }
 ```
 
-Adjust both paths if you installed elsewhere. The installer deliberately does
+Adjust both paths if you installed elsewhere. The app was called WZ PDF before
+1.25.0: a copy installed then keeps its folder (`C:\Program Files\WZ PDF\`)
+when it updates, so an existing configuration goes on working unchanged. The
+program file is `WZ PDF.exe` under either name. The installer deliberately does
 **not** write this file for you: it belongs to another application, may already
 hold servers you configured yourself, and its location and format are outside
 our control.

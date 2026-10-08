@@ -48,7 +48,7 @@ interface UseExportersArgs {
  *     running exe (the real "EXE Viewer" feature).
  *   - Web build: the feature can't run client-side, so we redirect the user
  *     to download the installer hosted alongside the web app at
- *     `/release/WZ_PDF_Setup_<version>.exe`.
+ *     `/release/WZ_Reader_Setup_<version>.exe`.
  */
 export function useExporters({
   file,
@@ -267,7 +267,7 @@ export function useExporters({
   const handleExportExe = useCallback(async () => {
     // Web fallback: just navigate to the installer download URL.
     if (!window.electronAPI) {
-      const installerUrl = `./release/WZ_PDF_Setup_${__APP_VERSION__}.exe`
+      const installerUrl = `./release/WZ_Reader_Setup_${__APP_VERSION__}.exe`
       const ok = window.confirm(t('export.exeWebPrompt'))
       if (ok) window.location.href = installerUrl
       return

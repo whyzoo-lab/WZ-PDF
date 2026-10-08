@@ -1,7 +1,7 @@
 {
   "name": "wz-pdf-mcp",
   "version": "0.1.0",
-  "description": "Model Context Protocol server exposing WZ PDF operations to Claude.",
+  "description": "Model Context Protocol server exposing WZ Reader operations to Claude.",
   "license": "MIT",
   "author": "WhyZOO",
   "private": true,

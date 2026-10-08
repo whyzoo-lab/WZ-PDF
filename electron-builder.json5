@@ -1,6 +1,16 @@
 {
   /**
-   * WZ PDF — electron-builder configuration
+   * WZ Reader — electron-builder configuration
+   *
+   * The product was called WZ PDF until 1.25.0. Only what a user sees was
+   * renamed (window, shortcuts, "Apps & features", installer files). These stay,
+   * because existing installs depend on them:
+   *   - appId: how the installer finds the existing install to update in place;
+   *   - executableName "WZ PDF": users' MCP client configs and the console
+   *     launchers (cli/wzconvert.cs) start "WZ PDF.exe" by name;
+   *   - the userData folder "wz-pdf" (pinned in electron/main.ts): the speech
+   *     model (383 MB), saved stamps, recent files;
+   *   - the WZPDF.* ProgIDs and the GitHub repo WZ-PDF (where updates come from).
    *
    * Two Windows targets:
    *   - nsis     : Setup installer (fast startup, recommended for daily use,
@@ -10,7 +20,9 @@
    *                the PORTABLE_EXECUTABLE_FILE env var)
    */
   "appId": "com.wz.pdfeditor",
-  "productName": "WZ PDF",
+  "productName": "WZ Reader",
+  // The exe keeps its old name — see the header.
+  "executableName": "WZ PDF",
   // Electron fuses. The defaults leave the shipped exe usable as a general
   // Node runtime by any local process (NODE_OPTIONS=--require, --inspect) and
   // never verify app.asar. runAsNode must stay ON: the bundled MCP server
@@ -22,7 +34,7 @@
     "enableEmbeddedAsarIntegrityValidation": true,
     "onlyLoadAppFromAsar": true,
   },
-  "copyright": "WZ PDF",
+  "copyright": "WZ Reader",
 
   "directories": {
     "output": "release"
@@ -147,7 +159,7 @@
   // Maximum LZMA compression — smaller installer, slightly longer build time
   "compression": "maximum",
 
-  // Register WZ PDF as a handler for .pdf files. The OS will pass the file
+  // Register WZ Reader as a handler for .pdf files. The OS will pass the file
   // path as a CLI argument; main.ts picks it up via process.argv.
   // `icon` controls the icon shown for associated .pdf files in Explorer.
   // Every format the app can open is registered at install time, so a
@@ -167,7 +179,7 @@
   // theoretical collision is not worth the risk. `description` is the text
   // Explorer actually shows.
   //
-  // This makes WZ PDF *available* for these types and gives them its icon;
+  // This makes WZ Reader *available* for these types and gives them its icon;
   // Windows 10/11 still asks before changing an existing default, and no
   // installer can bypass that.
   "fileAssociations": [
@@ -244,8 +256,8 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "WZ PDF",
-    "artifactName": "WZ_PDF_Setup_${version}.exe",
+    "shortcutName": "WZ Reader",
+    "artifactName": "WZ_Reader_Setup_${version}.exe",
     "deleteAppDataOnUninstall": false,
     // NSIS installer icon (also used for uninstaller) — same as the app icon.
     "installerIcon": "build/icon.ico",
@@ -264,6 +276,6 @@
   "portable": {
     // PORTABLE_EXECUTABLE_FILE env-var is set by electron-builder to the path
     // of this exe — the app uses it to self-clone when exporting a viewer exe.
-    "artifactName": "WZ_PDF_${version}.exe"
+    "artifactName": "WZ_Reader_${version}.exe"
   }
 }

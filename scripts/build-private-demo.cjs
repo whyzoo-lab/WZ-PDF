@@ -41,7 +41,7 @@ const demoHtml = html
   .replace(/<meta name="robots"[^>]*>/i, '<meta name="robots" content="noindex, nofollow" />')
 
 const config = {
-  _readme: 'Private-mode demo of the WZ PDF site. See private.example.json next to app.html for the format.',
+  _readme: 'Private-mode demo of the WZ Reader site. See private.example.json next to app.html for the format.',
   documents: { sample: '../sample.pdf' },
   print: false,
 }

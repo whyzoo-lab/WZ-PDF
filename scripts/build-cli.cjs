@@ -6,7 +6,7 @@
  * name differs between the compilations.
  *
  * Uses the C# compiler that is part of Windows itself (.NET Framework 4.x), so
- * building WZ PDF still needs nothing beyond Node — no Visual Studio, no Rust,
+ * building WZ Reader still needs nothing beyond Node — no Visual Studio, no Rust,
  * no Go. The results are ~5 KB console-subsystem executables, which is the
  * whole point: `WZ PDF.exe` is GUI-subsystem and cannot print to the terminal
  * it was started from. See cli/wzconvert.cs.

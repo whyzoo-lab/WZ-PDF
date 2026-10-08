@@ -2,7 +2,7 @@
  * Fail fast when a build output is in use, instead of letting electron-builder
  * wait for it forever.
  *
- * A portable build that is running (release/WZ_PDF_<version>.exe, launched to
+ * A portable build that is running (release/WZ_Reader_<version>.exe, launched to
  * try the build) keeps its own file open for as long as the app is open. The
  * next `build:exe` writes the same file name, and electron-builder's answer is
  * "output file is locked for writing (maybe by virus scanner) => waiting for
@@ -18,7 +18,7 @@ const ROOT = path.join(__dirname, '..')
 const { version } = require(path.join(ROOT, 'package.json'))
 const RELEASE = path.join(ROOT, 'release')
 
-const outputs = [`WZ_PDF_${version}.exe`, `WZ_PDF_Setup_${version}.exe`]
+const outputs = [`WZ_Reader_${version}.exe`, `WZ_Reader_Setup_${version}.exe`]
   .map(name => path.join(RELEASE, name))
   .filter(file => fs.existsSync(file))
 
@@ -58,7 +58,7 @@ if (locked.length > 0) {
     console.error('  Started from release/ and still running (close the app, then build again):')
     for (const p of procs) console.error(`    PID ${p}`)
   } else {
-    console.error('  Close any WZ PDF started from release/ (or an installer you opened from there), then build again.')
+    console.error('  Close any WZ Reader started from release/ (or an installer you opened from there), then build again.')
   }
   console.error('')
   process.exit(1)

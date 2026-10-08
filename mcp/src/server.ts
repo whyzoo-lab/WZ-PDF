@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * WZ PDF — Model Context Protocol server
+ * WZ Reader — Model Context Protocol server
  *
  * Exposes PDF read/edit/page-ops operations to Claude (Desktop, web, Code).
  * Speaks JSON-RPC 2.0 over stdio per the MCP spec.

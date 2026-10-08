@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * WZ PDF MCP — HTTP (Streamable HTTP) transport entry point.
+ * WZ Reader MCP — HTTP (Streamable HTTP) transport entry point.
  *
  * Lets remote Claude clients (Claude Desktop "Custom Connector", Claude.ai
  * web) connect over the network instead of via local stdio.

@@ -247,7 +247,7 @@ export function pinnedRequest(target: PinnedTarget, signal: AbortSignal): Promis
         ;(cb as (e: Error | null, a: unknown, f?: number) => void)(
           null, (opts as { all?: boolean } | undefined)?.all ? [one] : address, family)
       },
-      headers: { 'user-agent': 'WZ-PDF' },
+      headers: { 'user-agent': 'WZ-Reader' },
     }, res => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: res }))
     req.on('error', reject)
     req.end()

@@ -201,7 +201,7 @@ export async function documentToPdf(bytes: ArrayBuffer, name: string): Promise<U
     case 'sheet': return sheetToPdf(bytes, name)
     case 'md': return markdownToPdf(bytes, name.replace(/\.[^.]+$/, ''))
     case 'eml': return emailToPdf(bytes)
-    default: throw new Error(`not a document WZ PDF opens: ${name}`)
+    default: throw new Error(`not a document WZ Reader opens: ${name}`)
   }
 }
 

@@ -1,5 +1,5 @@
 /**
- * Text out of the documents WZ PDF opens, for `doc_get_text` / `doc_info`.
+ * Text out of the documents WZ Reader opens, for `doc_get_text` / `doc_info`.
  *
  * Everything here runs in this process, without the desktop app: Word and
  * PowerPoint are zips of XML whose text sits in known elements, spreadsheets

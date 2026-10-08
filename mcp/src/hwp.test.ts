@@ -37,7 +37,7 @@ describe('locating the desktop app', () => {
   it('explains what to do when the app is nowhere to be found', () => {
     delete process.env.WZPDF_APP
     expect(() => findAppExecutable('C:/anywhere', () => false))
-      .toThrow(/Install WZ PDF, or set WZPDF_APP/)
+      .toThrow(/Install WZ Reader, or set WZPDF_APP/)
   })
 })
 

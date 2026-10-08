@@ -105,10 +105,10 @@ function loadUpdater(): AppUpdater {
   autoUpdater.logger = {
     info: () => {},
     debug: () => {},
-    warn: (m: unknown) => console.warn('[WZ PDF] update:', m),
-    error: (m: unknown) => console.error('[WZ PDF] update:', m),
+    warn: (m: unknown) => console.warn('[WZ Reader] update:', m),
+    error: (m: unknown) => console.error('[WZ Reader] update:', m),
   }
-  autoUpdater.on('error', err => console.error('[WZ PDF] update failed:', err instanceof Error ? err.message : String(err)))
+  autoUpdater.on('error', err => console.error('[WZ Reader] update failed:', err instanceof Error ? err.message : String(err)))
   autoUpdater.on('update-downloaded', info => {
     ready = info.version
     getWindow()?.webContents.send('update:ready', info.version)
@@ -124,7 +124,7 @@ async function check(): Promise<void> {
     await u.checkForUpdates()
   } catch (err) {
     // Offline, GitHub unreachable, rate-limited: try again at the next interval.
-    console.error('[WZ PDF] update check failed:', err instanceof Error ? err.message : String(err))
+    console.error('[WZ Reader] update check failed:', err instanceof Error ? err.message : String(err))
   }
 }
 

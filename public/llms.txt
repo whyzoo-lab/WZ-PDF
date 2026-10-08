@@ -1,11 +1,11 @@
-# WZ PDF
+# WZ Reader
 
 > A free, fully client-side PDF viewer and editor. View, annotate, edit text,
 > manage pages, present fullscreen, and export to multiple formats — all in the
 > browser, with no backend and no file upload. The document is processed
 > entirely on the user's device, so it never leaves their machine.
 
-WZ PDF runs as a web app and as a Windows desktop app (Electron). The UI is
+WZ Reader runs as a web app and as a Windows desktop app (Electron). The UI is
 available in English and Korean (auto-detected from the browser/OS locale; can
 be forced with `?lang=en` or `?lang=ko`).
 

@@ -381,7 +381,7 @@ export function ActionBar({
     <div className="flex items-center gap-2.5 px-1.5 py-0.5 select-none">
       <img src="./icon.svg" alt="" className="w-7 h-7 rounded-md shrink-0" draggable={false} />
       <span className="text-lg font-bold tracking-tight bg-gradient-to-br from-sky-400 to-violet-400 bg-clip-text text-transparent leading-none">
-        WZ PDF
+        WZ Reader
       </span>
       <span className="hidden sm:inline text-xs text-gray-400 ml-1">{t('app.tagline')}</span>
       <span

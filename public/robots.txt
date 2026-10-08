@@ -1,4 +1,4 @@
-# WZ PDF — robots policy
+# WZ Reader — robots policy
 # Allow all conventional search engines.
 User-agent: *
 Allow: /

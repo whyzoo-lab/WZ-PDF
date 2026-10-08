@@ -1,4 +1,4 @@
-// Console front end for WZ PDF's batch converters.
+// Console front end for WZ Reader's batch converters.
 //
 // One source, compiled to four executables — hwp2pdf.exe, topdf.exe,
 // hwp2hwpx.exe and hwpx2hwp.exe (see scripts/build-cli.cjs). Each decides what to do from its
@@ -46,7 +46,7 @@ static class WzConvert
         if (!File.Exists(app))
         {
             Console.Error.WriteLine(tool + ": cannot find \"" + AppExe + "\" next to this program.");
-            Console.Error.WriteLine("It is installed alongside WZ PDF; run it from the install folder.");
+            Console.Error.WriteLine("It is installed alongside WZ Reader; run it from the install folder.");
             return 2;
         }
 

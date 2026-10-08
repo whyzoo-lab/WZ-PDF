@@ -87,7 +87,7 @@ async function loadEngine(): Promise<RhwpModule> {
   const { glue, wasm } = enginePaths()
   for (const [label, file] of [['engine', glue], ['engine data', wasm]] as const) {
     if (!fs.existsSync(file)) {
-      throw new Error(`HWP ${label} is missing at ${file} — reinstall WZ PDF`)
+      throw new Error(`HWP ${label} is missing at ${file} — reinstall WZ Reader`)
     }
   }
   const rhwp = await importEsm(pathToFileURL(glue).href)

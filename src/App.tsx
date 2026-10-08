@@ -382,7 +382,7 @@ export default function App() {
       // intended use of an effect here, not a render-cascade bug.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setFileBytes(null)
-      document.title = 'WZ PDF'
+      document.title = 'WZ Reader'
       return
     }
     // Too large to hold: it is paged in by range for viewing, so there are no
@@ -405,7 +405,7 @@ export default function App() {
 
   // Window title — marked while there are unsaved changes, as editors do.
   useEffect(() => {
-    document.title = file ? `${unsaved ? '● ' : ''}WZ PDF - ${file.name}` : 'WZ PDF'
+    document.title = file ? `${unsaved ? '● ' : ''}WZ Reader - ${file.name}` : 'WZ Reader'
   }, [file, unsaved])
 
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────

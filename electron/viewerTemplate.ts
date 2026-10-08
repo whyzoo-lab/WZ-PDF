@@ -30,7 +30,7 @@ export const RELEASE_BASE = 'https://github.com/whyzoo-lab/WZ-PDF/releases/downl
 
 export interface TemplateManifest {
   version: string
-  /** The portable's release asset name, e.g. WZ_PDF_1.24.0.exe. */
+  /** The portable's release asset name, e.g. WZ_Reader_1.25.0.exe (WZ_PDF_… before 1.25.0). */
   file: string
   size: number
   /** Base64 SHA-512 of the whole file. */
@@ -42,7 +42,7 @@ export function parseManifest(raw: string, appVersion: string): TemplateManifest
   try {
     const m = JSON.parse(raw) as Partial<TemplateManifest>
     if (m.version !== appVersion) return null
-    if (typeof m.file !== 'string' || !/^WZ_PDF_[0-9][0-9A-Za-z.-]*\.exe$/.test(m.file)) return null
+    if (typeof m.file !== 'string' || !/^WZ_(?:Reader|PDF)_[0-9][0-9A-Za-z.-]*\.exe$/.test(m.file)) return null
     if (typeof m.size !== 'number' || !Number.isSafeInteger(m.size) || m.size <= 0) return null
     if (typeof m.sha512 !== 'string' || !/^[A-Za-z0-9+/]{86}==$/.test(m.sha512)) return null
     return { version: m.version, file: m.file, size: m.size, sha512: m.sha512 }

@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-WZ PDF redistributes the following open-source components.  Their licenses
+WZ Reader redistributes the following open-source components.  Their licenses
 are reproduced below as required.
 
 ---
@@ -25,7 +25,7 @@ Full license: `node_modules/pdfjs-dist/LICENSE`
 
 > Copyright (c) 2009-2016 Stuart Knightley
 >
-> JSZip is dual-licensed. WZ PDF uses it under the **MIT License** terms.
+> JSZip is dual-licensed. WZ Reader uses it under the **MIT License** terms.
 
 Full license: `node_modules/jszip/LICENSE.markdown`
 
@@ -178,7 +178,7 @@ person without consent, to deceive, harass or defame, or otherwise to cause
 foreseeable harm.
 
 The full text accompanies the weights in the download and is also published at
-the model page linked above. Using WZ PDF's read-aloud feature means accepting
+the model page linked above. Using WZ Reader's read-aloud feature means accepting
 those terms for the audio it produces.
 
 ## onnxruntime-node — MIT
