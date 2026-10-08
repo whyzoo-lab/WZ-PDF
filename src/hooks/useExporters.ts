@@ -46,9 +46,10 @@ interface UseExportersArgs {
  * `handleExportExe` is dual-purpose:
  *   - Electron portable build: appends current PDF bytes onto a copy of the
  *     running exe (the real "EXE Viewer" feature).
- *   - Web build: the feature can't run client-side, so we redirect the user
- *     to download the installer hosted alongside the web app at
- *     `/release/WZ_Reader_Setup_<version>.exe`.
+ *   - Web build: the feature can't run client-side, so we send the user to
+ *     this version's installer on the GitHub release. It used to be
+ *     `./release/…` next to the web app, which only a self-hosted server that
+ *     uploaded the installer had; on GitHub Pages that link was a 404.
  */
 export function useExporters({
   file,
@@ -262,12 +263,12 @@ export function useExporters({
   // EXE Viewer:
   //   - Electron: appends the current PDF bytes onto a copy of the running
   //     portable exe. Main process owns the file dialog + write.
-  //   - Web: redirects to the installer download (hosted alongside the web app)
-  //     so the user can install the desktop app and use the real feature.
+  //   - Web: sends the user to the installer on the GitHub release, so they
+  //     can install the desktop app and use the real feature.
   const handleExportExe = useCallback(async () => {
     // Web fallback: just navigate to the installer download URL.
     if (!window.electronAPI) {
-      const installerUrl = `./release/WZ_Reader_Setup_${__APP_VERSION__}.exe`
+      const installerUrl = `https://github.com/whyzoo-lab/WZ-PDF/releases/download/v${__APP_VERSION__}/WZ_Reader_Setup_${__APP_VERSION__}.exe`
       const ok = window.confirm(t('export.exeWebPrompt'))
       if (ok) window.location.href = installerUrl
       return

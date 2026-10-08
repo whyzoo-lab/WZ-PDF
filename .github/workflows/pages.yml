@@ -1,8 +1,9 @@
 name: Deploy Pages
 
 # Publish the web build to GitHub Pages on every push to main.
-# (The internal-server deploy.bat path still works; this is an additional,
-#  public, HTTPS target — required for OCR, which rejects file:// origins.)
+# This is the project's web deployment (the internal server deploy.bat
+# targeted was retired in 1.25.1). HTTPS is required for OCR, which rejects
+# file:// origins. deploy.example.bat stays as a template for self-hosting.
 on:
   push:
     branches: [main]
