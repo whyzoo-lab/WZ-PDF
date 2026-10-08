@@ -9,9 +9,22 @@ Introduce : https://whyzoo.com/WzPDF/ · Demo : https://whyzoo-lab.github.io/WZ-
 ![Platform](https://img.shields.io/badge/platform-Web%20%C2%B7%20Windows-informational)
 ![No upload](https://img.shields.io/badge/privacy-no%20upload%20%C2%B7%20offline-success)
 
-<img width="1871" height="995" alt="image" src="https://github.com/user-attachments/assets/11aad7cd-0b71-4f2e-8dc4-670e90bf0cd7" />
-<img width="1590" height="870" alt="image" src="https://github.com/user-attachments/assets/a7eea157-9be1-4749-bda5-076134bed0db" />
-<img width="1455" height="1000" alt="image" src="https://github.com/user-attachments/assets/2fa5af89-d1c0-434c-b5ab-96172fa2f551" />
+<img src="docs/screenshots/powerpoint.png" alt="A PowerPoint deck in WZ Reader: the page list, a chart slide with its speaker notes below it, and the save menu — original file, PDF, EXE" />
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/excel.png" alt="An Excel quote with its fonts, fills, borders, merged cells and number formats" /></td>
+    <td width="33%"><img src="docs/screenshots/pdf.png" alt="A PDF in two-page view with the page list and yellow highlighter strokes" /></td>
+    <td width="33%"><img src="docs/screenshots/markdown.png" alt="A Markdown note rendered with a contents rail, a task list and a table" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Excel without Excel</sub></td>
+    <td align="center"><sub>PDF — two-page view, on-screen markup</sub></td>
+    <td align="center"><sub>Markdown with a contents rail</sub></td>
+  </tr>
+</table>
+
+<sub>Sample documents made for these screenshots.</sub>
 
 > A presentation-focused viewer, editor, and distribution platform for the
 > documents that actually land in your inbox.
