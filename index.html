@@ -5,22 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- ── SEO ─────────────────────────────────────────────────────────── -->
-    <title>WZ Reader — In-browser Viewer for PDF, HWP, Word, PowerPoint, Excel, e-mail and images (free, no upload)</title>
-    <meta name="description" content="WZ Reader opens PDF, Korean HWP/HWPX, Word, PowerPoint, Excel, .eml mail and images entirely in your browser — no install, no upload, no Office needed. Save any of them as PDF with selectable text, present slides with speaker-note captions, annotate, run on-device OCR, and embed a view-only private viewer in any website." />
+    <title>WZ Reader — PDF, HWP, Word, PowerPoint and Excel in your browser, read aloud (free, no upload)</title>
+    <meta name="description" content="WZ Reader (formerly WZ PDF) opens PDF, Korean HWP/HWPX, Word, PowerPoint, Excel, .eml mail, Markdown and images entirely in your browser — no install, no upload, no Office needed. Save any of them as PDF with selectable text, present slides with speaker-note captions, have documents read aloud, turn a deck into a narrated video, annotate, run on-device OCR, and embed a view-only private viewer in any website." />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="theme-color" content="#0f172a" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="canonical" href="https://whyzoo-lab.github.io/WZ-PDF/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="WZ Reader" />
-    <meta property="og:title" content="WZ Reader — In-browser Document Viewer &amp; Editor" />
-    <meta property="og:description" content="PDF, HWP, Word, PowerPoint and Excel right in your browser — no install, no upload, no Office. Embeddable viewer demo." />
+    <meta property="og:url" content="https://whyzoo-lab.github.io/WZ-PDF/" />
+    <meta property="og:title" content="WZ Reader — every document, fast and simple" />
+    <meta property="og:description" content="PDF, HWP, Word, PowerPoint and Excel right in your browser — no install, no upload, no Office. Read aloud, narrated slide videos, OCR, save as PDF." />
+    <!-- Link previews need an absolute URL; scripts/build-og.cjs draws it. -->
+    <meta property="og:image" content="https://whyzoo-lab.github.io/WZ-PDF/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "WZ Reader",
+      "alternateName": "WZ PDF",
+      "description": "Document viewer for PDF, Korean HWP/HWPX, Word, PowerPoint, Excel, e-mail, Markdown and images. Runs in the browser or as a Windows app; nothing is uploaded.",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web, Windows",
+      "url": "https://whyzoo-lab.github.io/WZ-PDF/",
+      "downloadUrl": "https://github.com/whyzoo-lab/WZ-PDF/releases/latest",
+      "image": "https://whyzoo-lab.github.io/WZ-PDF/og-image.png",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "creator": { "@type": "Organization", "name": "WhyZOO", "url": "https://github.com/whyzoo-lab/WZ-PDF" }
     }
@@ -29,7 +41,7 @@
     <style>
       :root{
         --bg:#0f172a; --bg2:#1e293b; --card:#1f2937; --bd:#334155;
-        --tx:#e2e8f0; --dim:#94a3b8; --sky:#38bdf8; --violet:#a78bfa; --green:#34d399;
+        --tx:#e2e8f0; --dim:#94a3b8; --sky:#38bdf8; --violet:#a78bfa; --green:#34d399; --amber:#fbbf24;
       }
       *{box-sizing:border-box}
       html,body{margin:0;padding:0;background:var(--bg);color:var(--tx);
@@ -37,6 +49,7 @@
         line-height:1.7;-webkit-font-smoothing:antialiased}
       a{color:var(--sky);text-decoration:none}
       .wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+      html{scroll-padding-top:72px}
 
       /* Header */
       header{position:sticky;top:0;z-index:20;background:rgba(15,23,42,.82);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
@@ -57,26 +70,41 @@
       .hero{text-align:center;padding:64px 0 30px}
       .hero h1{font-size:42px;line-height:1.15;margin:0 0 14px;letter-spacing:-.02em}
       .hero h1 .grad{background:linear-gradient(135deg,var(--sky),var(--violet));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-      .hero p{color:var(--dim);font-size:17px;max-width:640px;margin:0 auto 26px}
+      .hero p{color:var(--dim);font-size:17px;max-width:680px;margin:0 auto 26px}
+      .hero p strong{color:var(--tx)}
       .hero .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+      .hero .was{color:var(--dim);font-size:13px;margin-top:18px}
       .pill{display:inline-block;margin-bottom:18px;font-size:12.5px;color:var(--dim);border:1px solid var(--bd);border-radius:999px;padding:4px 14px}
 
       /* Features */
-      .feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:40px 0 8px}
+      .feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:40px 0 8px}
       .feat{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px}
       .feat .ic{font-size:22px}
       .feat h3{margin:8px 0 4px;font-size:15.5px}
       .feat p{margin:0;color:var(--dim);font-size:13.5px;line-height:1.55}
+      .tag{display:inline-block;vertical-align:2px;margin-left:6px;font-size:10.5px;font-weight:600;color:var(--amber);border:1px solid rgba(251,191,36,.45);border-radius:999px;padding:0 7px}
 
       /* Section */
       section.block{padding:46px 0}
       .block h2{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
       .block .sub{color:var(--dim);margin:0 0 22px;font-size:15px}
 
+      /* Desktop app */
+      .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:4px 32px;list-style:none;margin:0 0 22px;padding:0}
+      .cols li{position:relative;padding-left:22px;color:var(--dim);font-size:14px;line-height:1.6;margin:6px 0}
+      .cols li::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}
+      .cols li strong{color:var(--tx)}
+      .dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+      .dl a{display:block;background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px 18px;color:var(--tx)}
+      .dl a:hover{border-color:var(--sky)}
+      .dl b{display:block;font-size:15px}
+      .dl code{font-size:12.5px}
+      .dl span{display:block;color:var(--dim);font-size:13px;margin-top:4px;line-height:1.5}
+
       /* Demo frame — mimics being embedded inside another website */
       .demo-shell{background:var(--bg2);border:1px solid var(--bd);border-radius:16px;overflow:hidden;box-shadow:0 24px 60px -20px rgba(0,0,0,.6)}
       .demo-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--bd);background:#172033}
-      .dot{width:11px;height:11px;border-radius:50%}
+      .dot{width:11px;height:11px;border-radius:50%;flex:none}
       .demo-url{margin-left:10px;font-size:12px;color:var(--dim);font-family:ui-monospace,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .demo-frame{width:100%;height:72vh;min-height:460px;border:0;display:block;background:#0b1220}
       .demo-cap{color:var(--dim);font-size:13px;margin-top:12px;text-align:center}
@@ -91,7 +119,13 @@
 
       footer{border-top:1px solid var(--bd);color:var(--dim);font-size:13px;text-align:center;padding:28px 0;margin-top:30px}
 
-      @media (max-width:600px){ .hero h1{font-size:32px} .nav a.lnk{display:none} }
+      @media (max-width:600px){
+        .wrap{padding:0 16px}
+        .hero h1{font-size:32px}
+        .nav a.lnk{display:none}
+        .params{grid-template-columns:1fr;gap:2px 0}
+        .params .d{margin-bottom:8px}
+      }
     </style>
   </head>
   <body>
@@ -101,6 +135,7 @@
           <img src="/icon.svg" alt="" /><span class="name">WZ Reader</span>
         </a>
         <span class="spacer"></span>
+        <a class="lnk" href="#desktop">Desktop</a>
         <a class="lnk" href="#demo">Demo</a>
         <a class="lnk" href="#embed">Embed</a>
         <a class="lnk" href="#private">Private mode</a>
@@ -112,34 +147,67 @@
     <main class="wrap">
       <!-- Hero -->
       <div class="hero">
-        <span class="pill">⚡ No install · No upload · 100% processed in your browser</span>
+        <span class="pill">⚡ No install · No upload · 100% processed on your device</span>
         <h1>Open PDF, HWP, Word, PowerPoint and Excel<br><span class="grad">right in your browser</span></h1>
-        <p>Read <strong>Office documents without Office</strong> and save them <strong>as PDF with text you can still select</strong>,
-          convert HWP to PDF, open <strong>.eml mail</strong>, annotate, present slides with
-          <strong>speaker notes as captions</strong>, and run on-device OCR.
-          Plus a viewer you can <strong>embed in any website</strong> — even a <strong>private, view-only one</strong>
-          that shows just the documents your server designates.</p>
+        <p>Read <strong>Office and Korean HWP documents without Office or Hancom</strong>, and save any of them
+          <strong>as a PDF whose text you can still select</strong>. Present a deck with its
+          <strong>speaker notes as captions</strong>, have a document <strong>read aloud</strong> in a natural voice,
+          or turn the deck into a <strong>narrated video</strong>. Annotate, stamp, run OCR, open mail —
+          and <strong>embed the viewer in any website</strong>, even as a private, view-only one.</p>
         <div class="cta">
           <a class="btn btn-primary" href="./app.html">Open app</a>
+          <a class="btn btn-ghost" href="#desktop">Download for Windows</a>
           <a class="btn btn-ghost" href="#demo">See embed demo</a>
-          <a class="btn btn-ghost" href="https://github.com/whyzoo-lab/WZ-PDF/releases" target="_blank" rel="noopener">Desktop installer</a>
         </div>
+        <p class="was">Formerly <strong>WZ PDF</strong> — renamed in 1.25 once it opened far more than PDF.</p>
       </div>
 
       <!-- Features -->
       <div class="feats">
-        <div class="feat"><div class="ic">🔒</div><h3>No upload</h3><p>Your file never leaves your device. Everything is processed inside the browser.</p></div>
-        <div class="feat"><div class="ic">📊</div><h3>Word · PowerPoint · Excel</h3><p>No Office needed: layout, tables, charts and pictures as written, every row of a huge sheet, and Save as PDF with selectable text.</p></div>
-        <div class="feat"><div class="ic">🎤</div><h3>Speaker notes</h3><p>A deck's script under each slide, and as captions in the slideshow (<code>C</code>). Read-aloud reads the script, and the deck saves as a narrated MP4 with switchable subtitles.</p></div>
-        <div class="feat"><div class="ic">🖊️</div><h3>Annotate &amp; edit</h3><p>Stamps, hand-drawn signatures, watermarks, inline text edits, and page reorder/insert/delete.</p></div>
-        <div class="feat"><div class="ic">🎯</div><h3>Present &amp; OCR</h3><p>Fullscreen presenter tools (pen, laser, spotlight zoom) and offline text recognition.</p></div>
+        <div class="feat"><div class="ic">🔒</div><h3>No upload</h3><p>Your file never leaves your device. Everything is processed in the browser or the desktop app — OCR and speech included.</p></div>
+        <div class="feat"><div class="ic">📊</div><h3>Word · PowerPoint · Excel</h3><p>No Office needed: layout, tables, charts and pictures as written, page list and two-page view, every row of a 200,000-row sheet, and Save as PDF with selectable text.</p></div>
+        <div class="feat"><div class="ic">📄</div><h3>HWP / HWPX</h3><p>Korean word-processor files open like a PDF, with native selectable text. HWP → PDF keeps the text copyable and searchable; HWP ⇄ HWPX from the command line.</p></div>
+        <div class="feat"><div class="ic">🎤</div><h3>Present with speaker notes</h3><p>The script under each slide and as captions in the slideshow (<code>C</code>). Pen, highlighter, arrow, laser pointer and spotlight zoom in fullscreen.</p></div>
+        <div class="feat"><div class="ic">🔊</div><h3>Read aloud<span class="tag">Desktop</span></h3><p>A natural voice, Korean included, ten voices, entirely offline. The sentence being read is highlighted, and in a presentation the slides turn with it.</p></div>
+        <div class="feat"><div class="ic">🎬</div><h3>Narrated video<span class="tag">Desktop</span></h3><p>A deck with notes becomes one MP4: the slides, the script spoken, and the script as a subtitle track any player can switch on and off.</p></div>
+        <div class="feat"><div class="ic">🔎</div><h3>On-device OCR</h3><p>Recognize Korean and English in scans and images, offline, and keep it — saved PDFs become searchable. Ctrl-drag any region to copy its text.</p></div>
+        <div class="feat"><div class="ic">✍️</div><h3>Stamps &amp; signatures</h3><p>Upload your seal once — background removed, size remembered — and paste it onto every selected page at once. Signatures, watermarks, text edits, undo.</p></div>
+        <div class="feat"><div class="ic">🔐</div><h3>Password-protected PDFs</h3><p>Open encrypted PDFs, and save them locked (AES-256) or unlocked — the padlock decides what the next save does.</p></div>
+        <div class="feat"><div class="ic">📑</div><h3>Pages &amp; export</h3><p>Reorder, insert and delete pages; save just the selected ones, a booklet with two pages per sheet, an HTML viewer, images, or a self-opening .exe.</p></div>
+        <div class="feat"><div class="ic">✉️</div><h3>Mail &amp; Markdown</h3><p>.eml with attachments and Korean encodings, remote images blocked until you ask. Markdown as a formatted page with a contents rail — and an editor.</p></div>
         <div class="feat"><div class="ic">🧩</div><h3>Web embed</h3><p>A single <code>?url=</code> drops the viewer into any site — or a private, view-only viewer for the documents you designate.</p></div>
       </div>
+
+      <!-- Desktop app -->
+      <section class="block" id="desktop">
+        <h2>The Windows app</h2>
+        <p class="sub">The same viewer, plus what a browser cannot do. Free, and it keeps itself up to date.</p>
+        <ul class="cols">
+          <li><strong>Read aloud and narrated video</strong> — the voice runs on your PC; the model is a one-time 383 MB download you are asked about first.</li>
+          <li><strong>Double-click to open</strong> PDF, HWP/HWPX, Word, PowerPoint, Excel, CSV, mail, Markdown and images; recent documents on the start screen.</li>
+          <li><strong>Batch converters on your PATH</strong> — <code>topdf</code>, <code>hwp2pdf</code>, <code>hwp2hwpx</code>, <code>hwpx2hwp</code>: files, wildcards or whole folders.</li>
+          <li><strong>Huge PDFs</strong> — over 500 MB (up to about 2 GB) are read in pieces, so they open in seconds.</li>
+          <li><strong>An MCP server for AI agents</strong> such as Claude — read any of these formats and convert them to PDF, no Node.js needed.</li>
+          <li><strong>Automatic updates</strong> — downloaded in the background, checked against the published hash, installed when you restart.</li>
+        </ul>
+        <div class="dl">
+          <a href="https://github.com/whyzoo-lab/WZ-PDF/releases/latest" target="_blank" rel="noopener">
+            <b>Installer (recommended)</b>
+            <code>WZ_Reader_Setup_&lt;version&gt;.exe</code>
+            <span>Shortcuts, file associations, the console converters and automatic updates.</span>
+          </a>
+          <a href="https://github.com/whyzoo-lab/WZ-PDF/releases/latest" target="_blank" rel="noopener">
+            <b>Portable</b>
+            <code>WZ_Reader_&lt;version&gt;.exe</code>
+            <span>One file, no install. Unpacks itself on every start (~5 s) and does not update itself.</span>
+          </a>
+        </div>
+      </section>
 
       <!-- Demo -->
       <section class="block" id="demo">
         <h2>How it looks embedded in a website</h2>
-        <p class="sub">Below is the viewer embedded with a real <code>&lt;iframe&gt;</code> — the PDF shows inline, right on the page, with no download.</p>
+        <p class="sub">Below is the viewer embedded with a real <code>&lt;iframe&gt;</code> — the document shows inline, right on the page, with no download.</p>
         <div class="demo-shell">
           <div class="demo-bar">
             <span class="dot" style="background:#f87171"></span>
@@ -162,12 +230,13 @@
           <code>url</code><span class="d">the document to display — PDF, HWP, Word, PowerPoint, Excel, Markdown, mail or an image (encode with <code>encodeURIComponent</code>)</span>
           <code>file</code><span class="d">alias for <code>url</code></span>
           <code>embed=1</code><span class="d">hide the editing chrome (read-only). Omit it to open the full viewer.</span>
+          <code>lang</code><span class="d"><code>en</code> or <code>ko</code> to force the interface language (otherwise it follows the browser)</span>
         </div>
         <div class="note">
-          ⚠️ <strong>CORS note:</strong> the web build fetches the PDF in the browser, so the PDF host must allow
-          cross-origin access. <strong>The safest setup is to serve the viewer and the PDF from the same domain</strong> —
-          upload the <code>npm run build</code> output (<code>dist/</code>) to your site and keep the PDF on the same origin.
-          The desktop (Electron) app is not affected by CORS.
+          ⚠️ <strong>CORS note:</strong> the web build fetches the document in the browser, so its host must allow
+          cross-origin access. <strong>The safest setup is to serve the viewer and the document from the same domain</strong> —
+          upload the <code>npm run build</code> output (<code>dist/</code>) to your site and keep the document on the same origin.
+          The desktop app is not affected by CORS.
         </div>
       </section>
 
@@ -194,7 +263,7 @@
         </div>
         <ul style="color:var(--dim);font-size:14px;margin:0 0 6px;padding-left:20px">
           <li><strong style="color:var(--tx)">Works:</strong> zoom, fit, rotation, page list, two-page and grid views, fullscreen, find, OCR.</li>
-          <li><strong style="color:var(--tx)">Switched off:</strong> opening any other document (file, drop, <code>?url=</code>, mail attachment), editing, saving, downloading.</li>
+          <li><strong style="color:var(--tx)">Switched off:</strong> opening any other document (file, drop, <code>?url=</code>, mail attachment), editing, saving, downloading — and their keyboard shortcuts.</li>
           <li>It belongs to the deployment, not the link — there is no URL switch to remove. A <code>private.json</code> that exists but cannot be read keeps the viewer closed.</li>
           <li>When you redeploy, leave <code>private.json</code> on the server — a script that clears the folder first must skip it.</li>
         </ul>
@@ -225,8 +294,9 @@
     </main>
 
     <footer class="wrap">
-      WZ Reader · <a href="https://github.com/whyzoo-lab/WZ-PDF" target="_blank" rel="noopener">github.com/whyzoo-lab/WZ-PDF</a>
-      · Everything runs in your browser · No upload
+      WZ Reader (formerly WZ PDF) · <a href="https://github.com/whyzoo-lab/WZ-PDF" target="_blank" rel="noopener">github.com/whyzoo-lab/WZ-PDF</a>
+      · <a href="./help.en.html">User guide</a> · <a href="./help.html">사용 가이드</a>
+      · Everything runs on your device · No upload
     </footer>
 
     <script>
@@ -249,9 +319,9 @@
         // Copy-ready embed snippet pointing at THIS deployment's app.html.
         var snippet =
           '<iframe\n' +
-          '  src="' + app + '?embed=1&url=PDF_URL"\n' +
+          '  src="' + app + '?embed=1&url=DOCUMENT_URL"\n' +
           '  style="width:100%; height:80vh; border:0;"\n' +
-          '  title="PDF preview" allowfullscreen></iframe>';
+          '  title="Document preview" allowfullscreen></iframe>';
         var el = document.getElementById('embedCode');
         el.innerHTML = snippet
           .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')

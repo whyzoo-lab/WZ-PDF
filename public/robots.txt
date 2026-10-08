@@ -31,4 +31,4 @@ Allow: /
 User-agent: Bingbot
 Allow: /
 
-Sitemap: https://whyzoo.i234.me/sitemap.xml
+Sitemap: https://whyzoo-lab.github.io/WZ-PDF/sitemap.xml

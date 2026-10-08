@@ -1,9 +1,9 @@
 # WZ Reader
 
-> A free, fully client-side PDF viewer and editor. View, annotate, edit text,
-> manage pages, present fullscreen, and export to multiple formats — all in the
-> browser, with no backend and no file upload. The document is processed
-> entirely on the user's device, so it never leaves their machine.
+> A free document viewer for PDF, Korean HWP/HWPX, Word, PowerPoint, Excel,
+> e-mail (.eml), Markdown and images. It runs entirely on the user's device —
+> in the browser or as a Windows desktop app — with no backend and no file
+> upload. Called WZ PDF until version 1.25.
 
 WZ Reader runs as a web app and as a Windows desktop app (Electron). The UI is
 available in English and Korean (auto-detected from the browser/OS locale; can
@@ -11,29 +11,48 @@ be forced with `?lang=en` or `?lang=ko`).
 
 ## Key features
 
-- View: single page, two-page spread, grid overview, and a fullscreen
-  presentation mode (USB-clicker friendly, touchpad swipe, click-to-advance).
-- Annotate (Editor mode): preset/image stamps, hand-drawn signatures, and
-  full-page text watermarks — baked into the exported PDF. Korean text is
-  supported via an embedded Noto Sans KR font.
-- Text: a real selectable/copyable text layer; in Editor mode, double-click to
-  edit text via an inline overlay.
-- Page management: drag to reorder, insert blank pages, insert pages from
-  another PDF, delete pages, and merge.
-- Export: annotated PDF, a self-contained HTML viewer, page images (ZIP), and a
-  standalone Viewer EXE (desktop build).
-- Privacy: no server, no upload. All processing happens in the browser.
+- Formats: PDF, HWP/HWPX (Korean word processor, with native selectable text),
+  Word (.docx), PowerPoint (.pptx), spreadsheets (.xlsx .xlsm .xls .ods .csv,
+  every row of very large sheets), e-mail (.eml with attachments and Korean
+  encodings), Markdown (rendered, and editable), images.
+- Save as PDF from any of these formats, with selectable text. HWP → PDF keeps
+  a real text layer; HWP ⇄ HWPX conversion from the command line.
+- Present: single, two-page, grid and fullscreen views; ZoomIt-style presenter
+  tools (pen, highlighter, arrow, laser pointer, spotlight zoom); a deck's
+  speaker notes shown under each slide and as captions in the slideshow.
+- Read aloud (desktop): an on-device voice (Supertonic 3, Korean included)
+  reads the document or a deck's speaker notes, highlights the sentence, and
+  turns the pages in a presentation. A deck with notes can be saved as a
+  narrated MP4 with a switchable subtitle track.
+- OCR: on-device Korean + English text recognition (PaddleOCR); recognized text
+  is saved into the PDF. Ctrl-drag a region to copy its text.
+- Annotate: stamps (saved, background removed, pasted onto many pages at once),
+  hand-drawn signatures, watermarks, text edits, undo/redo.
+- PDF: password-protected PDFs (open, lock with AES-256, unlock), page reorder /
+  insert / delete, save selected pages, booklet (two pages per sheet), PDFs over
+  500 MB (desktop).
+- Export: PDF, a self-contained HTML viewer, page images (ZIP), and a
+  standalone Viewer EXE (desktop).
+- Embed: `app.html?embed=1&url=…` puts a read-only viewer in any web page;
+  private mode (`private.json` beside `app.html`) shows only the documents a
+  server designates, view only.
+- Desktop app: file associations, batch converters on PATH (`topdf`, `hwp2pdf`,
+  `hwp2hwpx`, `hwpx2hwp`), an MCP server for AI agents, automatic updates.
+- Privacy: no server, no upload. All processing happens on the user's device.
 
 ## Technology
 
-React, Konva (canvas annotation layer), pdf.js (rendering & text), pdf-lib
-(export), and Electron (desktop). An optional Model Context Protocol (MCP)
-server lets AI agents perform PDF operations programmatically.
+React, Konva, pdf.js, @cantoo/pdf-lib, @rhwp/core (Rust → WebAssembly),
+docx-preview, pptx-renderer, hucre, onnxruntime (OCR and speech), WebCodecs +
+mediabunny (video), and Electron (desktop). A Model Context Protocol (MCP)
+server lets AI agents read every supported format and convert it to PDF.
 
 ## Links
 
-- App: https://whyzoo.i234.me/
-- Help (English): https://whyzoo.i234.me/help.en.html
-- Help (Korean): https://whyzoo.i234.me/help.html
+- Home and embed demo: https://whyzoo-lab.github.io/WZ-PDF/
+- App: https://whyzoo-lab.github.io/WZ-PDF/app.html
+- Help (English): https://whyzoo-lab.github.io/WZ-PDF/help.en.html
+- Help (Korean): https://whyzoo-lab.github.io/WZ-PDF/help.html
+- Windows download: https://github.com/whyzoo-lab/WZ-PDF/releases/latest
 - Source code: https://github.com/whyzoo-lab/WZ-PDF
 - License: MIT
