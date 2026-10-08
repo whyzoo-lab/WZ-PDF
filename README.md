@@ -9,13 +9,13 @@ Introduce : https://whyzoo.com/WzPDF/ · Demo : https://whyzoo-lab.github.io/WZ-
 ![Platform](https://img.shields.io/badge/platform-Web%20%C2%B7%20Windows-informational)
 ![No upload](https://img.shields.io/badge/privacy-no%20upload%20%C2%B7%20offline-success)
 
-<img src="docs/screenshots/powerpoint.png" alt="A PowerPoint deck in WZ Reader: the page list, a chart slide with its speaker notes below it, and the save menu — original file, PDF, EXE" />
+<img src="public/screenshots/powerpoint.png" alt="A PowerPoint deck in WZ Reader: the page list, a chart slide with its speaker notes below it, and the save menu — original file, PDF, EXE" />
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/screenshots/excel.png" alt="An Excel quote with its fonts, fills, borders, merged cells and number formats" /></td>
-    <td width="33%"><img src="docs/screenshots/pdf.png" alt="A PDF in two-page view with the page list and yellow highlighter strokes" /></td>
-    <td width="33%"><img src="docs/screenshots/markdown.png" alt="A Markdown note rendered with a contents rail, a task list and a table" /></td>
+    <td width="33%"><img src="public/screenshots/excel.png" alt="An Excel quote with its fonts, fills, borders, merged cells and number formats" /></td>
+    <td width="33%"><img src="public/screenshots/pdf.png" alt="A PDF in two-page view with the page list and yellow highlighter strokes" /></td>
+    <td width="33%"><img src="public/screenshots/markdown.png" alt="A Markdown note rendered with a contents rail, a task list and a table" /></td>
   </tr>
   <tr>
     <td align="center"><sub>Excel without Excel</sub></td>

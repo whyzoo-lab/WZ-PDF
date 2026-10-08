@@ -132,7 +132,9 @@
     "!dist/assets/ort-wasm-simd-threaded.jsep-*.wasm",
     "!dist/assets/rhwp_bg-*.wasm",
     "!dist/ocr/wasm/ort-wasm-simd-threaded.wasm",
-    "!dist/ocr/wasm/ort-wasm-simd-threaded.mjs"
+    "!dist/ocr/wasm/ort-wasm-simd-threaded.mjs",
+    // Screenshots for the landing page and the README — website only.
+    "!dist/screenshots/**"
   ],
 
   // Keep the big, lazily-loaded binaries OUT of the asar. They are only read

@@ -1436,6 +1436,11 @@ repeats the same paths for the OG image. Change all three together.
 `public/sample.pdf` (the landing page's demo document) is `help.en.html`
 printed by headless Chrome (`--print-to-pdf --no-pdf-header-footer`); reprint
 it when the guide changes.
+`public/screenshots/` holds the README's and the landing page's screenshots
+(one copy for both; `docs/` is not deployed to Pages). They are website-only,
+so `electron-builder.json5` leaves them out of the app (`!dist/screenshots/**`).
+They were taken from a packaged build over CDP with made-up sample documents —
+never a user's own files, since they are public.
 
 ### Distribution (Windows)
 
