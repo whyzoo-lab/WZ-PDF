@@ -1597,7 +1597,7 @@ it has an updater.
 
 ### Reading aloud (text-to-speech)
 
-Documents can be read out loud with [Supertonic 3](https://huggingface.co/Supertone/supertonic-3),
+Documents can be read out loud with [Supertonic 3](https://huggingface.co/supertone-oss-archive/supertonic-3),
 a 31-language on-device TTS model. Korean is a first-class language in it, which
 is why it was chosen over the better-known alternatives — **Kokoro has no Korean
 at all** (checked against its VOICES.md, not the blog posts that claim
@@ -1628,7 +1628,16 @@ in a child that is spawned on first use and killed on stop or after five idle
 minutes — which returns every byte to the OS. It also keeps a native module out
 of the process that owns the window.
 
-**The weights are pinned to a commit and checked file by file.** `MODEL_REVISION`
+**Supertonic is archived (Oct 2026 check).** Supertone ended development in July
+2026 and archived the GitHub repository in September; there will be no new model
+or helper version. The weights moved to the `supertone-oss-archive` namespace on
+Hugging Face. `MODEL_SOURCES` asks the archive first and the original repository
+second: all 16 files were compared through the HF tree API and have the same
+size and blob id in both commits, so the same hashes check either. The vendored
+`helper.js` (2026-07-23 revision) is the last one; its upstream file last changed
+on 2026-05-15. onnxruntime-node is the part that still moves.
+
+**The weights are pinned to a commit and checked file by file.** `MODEL_SOURCES`
 is a commit SHA, not `main` — a branch can be moved, and these bytes are fed to
 a native ONNX parser. Each `MODEL_FILES` entry carries the git blob id
 (`sha1("blob <size>\0" + bytes)`), which Hugging Face publishes for non-LFS

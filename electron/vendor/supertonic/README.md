@@ -8,7 +8,7 @@ wraps this file, with a comment saying why.
 
 | | |
 |---|---|
-| Source | https://github.com/supertone-inc/supertonic — `nodejs/helper.js` |
+| Source | https://github.com/supertone-inc/supertonic — `nodejs/helper.js` (archived 2026; preserved at https://github.com/supertone-oss-archive/supertonic) |
 | Revision | `7e2804f96016a7028cb1ed627353c61c1e9dd281` (2026-07-23) |
 | Licence | MIT (the sample code; **the model weights are OpenRAIL-M** — see below) |
 

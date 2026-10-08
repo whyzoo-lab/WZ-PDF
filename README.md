@@ -175,7 +175,7 @@ is copied to that name. A live example runs on the
 - **Region OCR → clipboard** — hold **Ctrl and drag** to highlight any area; on
   release it's OCR'd and the text is copied to your clipboard.
 - **Read aloud** (`S`) — speaks the document from the page you are on, a
-  sentence at a time, using [Supertonic 3](https://huggingface.co/Supertone/supertonic-3)
+  sentence at a time, using [Supertonic 3](https://huggingface.co/supertone-oss-archive/supertonic-3)
   on-device. Ten voices, adjustable speed, previous / next sentence
   (`Alt+←` / `Alt+→`), and no audio or text ever sent anywhere. The voice model
   downloads once (383 MB) after you agree to it; everything after that works

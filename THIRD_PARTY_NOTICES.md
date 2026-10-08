@@ -165,7 +165,7 @@ matters:
 - **Inference code** — MIT. A copy of `nodejs/helper.js` is vendored verbatim at
   `electron/vendor/supertonic/helper.js`, with its provenance recorded in the
   README beside it.
-- **Model weights** ([`Supertone/supertonic-3`](https://huggingface.co/Supertone/supertonic-3))
+- **Model weights** ([`supertone-oss-archive/supertonic-3`](https://huggingface.co/supertone-oss-archive/supertonic-3), formerly [`Supertone/supertonic-3`](https://huggingface.co/Supertone/supertonic-3); Supertone archived the project in 2026 and the files are identical)
   — **OpenRAIL-M**. These are **not** included in the installer. They are
   downloaded once, on request, when the user first turns on reading aloud.
 
