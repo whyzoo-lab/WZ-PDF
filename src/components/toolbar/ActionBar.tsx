@@ -12,7 +12,7 @@ import {
   IconStamp, IconSignature, IconWatermark, IconDelete, IconLink,
   IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
   IconExe, IconLock, IconLockOpen, IconPencil, IconMenu, IconMore, IconFitWidth,
-  IconSpeak, IconStopSpeak, IconRotateLeft, IconVideo,
+  IconSpeak, IconStopSpeak, IconRotateLeft, IconVideo, IconFile,
 } from './icons'
 import { OcrAnnouncer } from '../OcrAnnouncer'
 import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED, TITLE_MIN_WIDTH, TITLE_GUTTER } from './toolbarStyles'
@@ -38,8 +38,6 @@ export interface ActionBarProps {
   pagedFlow?: boolean
   /** A deck with speaker notes: whether they show under each slide, and the switch. */
   slideNotes?: { on: boolean; onToggle: () => void }
-  /** Save a Word, PowerPoint or spreadsheet document as PDF. */
-  onSaveOfficePdf?: () => void
   /** A deck with speaker notes, in the desktop app: record it as a narrated video. */
   onSaveSlideVideo?: () => void
   /** Embed mode (?embed): hide file-open, export and the viewer/editor toggle
@@ -95,16 +93,24 @@ export interface ActionBarProps {
   isOcrRunning: boolean
   ocrProgress: { done: number; total: number } | null
   // ── Export menu ────────────────────────────────────────────────────────────
+  // The same three for every format — the file itself, a PDF of it, and a
+  // viewer exe carrying it — plus the page-only formats where there are pages.
+  /** Save as PDF: the main save button and Ctrl+S, whatever is open. */
   onExportPdf: () => void
+  /** Save the file itself under another name (".pptx" stays a deck). */
+  onSaveOriginal?: () => void
+  /** Its extension, shown beside that item. */
+  originalExt?: string
   /** The padlock: puts a password on the next save, or takes it back off. */
   onPassword: () => void
   /** True when the next save will put a password on the file. */
   saveLocked?: boolean
   /** Save the two-page view as a PDF (booklet layout). Absent where there are no pages. */
   onExportSpreads?: () => void
-  onExportHtml: () => void
-  onExportImages: () => void
-  /** If undefined, the EXE option is hidden (only available in Electron builds). */
+  /** HTML viewer and page images: page documents only. */
+  onExportHtml?: () => void
+  onExportImages?: () => void
+  /** If undefined, the EXE option is hidden. */
   onExportExe?: () => void
   // ── Read aloud ─────────────────────────────────────────────────────────────
   /** Start or stop reading the document. Undefined outside the desktop build,
@@ -129,7 +135,6 @@ export function ActionBar({
   canEdit = true,
   pagedFlow = false,
   slideNotes,
-  onSaveOfficePdf,
   onSaveSlideVideo,
   embed = false,
   appMode,
@@ -172,6 +177,8 @@ export function ActionBar({
   isOcrRunning,
   ocrProgress,
   onExportPdf,
+  onSaveOriginal,
+  originalExt,
   onPassword,
   saveLocked = false,
   onExportSpreads,
@@ -220,7 +227,7 @@ export function ActionBar({
 
   // Re-measure the toolbar whenever the visible control set changes.
   const contentKey = [
-    hasPdf, flowDoc, pagedFlow, !!slideNotes, !!onSaveOfficePdf, !!onSaveSlideVideo, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
+    hasPdf, flowDoc, pagedFlow, !!slideNotes, !!onSaveOriginal, !!onSaveSlideVideo, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
   ].join('|')
   const { ref: headerRef, collapsed } = useToolbarCollapse(contentKey)
 
@@ -717,6 +724,11 @@ export function ActionBar({
   // ── Export dropdown menu body (shared by the split button & collapsed menu) ─
   const exportMenuItems = (onDone: () => void) => (
     <>
+      {onSaveOriginal && (
+        <button onClick={() => { onSaveOriginal(); onDone() }} title={t('export.originalTitle')} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+          <IconFile /><span>{t('export.original')}</span><span className="ml-auto text-gray-400 text-[11px]">{originalExt}</span>
+        </button>
+      )}
       <button onClick={() => { onExportPdf(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
         <IconSave /><span>{t('export.pdf')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
       </button>
@@ -725,16 +737,20 @@ export function ActionBar({
           <IconSpread /><span>{t('export.spread')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
         </button>
       )}
-      <button onClick={() => { onExportHtml(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-        <IconHtml /><span>{t('export.html')}</span><span className="ml-auto text-gray-400 text-[11px]">.html</span>
-      </button>
-      <button onClick={() => { onExportImages(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-        <IconImage /><span>{t('export.images')}</span><span className="ml-auto text-gray-400 text-[11px]">.zip</span>
-      </button>
+      {onExportHtml && (
+        <button onClick={() => { onExportHtml(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+          <IconHtml /><span>{t('export.html')}</span><span className="ml-auto text-gray-400 text-[11px]">.html</span>
+        </button>
+      )}
+      {onExportImages && (
+        <button onClick={() => { onExportImages(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+          <IconImage /><span>{t('export.images')}</span><span className="ml-auto text-gray-400 text-[11px]">.zip</span>
+        </button>
+      )}
       {onExportExe && (
         <>
           <div className="my-1 border-t border-gray-600" />
-          <button onClick={() => { onExportExe(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-300 hover:bg-gray-700 transition-colors">
+          <button onClick={() => { onExportExe(); onDone() }} title={t('export.exeTitle')} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-300 hover:bg-gray-700 transition-colors">
             <IconExe /><span>{t('export.exe')}</span><span className="ml-auto text-gray-400 text-[11px]">.exe</span>
           </button>
         </>
@@ -812,19 +828,9 @@ export function ActionBar({
           aria-label={t('video.save')}
         ><IconVideo /></button>
       )}
-      {/* Word, PowerPoint and sheets have one save: a PDF of the document. */}
-      {onSaveOfficePdf && (
-        <button
-          onClick={onSaveOfficePdf}
-          disabled={isExporting}
-          className="flex items-center justify-center w-9 h-9 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 transition-all"
-          title={isExporting ? t('tool.exporting') : t('office.savePdf')}
-          aria-label={t('office.savePdf')}
-        ><IconSave /></button>
-      )}
-
-      {/* Export — split button: main downloads PDF, chevron opens the format menu. */}
-      {hasPdf && !embed && (
+      {/* Export — split button: main saves a PDF, chevron opens the format
+          menu. Every format has it: the file itself, a PDF, an exe. */}
+      {(hasPdf || flowDoc) && !embed && (
         <div ref={exportRef} className="relative flex items-stretch">
           <button
             onClick={onExportPdf}
@@ -960,24 +966,16 @@ export function ActionBar({
               <button onClick={() => { onRunOcrAll(); setRightMenuOpen(false) }} disabled={isOcrRunning || numPages === 0} className={`${menuItem} disabled:opacity-40`}><IconOcr /><span>{t('ocr.runAll')}</span></button>
             </>
           )}
-          {hasPdf && !embed && (
+          {(hasPdf || flowDoc) && !embed && (
             <>
               <div className="my-1 border-t border-gray-600" />
               {exportMenuItems(() => setRightMenuOpen(false))}
             </>
           )}
-          {onSaveOfficePdf && (
-            <>
-              <div className="my-1 border-t border-gray-600" />
-              <button onClick={() => { onSaveOfficePdf(); setRightMenuOpen(false) }} disabled={isExporting} className={`${menuItem} disabled:opacity-40`}>
-                <IconSave /><span>{t('office.savePdf')}</span>
-              </button>
-              {onSaveSlideVideo && (
-                <button onClick={() => { onSaveSlideVideo(); setRightMenuOpen(false) }} disabled={isExporting} className={`${menuItem} disabled:opacity-40`}>
-                  <IconVideo /><span>{t('video.save')}</span>
-                </button>
-              )}
-            </>
+          {onSaveSlideVideo && (
+            <button onClick={() => { onSaveSlideVideo(); setRightMenuOpen(false) }} disabled={isExporting} className={`${menuItem} disabled:opacity-40`}>
+              <IconVideo /><span>{t('video.save')}</span>
+            </button>
           )}
         </div>
       )}

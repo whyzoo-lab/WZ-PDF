@@ -6,6 +6,10 @@ import path from 'path'
 import fs from 'fs'
 import { RecentFilesStore, isRecentCandidate } from './recentFiles'
 import { PendingVideoSaves, cleanSuggestedName, validateMp4 } from './videoSave'
+import {
+  EMBED_FOOTER_BYTES, acceptEmbedded, buildTrailer, cleanEmbeddedName, isAcceptableDocument, locateEmbedded,
+  type EmbeddedDocument,
+} from './embeddedDocument'
 import { registerUpdateIpc, startAutoUpdate } from './autoUpdate'
 import {
   TemplateMismatchError, adoptTemplate, cachedTemplate, downloadTemplate, pruneOtherVersions, readManifest,
@@ -248,17 +252,14 @@ function createWindow({ opening = false }: { opening?: boolean } = {}) {
   })
 }
 
-// ── Embedded PDF (viewer-exe mode) ─────────────────────────────────────────
+// ── Embedded document (viewer-exe mode) ────────────────────────────────────
 //
-// When the user exports a PDF as a standalone viewer exe, we:
+// When the user exports a document as a standalone viewer exe, we:
 //   1. Locate a portable SFX template (see findViewerTemplate below)
-//   2. Append: [PDF bytes] [4-byte length UInt32LE] [EMBED_MARKER]
+//   2. Append the document and a trailer naming it (electron/embeddedDocument.ts)
 //
-// On startup the app reads the original exe, detects the marker, and sends
-// the PDF bytes to the renderer so they are loaded automatically.
-
-const EMBED_MARKER = Buffer.from('WZPDF_VIEWER_V01')  // 16 bytes
-const EMBED_FOOTER  = 4 + EMBED_MARKER.length          // UInt32LE length + marker = 20 bytes
+// On startup the app reads the original exe, finds the trailer, and sends the
+// document to the renderer so it is opened automatically.
 
 async function readExactly(
   handle: Awaited<ReturnType<typeof fs.promises.open>>,
@@ -357,42 +358,41 @@ async function obtainViewerTemplate(sender: Electron.WebContents, manifest: Temp
   }
 }
 
-async function extractEmbeddedPdf(): Promise<Buffer | null> {
-  // Only the portable SFX entry point carries embedded PDFs — the NSIS app
-  // never has bytes appended to its own exe. Skip when not portable.
+async function extractEmbeddedDocument(): Promise<EmbeddedDocument | null> {
+  // Only the portable SFX entry point carries embedded documents — the NSIS
+  // app never has bytes appended to its own exe. Skip when not portable.
   const exeFile = process.env['PORTABLE_EXECUTABLE_FILE']
   if (!exeFile) return null
 
-  // IMPORTANT: read ONLY the 20-byte footer (and the embedded PDF, if any) —
+  // IMPORTANT: read ONLY the trailer (and the embedded document, if any) —
   // never the whole exe. The portable exe is >140 MB, and a synchronous
   // full-file read here blocks the main-process event loop (including the
   // app:// protocol handler that serves the renderer), leaving the window on a
   // blank background for seconds while the OS/antivirus scans the read. The
-  // common case (no PDF appended) now costs a single 20-byte read.
+  // common case (nothing appended) costs a single 22-byte read.
   let handle: Awaited<ReturnType<typeof fs.promises.open>> | null = null
   try {
     const stat = await fs.promises.stat(exeFile)
-    if (stat.size < EMBED_FOOTER) return null
+    if (stat.size < EMBED_FOOTER_BYTES) return null
 
     handle = await fs.promises.open(exeFile, 'r')
+    const footer = Buffer.allocUnsafe(EMBED_FOOTER_BYTES)
+    await readExactly(handle, footer, stat.size - EMBED_FOOTER_BYTES)
+    const at = locateEmbedded(stat.size, footer)
+    if (!at) return null
 
-    // Footer layout (last 20 bytes): [pdfSize UInt32LE (4)] [EMBED_MARKER (16)]
-    const footer = Buffer.allocUnsafe(EMBED_FOOTER)
-    await readExactly(handle, footer, stat.size - EMBED_FOOTER)
-    if (!footer.subarray(4).equals(EMBED_MARKER)) return null
-
-    const pdfSize = footer.readUInt32LE(0)
-    if (pdfSize === 0 || pdfSize > MAX_FILE_SIZE) return null
-    const pdfOffset = stat.size - EMBED_FOOTER - pdfSize
-    if (pdfOffset < 0) return null
-
-    const pdf = Buffer.alloc(pdfSize)   // dedicated ArrayBuffer (exact size for IPC transfer)
-    await readExactly(handle, pdf, pdfOffset)
-    if (!hasSupportedDocumentSignature(pdf) || pdf.subarray(0, 4).toString('ascii') !== '%PDF') return null
-    console.log('[WZ Reader] Embedded PDF detected — size:', pdfSize, 'bytes')
-    return pdf
+    const bytes = Buffer.alloc(at.size)   // dedicated ArrayBuffer (exact size for IPC transfer)
+    await readExactly(handle, bytes, at.offset)
+    let name: Buffer | null = null
+    if (at.name) {
+      name = Buffer.alloc(at.name.length)
+      await readExactly(handle, name, at.name.offset)
+    }
+    const doc = acceptEmbedded(bytes, name)
+    if (doc) console.log('[WZ Reader] Embedded document detected —', doc.name, at.size, 'bytes')
+    return doc
   } catch (err) {
-    console.warn('[WZ Reader] extractEmbeddedPdf failed:', err)
+    console.warn('[WZ Reader] extractEmbeddedDocument failed:', err)
     return null
   } finally {
     await handle?.close()
@@ -456,17 +456,18 @@ ipcMain.handle('video:write', async (event, token: unknown, mp4: unknown) => {
   return path.basename(target)
 })
 
-ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
+// Any document the app opens, carried under its own name — a deck stays a
+// deck, a HWP a HWP. The renderer decides which file that is (the original,
+// or the PDF "PDF 저장" would write when there are stamps or a password change
+// to keep); this side holds it to the rules a file being opened must meet.
+ipcMain.handle('export-exe', async (event, data: unknown, rawName: unknown) => {
   assertTrustedIpcSender(event)
-  if (!(pdfData instanceof ArrayBuffer)) {
-    throw new Error('Invalid PDF data')
-  }
-  const pdfBytes = new Uint8Array(pdfData)
-  if (pdfBytes.byteLength === 0 || pdfBytes.byteLength > MAX_FILE_SIZE) {
-    throw new Error(`PDF must be between 1 byte and ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`)
-  }
-  if (pdfBytes[0] !== 0x25 || pdfBytes[1] !== 0x50 || pdfBytes[2] !== 0x44 || pdfBytes[3] !== 0x46) {
-    throw new Error('Invalid PDF signature')
+  if (!(data instanceof ArrayBuffer)) throw new Error('Invalid document data')
+  const docName = cleanEmbeddedName(rawName)
+  if (!docName) throw new Error('Not a document this app opens')
+  const docBytes = new Uint8Array(data)
+  if (!isAcceptableDocument(docName, docBytes)) {
+    throw new Error(`Not a valid ${path.extname(docName)} file, or larger than ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB`)
   }
 
   const found = await findViewerTemplate()
@@ -491,15 +492,14 @@ ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
 
   const { filePath, canceled } = await dialog.showSaveDialog({
     title: 'Viewer EXE로 저장',
-    defaultPath: 'WZ_Reader_Viewer.exe',
+    // Named after the document: the recipient sees "제안서.exe", not a
+    // generic viewer they have to open to find out what it is.
+    defaultPath: `${path.parse(docName).name || 'WZ_Reader_Viewer'}.exe`,
     filters: [{ name: 'Executable', extensions: ['exe'] }],
   })
   if (canceled || !filePath) return { success: false, canceled: true }
 
   try {
-    const sizeBytes = Buffer.allocUnsafe(4)
-    sizeBytes.writeUInt32LE(pdfBytes.byteLength)
-
     if (path.resolve(filePath) === path.resolve(baseExe)) {
       throw new Error('The viewer template cannot overwrite itself')
     }
@@ -508,9 +508,8 @@ ipcMain.handle('export-exe', async (event, pdfData: unknown) => {
     // read the whole 140MB+ template and then Buffer.concat duplicated it,
     // blocking Electron's main loop and temporarily consuming hundreds of MB.
     await fs.promises.copyFile(baseExe, filePath)
-    await fs.promises.appendFile(filePath, pdfBytes)
-    await fs.promises.appendFile(filePath, sizeBytes)
-    await fs.promises.appendFile(filePath, EMBED_MARKER)
+    await fs.promises.appendFile(filePath, docBytes)
+    await fs.promises.appendFile(filePath, buildTrailer(docName, docBytes.byteLength))
 
     const outputSize = (await fs.promises.stat(filePath)).size
     console.log('[WZ Reader] Viewer EXE exported to:', filePath, '— total size:', outputSize)
@@ -928,16 +927,18 @@ app.whenReady().then(async () => {
       win?.webContents.send('open-file', rememberOsPath(filePath))
     })
   } else {
-    // Check for a PDF embedded in this portable exe (viewer-exe mode). Runs
-    // asynchronously so it never blocks the window's first paint; the read is
-    // now a couple of small partial reads instead of the whole exe.
-    extractEmbeddedPdf().then(embedded => {
+    // Check for a document embedded in this portable exe (viewer-exe mode).
+    // Runs asynchronously so it never blocks the window's first paint; the
+    // read is a couple of small partial reads instead of the whole exe.
+    extractEmbeddedDocument().then(embedded => {
       if (!embedded || !win) return
-      // Send as a transferable ArrayBuffer so the renderer can use it directly.
-      const send = () => win?.webContents.send('open-pdf-bytes', embedded.buffer)
+      const { bytes, name } = embedded
+      // An ArrayBuffer of exactly the document (Buffer.alloc gives it its own).
+      const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+      const send = () => win?.webContents.send('open-embedded-document', buffer, name)
       if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
       else send()
-    }).catch(() => { /* extractEmbeddedPdf already logs; ignore */ })
+    }).catch(() => { /* extractEmbeddedDocument already logs; ignore */ })
   }
 
   app.on('activate', () => {

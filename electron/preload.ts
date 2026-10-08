@@ -10,13 +10,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
-   * Called when the app was launched as a viewer-exe (PDF embedded inside the exe).
-   * The bytes are sent once, right after the renderer finishes loading.
+   * Called when the app was launched as a viewer-exe (a document embedded
+   * inside the exe). Sent once, right after the renderer finishes loading,
+   * with the document's own file name.
    */
-  onOpenPdfBytes: (callback: (bytes: ArrayBuffer) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, bytes: ArrayBuffer) => callback(bytes)
-    ipcRenderer.on('open-pdf-bytes', handler)
-    return () => ipcRenderer.removeListener('open-pdf-bytes', handler)
+  onOpenEmbeddedDocument: (callback: (bytes: ArrayBuffer, name: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, bytes: ArrayBuffer, name: string) => callback(bytes, name)
+    ipcRenderer.on('open-embedded-document', handler)
+    return () => ipcRenderer.removeListener('open-embedded-document', handler)
   },
 
   // ── File reading ────────────────────────────────────────────────────────
@@ -67,12 +68,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('viewer-template:progress', handler)
     return () => ipcRenderer.removeListener('viewer-template:progress', handler)
   },
-  exportExe: (pdfData: ArrayBuffer): Promise<{
+  exportExe: (data: ArrayBuffer, name: string): Promise<{
     success: boolean
     canceled?: boolean
     outputPath?: string
     error?: string
-  }> => ipcRenderer.invoke('export-exe', pdfData),
+  }> => ipcRenderer.invoke('export-exe', data, name),
 
   // (No print IPC: the renderer calls window.print() directly so the Chrome
   // print-preview UI shows up in the desktop app instead of the OS dialog.)

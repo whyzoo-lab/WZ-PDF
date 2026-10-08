@@ -32,6 +32,7 @@ import type { OfficePageInfo, OfficeViewHandle } from './components/office/offic
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, PAGE_ATTR } from './utils/constants'
 import { classifyDocFile, DOCUMENT_ACCEPT } from './utils/detectDocType'
 import { pickSaveTarget, saveBlobTo, stripDocExt } from './utils/download'
+import { documentFileName, openableExt } from './utils/docFileName'
 import { pageSuffix } from './utils/pageSuffix'
 import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
@@ -266,6 +267,8 @@ export default function App() {
     setSavedState({ file, annotations: lastingAnnotations })
   }, [file, lastingAnnotations])
   const markdownSaveRef = useRef<(() => Promise<boolean>) | null>(null)
+  const markdownTextRef = useRef<(() => string) | null>(null)
+  const getMarkdownText = useCallback(() => markdownTextRef.current?.() ?? null, [])
 
   // Why there are no bytes to save from, when that is not just "still reading".
   const bytesUnavailable = file && isLargeDocument(file)
@@ -315,6 +318,7 @@ export default function App() {
   const { handlePrint, isPrinting, printProgress, previewPages, confirmPrint, cancelPrint } = usePrint({ pdfDoc, numPages, annotations, onError: showToast })
   const {
     isExporting,
+    handleSaveOriginal,
     handleExportPdf,
     handleExportSpreads,
     handleExportHtml,
@@ -324,6 +328,7 @@ export default function App() {
     file, fileBytes, pdfDoc, numPages, annotations, kind, documentPassword, savePassword,
     ocrResults: ocr.ocrResults,
     bytesUnavailable, onSuccess: showToast, onError: showToast, onPdfSaved: markSaved,
+    getMarkdownText,
   })
 
   // The padlock decides *what saving will do*; it does not save. Otherwise one
@@ -656,11 +661,12 @@ export default function App() {
     return () => { cleanup?.() }
   }, [openPath])
 
-  // ── Electron: open-pdf-bytes (viewer-exe mode — PDF embedded in the exe) ──
+  // ── Electron: viewer-exe mode — the document carried inside the exe ──────
+  // Any format, under its own name: Markdown, mail and CSV have no signature,
+  // so the name is what tells the loader what they are.
   useEffect(() => {
-    const cleanup = window.electronAPI?.onOpenPdfBytes((bytes: ArrayBuffer) => {
-      const f = new File([bytes], 'document.pdf', { type: 'application/pdf' })
-      loadPdfFile(f)
+    const cleanup = window.electronAPI?.onOpenEmbeddedDocument((bytes: ArrayBuffer, name: string) => {
+      loadPdfFile(new File([bytes], name))
     })
     return () => { cleanup?.() }
   }, [loadPdfFile])
@@ -1197,18 +1203,16 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', hold)
   }, [unsaved])
 
-  // Ctrl+S: the document's own save — PDF for pages, the source for Markdown
-  // (only while editing it; the reading view has nothing to save).
+  // Ctrl+S: the document's own save — the source while editing Markdown, a
+  // PDF otherwise (what the save button does), for every format.
   const handleSaveShortcut = useMemo(() => {
     // An embedded or private viewer saves nothing (Office documents used to
     // slip through here in embed mode, with the save button hidden).
     if (chromeless) return undefined
-    if (markdown !== null) {
-      return appMode === 'editor' ? () => { void markdownSaveRef.current?.() } : undefined
-    }
+    if (markdown !== null && appMode === 'editor') return () => { void markdownSaveRef.current?.() }
     if (office !== null) return () => { void handleSaveOfficePdf() }
-    return pdfDoc ? () => { void handleExportPdf() } : undefined
-  }, [markdown, office, appMode, pdfDoc, chromeless, handleExportPdf, handleSaveOfficePdf])
+    return pdfDoc || markdown !== null || email ? () => { void handleExportPdf() } : undefined
+  }, [markdown, email, office, appMode, pdfDoc, chromeless, handleExportPdf, handleSaveOfficePdf])
 
   // ── Copy / paste a stamp ──────────────────────────────────────────────────
   // For putting the same stamp in the same place on every page: copy it on
@@ -1398,22 +1402,25 @@ export default function App() {
     slideNotes: officePages?.hasNotes
       ? { on: showSlideNotes, onToggle: () => setShowSlideNotes(v => !v) }
       : undefined,
-    onSaveOfficePdf: office !== null && !chromeless ? () => { void handleSaveOfficePdf() } : undefined,
     onSaveSlideVideo: canMakeVideo ? () => { void handleSaveSlideVideo() } : undefined,
     isPanelOpen,
     onTogglePanel: () => setIsPanelOpen(v => !v),
     onUpload: handleUpload,
     onOpenUrl: () => setShowUrlModal(true),
-    onExportPdf: handleExportPdf,
+    // The same save menu for every format: a PDF (the main button), the file
+    // itself, and a viewer exe — Word, PowerPoint and sheets print through
+    // their view, Markdown saves its editor text through its own save.
+    onExportPdf: office !== null ? () => { void handleSaveOfficePdf() } : () => { void handleExportPdf() },
+    onSaveOriginal: markdown !== null ? () => { void markdownSaveRef.current?.() } : () => { void handleSaveOriginal() },
+    originalExt: file ? `.${openableExt(documentFileName(file.name, kind, fileBytes ?? new Uint8Array()))}` : undefined,
     onPassword: handlePassword,
     saveLocked: !!savePassword,
-    // Booklet layout of the two-page view; page documents only (the menu is
-    // not shown for Markdown or mail at all).
+    // Booklet, HTML viewer and page images: page documents only.
     onExportSpreads: pdfDoc ? handleExportSpreads : undefined,
-    onExportHtml: handleExportHtml,
-    onExportImages: handleExportImages,
-    // EXE Viewer:
-    //   - Electron: appends PDF bytes onto the running portable exe.
+    onExportHtml: pdfDoc ? handleExportHtml : undefined,
+    onExportImages: pdfDoc ? handleExportImages : undefined,
+    // EXE Viewer, every format:
+    //   - Electron: appends the document onto a copy of the portable exe.
     //   - Web:      redirects to the installer download (see useExporters).
     onExportExe: handleExportExe,
     // Undefined on the web build, where there is no speech engine — which is
@@ -1670,6 +1677,7 @@ export default function App() {
                   onError={showToast}
                   onDirtyChange={setMarkdownDirty}
                   saveRef={markdownSaveRef}
+                  textRef={markdownTextRef}
                 />
               </Suspense>
             </ErrorBoundary>

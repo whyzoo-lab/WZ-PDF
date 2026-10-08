@@ -13,7 +13,8 @@ interface Window {
      * Called once on startup when the app detects a PDF embedded inside the
      * portable exe (viewer-exe mode). The ArrayBuffer can be used directly.
      */
-    onOpenPdfBytes: (callback: (bytes: ArrayBuffer) => void) => () => void
+    /** The document a viewer exe carries, with its own file name. */
+    onOpenEmbeddedDocument: (callback: (bytes: ArrayBuffer, name: string) => void) => () => void
 
     /** Read a local file by path — avoids fetch('file://') CORS issues. */
     readFile: (filePath: string) => Promise<ArrayBuffer>
@@ -50,7 +51,8 @@ interface Window {
     /** Narrated video: name the .mp4 (null if cancelled), then write it there. */
     pickVideoPath?: (suggestedName: string) => Promise<{ token: string; name: string } | null>
     writeVideoFile?: (token: string, mp4: Uint8Array) => Promise<string>
-    exportExe: (pdfData: ArrayBuffer) => Promise<{
+    /** Write a viewer exe carrying this document under `name`. */
+    exportExe: (data: ArrayBuffer, name: string) => Promise<{
       success: boolean
       canceled?: boolean
       outputPath?: string

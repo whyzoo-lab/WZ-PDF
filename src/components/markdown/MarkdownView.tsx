@@ -31,6 +31,9 @@ interface MarkdownViewProps {
    * document is about to replace this one. Resolves true once written.
    */
   saveRef?: { current: (() => Promise<boolean>) | null }
+  /** Filled with a getter for the text as it stands, edits included — what a
+   *  PDF or a viewer exe of this document is made from. */
+  textRef?: { current: (() => string) | null }
 }
 
 /** Long documents get a contents rail; short ones would just look cluttered. */
@@ -49,7 +52,7 @@ const BASE_FONT_PX = 15
  */
 export function MarkdownView({
   source, filename, appMode, zoom, fullscreen, onExitFullscreen, onSaved, onError,
-  onDirtyChange, saveRef,
+  onDirtyChange, saveRef, textRef,
 }: MarkdownViewProps) {
   const editing = appMode === 'editor'
 
@@ -190,6 +193,12 @@ export function MarkdownView({
     saveRef.current = handleSave
     return () => { saveRef.current = null }
   }, [saveRef, handleSave])
+
+  useEffect(() => {
+    if (!textRef) return
+    textRef.current = () => text
+    return () => { textRef.current = null }
+  }, [textRef, text])
 
   // ── Edit mode: the source, exactly as written ────────────────────────────
   // Checked before `failed` so a document the renderer chokes on can still be

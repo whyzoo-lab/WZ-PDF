@@ -33,11 +33,11 @@ The renderer never uses Node APIs directly. All IPC calls go through `window.ele
 | API | Description |
 |---|---|
 | `onOpenFile(cb)` | File path from OS open-file event, CLI arg, or `.pdf` file-association entry point |
-| `onOpenPdfBytes(cb)` | PDF bytes when launched as a viewer-exe (portable build only) |
+| `onOpenEmbeddedDocument(cb)` | The document (bytes + file name) a viewer-exe carries (portable build only) |
 | `readFile(path)` | Read a local file via main process (avoids CORS on `http://localhost`) — at most 500 MB |
 | `statFile(path)` | Size of a document, validated like `readFile`; decides whole read vs range loading |
 | `readFileRange(path, offset, length)` | One byte range of a large PDF (see "Large documents") |
-| `exportExe(pdfData)` | Save current PDF embedded into a copy of the portable exe |
+| `exportExe(data, name)` | Save the document embedded into a copy of the portable exe |
 | `updateState()` / `setAutoUpdate(on)` / `installUpdate()` / `onUpdateReady(cb)` | Automatic updates (see "Automatic updates") |
 
 ### Rendering pipeline
@@ -257,10 +257,13 @@ fullscreen work for everything.
   as ordinary as a zoom click. `useMemo` on the element lets React bail out of
   the subtree entirely.
 
-Still page-only, and deliberately: **export**. A Markdown or mail → PDF that is
-worth shipping needs real text layout (the HWP exporter's problem, minus the
-engine that already knows the geometry), so the export menu stays hidden here
-rather than offering a rasterised downgrade.
+**Saving is the same menu as everywhere** (1.25.2): the file itself, a PDF, a
+viewer exe. Markdown and mail → PDF go through `documentToPdf` in
+`services/cliBridge.ts` — the converter `topdf` uses, Chromium's printToPDF of
+the typeset text — so it stays text, never a rasterised page. The web build has
+no printToPDF and opens the print dialog instead, as Office does. Markdown's
+PDF and exe are made from the editor's text, unsaved edits included
+(`MarkdownView` `textRef`).
 
 ### Markdown (.md)
 
@@ -971,7 +974,14 @@ disk separately).
 
 ### Export
 
-Four export formats, all operating on `fileBytes` (not the rendered canvas). All show a toast on success.
+**Three saves apply to every format**, in the same split button (main click =
+PDF, `Ctrl+S`): **원본 파일 저장** (the file itself — `handleSaveOriginal`, or
+Markdown's own save, which writes the editor text), **PDF로 저장** (pages:
+`exportPdf`/`exportHwpToPdf`; Word, PowerPoint, sheets: the view's `PdfJob`;
+Markdown, mail: `documentToPdf`), and **EXE로 내보내기**. The rest are page
+documents only. `utils/docFileName.ts` gives a name without an extension (a
+document opened from a URL) the one its bytes call for. All operate on
+`fileBytes` (not the rendered canvas) and show a toast on success.
 
 | Format | Service | Notes |
 |---|---|---|
@@ -980,7 +990,7 @@ Four export formats, all operating on `fileBytes` (not the rendered canvas). All
 | Booklet ("책자 형태로 저장") | `src/services/spreadExporter.ts` | The two-page view as a PDF, one sheet per row — see below |
 | HTML viewer | `src/services/htmlExporter.ts` | Self-contained file: PDF encoded as base64, decoded to a Blob URL at runtime |
 | Images (ZIP) | `src/services/imageExporter.ts` | Each page rendered to PNG at 2× scale via pdfjs; bundled with **JSZip** |
-| Viewer EXE | `electron/main.ts` `export-exe` IPC | Self-clone of the portable exe with PDF bytes appended; only works when running the packaged portable build. A HWP or image is converted to PDF first (`viewerPdfBytes`) — sending the raw bytes failed with "Invalid PDF signature" |
+| Viewer EXE | `electron/main.ts` `export-exe` IPC | Self-clone of the portable exe with the **document itself** appended under its name — see "Viewer EXE feature" for which file that is |
 
 **책자 형태로 저장 (save as booklet)** — asked for because the two-page view
 is exactly the layout a booklet is printed from. Each row of the view
@@ -1225,7 +1235,25 @@ scattered selection — never a range that would claim pages it does not contain
 
 ### Viewer EXE feature
 
-The current PDF can be exported as a standalone viewer exe in **both** the
+**What it carries (1.25.2): the document itself, in any format** — a deck
+opens as a deck (slideshow, notes, read-aloud), a HWP as a HWP, Markdown, mail
+and sheets as themselves, and a locked PDF still asks for its password. Up to
+1.25.1 it always carried a PDF: HWP and images were converted, Office and the
+reflowing formats had no EXE at all, and a PDF went in *without* its stamps
+(`viewerPdfBytes` returned the original bytes). One exception, decided with the
+user (`exeDocument` in `useExporters`): when there is something on a page
+document that "PDF 저장" would keep and the original lacks — a lasting
+annotation, OCR text (PDF and images; a HWP has its own), or a password put on
+or taken off with the padlock — it carries that PDF instead, so the recipient
+sees what the sender saw.
+
+Verified end to end in a packaged portable: each of pptx, hwpx, md, eml and a
+password-locked PDF exported through the real menu and the native save dialog,
+then each exe run — title and content were the original format (29 slides, the
+HWPX pages, the Markdown heading, the mail subject; the PDF asked for its
+password and opened with it).
+
+The document can be exported as a standalone viewer exe in **both** the
 portable run and the NSIS-installed app. The trick: a portable SFX template
 is required as the base — and since 1.24.0 the installer no longer ships one.
 
@@ -1261,9 +1289,20 @@ mismatch is refused (verified: "does not match this version", nothing kept).
 Export pipeline (regardless of source):
 
 1. `findViewerTemplate()` resolves the template path.
-2. The handler appends: `[PDF bytes] [4-byte length UInt32LE] [16-byte WZPDF_VIEWER_V01 marker]`.
-3. On startup, `extractEmbeddedPdf()` checks `PORTABLE_EXECUTABLE_FILE` (the resulting EXE always runs as a portable SFX) for the marker and reads the embedded bytes.
-4. If found, sends them to the renderer via the `open-pdf-bytes` IPC channel.
+2. The handler appends the document and a V02 trailer
+   (`electron/embeddedDocument.ts`): `[document] [name UTF-8] [name length
+   UInt16LE] [size UInt32LE] [WZPDF_VIEWER_V02]`. The name matters: Markdown,
+   mail and CSV have no signature, so it is what tells the loader what they are.
+3. On startup, `extractEmbeddedDocument()` checks `PORTABLE_EXECUTABLE_FILE` (the
+   resulting EXE always runs as a portable SFX), reads the 22-byte trailer, then
+   only the document and its name. V01 (PDF only) is still read.
+4. What comes out is held to the rules for opening a file — an extension the app
+   opens, the format's signature, the size cap — since anyone can append bytes to
+   an exe. It goes to the renderer on `open-embedded-document` with its name.
+
+The template is always this same version (the running portable, or this
+version's release asset), so the format can change between releases without a
+compatibility problem.
 
 ### Why pages look softer than a browser's PDF viewer
 
@@ -2171,7 +2210,7 @@ after a restart.
 Since Electron's `webContents.print` is asynchronous, do not restore the DOM canvases (`afterPrint` cleanup) immediately after starting the print. Instead, expose the print call as a Promise and `await` it in the renderer, so cleanup is deferred until the print dialog is closed.
 
 ### Never read the whole exe at startup (blank-screen stall)
-`extractEmbeddedPdf()` (viewer-exe mode) runs in `app.whenReady()` right after `createWindow()`. It must only do **async partial reads** — the 20-byte trailer marker, then just the embedded PDF bytes if present. A synchronous `fs.readFileSync` of the whole portable exe (>140 MB, and it grows with every bundled asset — OCR/HWP/pdfjs wasm) blocks the main-process event loop, which stalls the `app://` protocol handler that serves the renderer, so the window sits on its dark `backgroundColor` for seconds (worst on first launch while AV scans the read). Only the portable / exported viewer exe is affected (`PORTABLE_EXECUTABLE_FILE` set); the NSIS app returns early. Any new startup work in the main process must stay off the event loop until the first paint.
+`extractEmbeddedDocument()` (viewer-exe mode) runs in `app.whenReady()` right after `createWindow()`. It must only do **async partial reads** — the 22-byte trailer, then just the embedded document if present. A synchronous `fs.readFileSync` of the whole portable exe (>140 MB, and it grows with every bundled asset — OCR/HWP/pdfjs wasm) blocks the main-process event loop, which stalls the `app://` protocol handler that serves the renderer, so the window sits on its dark `backgroundColor` for seconds (worst on first launch while AV scans the read). Only the portable / exported viewer exe is affected (`PORTABLE_EXECUTABLE_FILE` set); the NSIS app returns early. Any new startup work in the main process must stay off the event loop until the first paint.
 
 ### TypeScript Omit on union types
 TypeScript's `Omit<T, K>` does not distribute over union types (it resolves to common keys first, stripping unique properties from union members). Use a distributed utility:

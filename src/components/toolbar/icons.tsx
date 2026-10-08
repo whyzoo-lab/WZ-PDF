@@ -317,6 +317,14 @@ export const IconVideo = () => (
     <path d="M10.5 9.5v5l4-2.5z" />
   </Icon>
 )
+/** A document with a folded corner — the file itself, as it was opened. */
+export const IconFile = () => (
+  <Icon>
+    <path d="M6.5 3.5h7l4 4V19a1.5 1.5 0 0 1-1.5 1.5H6.5A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5" />
+    <path d="M13.5 3.5v4h4" />
+  </Icon>
+)
+
 export const IconSave = () => (
   <Icon>
     <path d="M5 3.5h11l3.5 3.5v11.5A1.5 1.5 0 0 1 18 20H6a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 6 3.5" />

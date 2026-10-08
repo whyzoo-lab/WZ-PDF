@@ -46,7 +46,8 @@ and on-device speech. Ships with a
 - 🔐 **Password-protected PDFs** — opens them (asking for the password), and saves them locked (AES-256) or unlocked: the padlock in the toolbar decides what the next save does.
 - ✍️ **Stamps that remember** — upload your seal once: its white paper is removed, its size is kept, and it stays in **My stamps**. Stamp page after page with one click each, or copy it and paste it onto every selected page at once.
 - ↩️ **Undo, and nothing lost by accident** — `Ctrl+Z` / `Ctrl+Y` take back stamps, signatures and page edits; opening another document or closing the window with unsaved changes asks first.
-- 📦 **Any document → standalone `.exe`** — hand someone a single file that opens itself. Works for HWP/HWPX and images too, not just PDF.
+- 📦 **Any document → standalone `.exe`** — hand someone a single file that opens itself, carrying the document in its own format: a deck opens as a deck, with its slideshow and notes; a locked PDF still asks for its password. With stamps on it, it carries the PDF that includes them.
+- 💾 **The same three saves for every format** — the original file, a PDF with selectable text (Markdown and mail included), and a viewer `.exe`.
 - 📚 **Save as a booklet** — the two-page view becomes a PDF with two pages per sheet, ready to print and fold. Or save just the pages you selected.
 - ✉️ **Open `.eml` mail** — headers, body and **attachments you can save or open**, with Korean encodings (EUC-KR bodies, encoded subjects and filenames) handled properly. Remote images are blocked until you ask, so opening a message doesn't report back to the sender.
 - 🖼️ **Images too** — jpg / png / bmp / gif / webp open as documents, so zoom, annotation, OCR and every export just work.

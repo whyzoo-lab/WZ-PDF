@@ -258,7 +258,7 @@ describe('ActionBar', () => {
   it('opens Export menu on click and shows PDF/HTML/Images options', () => {
     render(<ActionBar {...defaultProps} />)
     fireEvent.click(screen.getByRole('button', { name: /export/i }))
-    expect(screen.getByText('Save PDF')).toBeInTheDocument()
+    expect(screen.getByText('Save as PDF')).toBeInTheDocument()
     expect(screen.getByText('Save HTML')).toBeInTheDocument()
     expect(screen.getByText('Save Images')).toBeInTheDocument()
   })
@@ -266,20 +266,39 @@ describe('ActionBar', () => {
   it('shows EXE Viewer option when onExportExe is provided', () => {
     render(<ActionBar {...defaultProps} onExportExe={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /export/i }))
-    expect(screen.getByText('EXE Viewer')).toBeInTheDocument()
+    expect(screen.getByText('Export as EXE')).toBeInTheDocument()
+  })
+
+  it('offers the file itself, named by its extension, before the PDF', () => {
+    const onSaveOriginal = vi.fn()
+    render(<ActionBar {...defaultProps} onSaveOriginal={onSaveOriginal} originalExt=".pptx" />)
+    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    expect(screen.getByText('.pptx')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Save original file'))
+    expect(onSaveOriginal).toHaveBeenCalled()
+  })
+
+  it('gives a reflowing document the same save menu, without the page-only formats', () => {
+    render(<ActionBar {...defaultProps} hasPdf={false} flowDoc onExportHtml={undefined} onExportImages={undefined}
+      onSaveOriginal={vi.fn()} onExportExe={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    expect(screen.getByText('Save original file')).toBeInTheDocument()
+    expect(screen.getByText('Save as PDF')).toBeInTheDocument()
+    expect(screen.getByText('Export as EXE')).toBeInTheDocument()
+    expect(screen.queryByText('Save HTML')).not.toBeInTheDocument()
   })
 
   it('hides EXE Viewer option when onExportExe is not provided', () => {
     render(<ActionBar {...defaultProps} onExportExe={undefined} />)
     fireEvent.click(screen.getByRole('button', { name: /export/i }))
-    expect(screen.queryByText('EXE Viewer')).not.toBeInTheDocument()
+    expect(screen.queryByText('Export as EXE')).not.toBeInTheDocument()
   })
 
   it('calls onExportPdf and closes menu when PDF option clicked', () => {
     const onExportPdf = vi.fn()
     render(<ActionBar {...defaultProps} onExportPdf={onExportPdf} />)
     fireEvent.click(screen.getByRole('button', { name: /export/i }))
-    fireEvent.click(screen.getByText('Save PDF'))
+    fireEvent.click(screen.getByText('Save as PDF'))
     expect(onExportPdf).toHaveBeenCalled()
     expect(screen.queryByText('Save HTML')).not.toBeInTheDocument()
   })

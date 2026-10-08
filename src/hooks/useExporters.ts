@@ -1,12 +1,13 @@
 import { useState, useCallback } from 'react'
 import type { ViewerDoc } from '../types/viewerDoc'
 import type { DocKind } from '../types/viewerDoc'
-import type { Annotation } from '../types/annotation'
+import { isVolatile, type Annotation } from '../types/annotation'
 import { doneOcrWords, type OcrPageResult } from '../types/ocr'
 import { t } from '../i18n'
 import { pickSaveTarget, saveBlobTo, stripDocExt } from '../utils/download'
 import { errorMessage } from '../utils/errors'
 import { HTML_EXPORT_MAX_BYTES } from '../utils/constants'
+import { documentFileName, openableExt } from '../utils/docFileName'
 
 interface UseExportersArgs {
   file: { readonly name: string } | null
@@ -31,12 +32,17 @@ interface UseExportersArgs {
   onError: (message: string) => void
   /** A PDF save completed: what is on screen is now on disk. */
   onPdfSaved?: () => void
+  /** Markdown as it stands in the editor, which may differ from the file. */
+  getMarkdownText?: () => string | null
 }
 
 /**
- * Bundle of export handlers — PDF (with annotations), HTML viewer,
- * images-as-ZIP, and standalone Viewer EXE. Each underlying service is
- * lazy-imported so pdf-lib and jszip stay out of the initial bundle.
+ * Bundle of export handlers. Three apply to every format — the file itself
+ * (`handleSaveOriginal`), a PDF of it (`handleExportPdf`; Word, PowerPoint and
+ * sheets have their own in App, which needs the view), and a viewer exe
+ * carrying it (`handleExportExe`) — and the rest to page documents: booklet,
+ * HTML viewer, images-as-ZIP. Each underlying service is lazy-imported so
+ * pdf-lib and jszip stay out of the initial bundle.
  *
  * `isExporting` is shared across all of them: it gates the export menu UI
  * to prevent overlapping operations. Every failure reaches `onError` (the
@@ -65,6 +71,7 @@ export function useExporters({
   onSuccess,
   onError,
   onPdfSaved,
+  getMarkdownText,
 }: UseExportersArgs) {
   const [isExporting, setIsExporting] = useState(false)
 
@@ -124,6 +131,111 @@ export function useExporters({
   }, [kind, fileBytes, pdfDoc, ocrResults, annotations, documentPassword, renderedPdf])
 
   /**
+   * The document as it is now, under a name that says what it is: the file's
+   * own bytes, or for Markdown the editor's text (saved or not).
+   */
+  const currentDocument = useCallback((): { bytes: ArrayBuffer; name: string } | null => {
+    if (kind === 'md') {
+      const text = getMarkdownText?.()
+      if (text != null) {
+        const encoded = new TextEncoder().encode(text)
+        return { bytes: encoded.slice().buffer, name: documentFileName(file?.name, kind, encoded) }
+      }
+    }
+    if (!fileBytes) return null
+    return { bytes: fileBytes, name: documentFileName(file?.name, kind, fileBytes) }
+  }, [kind, getMarkdownText, fileBytes, file])
+
+  /**
+   * What a viewer exe carries. The file itself — a deck stays a deck, a HWP a
+   * HWP, a locked PDF still asks for its password — unless there is something
+   * on it "PDF 저장" would keep and the original lacks: stamps, signatures and
+   * other lasting marks, OCR text (PDF and images; a HWP has its own text), or
+   * a password put on or taken off with the padlock. Then it is that PDF, so
+   * the recipient sees what the sender saw.
+   */
+  const exeDocument = useCallback(async (): Promise<{ bytes: ArrayBuffer; name: string }> => {
+    if (kind === 'pdf' || kind === 'hwp' || kind === 'image') {
+      const marked = annotations.some(a => !isVolatile(a))
+      const recognized = kind !== 'hwp'
+        && [...(ocrResults?.values() ?? [])].some(r => r.status === 'done' && r.words.length > 0)
+      const passwordChanged = (savePassword ?? null) !== (documentPassword ?? null)
+      if (marked || recognized || passwordChanged) {
+        const pdf = await savedPdf(savePassword ?? undefined)
+        const name = `${stripDocExt(documentFileName(file?.name, kind, fileBytes ?? new Uint8Array()))}.pdf`
+        return { bytes: await pdf.arrayBuffer(), name }
+      }
+    }
+    const doc = currentDocument()
+    if (!doc) throw new Error(bytesUnavailable ?? t('doc.notReady'))
+    return doc
+  }, [kind, annotations, ocrResults, savePassword, documentPassword, savedPdf, file, fileBytes, currentDocument, bytesUnavailable])
+
+  /** "원본 저장": the file itself, under another name or in another place. */
+  const handleSaveOriginal = useCallback(async () => {
+    if (!bytesReady()) return
+    const doc = currentDocument()
+    if (!doc) { onError(t('doc.notReady')); return }
+    const ext = openableExt(doc.name)
+    const target = await pickSaveTarget(doc.name, {
+      description: t('export.originalType', { ext: ext.toUpperCase() }),
+      accept: { 'application/octet-stream': [`.${ext}`] },
+    })
+    if (target.kind === 'canceled') return
+    setIsExporting(true)
+    try {
+      if (await saveBlobTo(target, new Blob([doc.bytes]), doc.name)) {
+        onSuccess(t('export.originalDone', { name: doc.name }))
+      }
+    } catch (err) {
+      console.error('Saving the original failed:', err)
+      onError(t('export.originalFailed', { error: errorMessage(err) }))
+    } finally {
+      setIsExporting(false)
+    }
+  }, [bytesReady, currentDocument, onSuccess, onError])
+
+  /**
+   * Markdown and mail as PDF: their text typeset the way the app prints it,
+   * through the same Chromium print as Word and PowerPoint, so it stays text.
+   * The web build has no printToPDF and opens the print dialog instead, whose
+   * destinations include "Save as PDF" — as Office does there.
+   */
+  const saveFlowPdf = useCallback(async (): Promise<boolean> => {
+    const doc = currentDocument()
+    if (!doc) { onError(t('doc.notReady')); return false }
+    const { canSaveOfficePdf } = await import('../services/officePdf')
+    if (!canSaveOfficePdf()) {
+      const { printFlowDoc } = await import('../services/htmlPrint')
+      await printFlowDoc()
+      return false
+    }
+    const outName = `${stripDocExt(doc.name)}.pdf`
+    const target = await pickSaveTarget(outName, {
+      description: 'PDF document', accept: { 'application/pdf': ['.pdf'] },
+    })
+    if (target.kind === 'canceled') return false
+    setIsExporting(true)
+    try {
+      // The converter `topdf` uses, so the app and the console tool agree.
+      const { documentToPdf } = await import('../services/cliBridge')
+      const bytes = await documentToPdf(doc.bytes, doc.name)
+      const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
+      if (await saveBlobTo(target, blob, outName)) {
+        onSuccess(t('export.pdfDone', { name: outName }))
+        return true
+      }
+      return false
+    } catch (err) {
+      console.error('PDF export failed:', err)
+      onError(t('export.pdfFailed', { error: errorMessage(err) }))
+      return false
+    } finally {
+      setIsExporting(false)
+    }
+  }, [currentDocument, onSuccess, onError])
+
+  /**
    * "책자 형태로 저장" — the two-page view as a PDF: each row of it on one sheet — two A4
    * pages side by side on A3 landscape, a wide page on a sheet of its own —
    * which is the layout a booklet is printed from. Built from exactly what
@@ -160,6 +272,7 @@ export function useExporters({
 
   /** Save as PDF. Resolves true once the file is written. */
   const handleExportPdf = useCallback(async (): Promise<boolean> => {
+    if (kind === 'md' || kind === 'eml') return saveFlowPdf()
     if (!bytesReady()) return false
     const password = savePassword ?? undefined
     const baseName = file ? stripDocExt(file.name) : 'document'
@@ -200,7 +313,7 @@ export function useExporters({
     } finally {
       setIsExporting(false)
     }
-  }, [bytesReady, savedPdf, file, documentPassword, savePassword, onSuccess, onError, onPdfSaved])
+  }, [kind, saveFlowPdf, bytesReady, savedPdf, file, documentPassword, savePassword, onSuccess, onError, onPdfSaved])
 
   const handleExportHtml = useCallback(async () => {
     // The generated page embeds the whole file, so a document too large to hold
@@ -261,7 +374,7 @@ export function useExporters({
   }, [pdfDoc, numPages, file, onSuccess, onError])
 
   // EXE Viewer:
-  //   - Electron: appends the current PDF bytes onto a copy of the running
+  //   - Electron: appends the document (see `exeDocument`) onto a copy of the
   //     portable exe. Main process owns the file dialog + write.
   //   - Web: sends the user to the installer on the GitHub release, so they
   //     can install the desktop app and use the real feature.
@@ -286,9 +399,8 @@ export function useExporters({
       onSuccess(t('export.exeDownloading', { percent: step }))
     })
     try {
-      // A PDF, whatever was opened: the main process refuses anything else, so
-      // a HWP or an image used to fail here with "Invalid PDF signature".
-      const result = await window.electronAPI.exportExe(await viewerPdfBytes())
+      const doc = await exeDocument()
+      const result = await window.electronAPI.exportExe(doc.bytes, doc.name)
       if (result.success) {
         onSuccess(t('export.exeDone'))
       } else if (!result.canceled) {
@@ -301,10 +413,11 @@ export function useExporters({
       stopProgress?.()
       setIsExporting(false)
     }
-  }, [bytesReady, viewerPdfBytes, onSuccess, onError])
+  }, [bytesReady, exeDocument, onSuccess, onError])
 
   return {
     isExporting,
+    handleSaveOriginal,
     handleExportPdf,
     handleExportSpreads,
     handleExportHtml,
