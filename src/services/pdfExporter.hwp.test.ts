@@ -23,9 +23,21 @@ import { exportHwpToPdf } from './pdfExporter'
 
 describe('exportHwpToPdf', () => {
   it('builds a pdf-lib page per HWP page from rendered canvases', async () => {
-    const doc = { numPages: 2, getPage: vi.fn(), destroy: vi.fn() }
+    const page = { getViewport: ({ scale }: { scale: number }) => ({ width: 100 * scale, height: 200 * scale, scale }) }
+    const doc = { numPages: 2, getPage: vi.fn(async () => page), destroy: vi.fn() }
     const bytes = await exportHwpToPdf(doc as never, [])
     expect(addPage).toHaveBeenCalledTimes(2)
+    // The page is the page's own size, not the raster's.
+    expect(addPage).toHaveBeenCalledWith([100, 200])
     expect(bytes).toBeInstanceOf(Uint8Array)
+  })
+
+  it('writes only the pages asked for ("save selection")', async () => {
+    addPage.mockClear()
+    const page = { getViewport: ({ scale }: { scale: number }) => ({ width: 100 * scale, height: 200 * scale, scale }) }
+    const doc = { numPages: 5, getPage: vi.fn(async () => page), destroy: vi.fn() }
+    await exportHwpToPdf(doc as never, [], undefined, undefined, [2, 4])
+    expect(addPage).toHaveBeenCalledTimes(2)
+    expect(doc.getPage.mock.calls.map(c => (c as unknown[])[0])).toEqual([2, 4])
   })
 })

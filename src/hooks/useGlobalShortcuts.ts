@@ -36,6 +36,8 @@ interface GlobalShortcutsDeps {
   onSpeechPrevious?: () => void
   onSpeechNext?: () => void
   onSpeechPlayPause?: () => void
+  /** Pause reading aloud — set only while it is actually speaking (Esc). */
+  onSpeechPause?: () => void
   /** Undo / redo annotation and page edits. Absent where there is no history. */
   onUndo?: () => void
   onRedo?: () => void
@@ -111,11 +113,24 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
         setViewMode, setShowSearch, onEnterFullscreen, fileInputRef,
         removeAnnotation, clearMarkups, setActiveMode, selectAnnotation,
         onRunOcr, onRunOcrAll, onToggleSpeech,
-        onSpeechPrevious, onSpeechNext, onSpeechPlayPause, onUndo, onRedo, onSave, canPrint = true,
+        onSpeechPrevious, onSpeechNext, onSpeechPlayPause, onSpeechPause, onUndo, onRedo, onSave, canPrint = true,
         readOnly = false, onCopyAnnotation, onCutAnnotation, onPasteAnnotation,
       } = latest.current
       const tgt = e.target as HTMLElement | null
       const inInput = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)
+
+      // ── Esc while reading aloud: pause ───────────────────────────────────
+      // Esc is the key everyone reaches for to make something stop. While the
+      // document is being read it pauses the voice and does nothing else — not
+      // clearing markup, not leaving the presentation — so a second Esc, with
+      // the voice paused, does what Esc otherwise does. Captured here first,
+      // so the fullscreen views never see this one.
+      if (e.key === 'Escape' && onSpeechPause && !inInput) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        onSpeechPause()
+        return
+      }
 
       // ── App-level shortcuts (work regardless of pdf state) ─────────────────
       if (e.key === 'F1') {

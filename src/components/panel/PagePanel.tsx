@@ -23,6 +23,8 @@ export interface PagePanelProps {
   onDeletePages: (pageNums: number[]) => void
   onInsertBlankPage: (afterPage: number) => void
   onInsertFromPdf: (afterPage: number, srcBytes: ArrayBuffer) => void
+  /** An image collection: "add images" takes the place of "insert from PDF". */
+  onInsertImages?: (afterPage: number, files: File[]) => void
   onReorderPages: (newOrder: number[]) => void
   /**
    * Save the selected pages as a new PDF. Absent when the open document is not
@@ -48,6 +50,7 @@ export function PagePanel({
   onDeletePages,
   onInsertBlankPage,
   onInsertFromPdf,
+  onInsertImages,
   onReorderPages,
   onSavePages,
   onSelectionChange,
@@ -212,6 +215,13 @@ export function PagePanel({
     setAddMenuOpen(false)
   }
 
+  const handleImageFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length) onInsertImages?.(insertAfterPage, files)
+    e.target.value = ''
+    setAddMenuOpen(false)
+  }
+
   // ── 드래그 앤 드롭 ────────────────────────────────────────────────────────────
   const handleDragStart = (e: React.DragEvent, pageNum: number) => {
     setDragSource(pageNum)
@@ -300,15 +310,28 @@ export function PagePanel({
               >
                 {t('panel.insertBlank')}
               </button>
-              <label className="w-full flex px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 cursor-pointer transition-colors">
-                {t('panel.insertFromPdf')}
-                <input
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  className="hidden"
-                  onChange={handlePdfFileChange}
-                />
-              </label>
+              {onInsertImages ? (
+                <label className="w-full flex px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 cursor-pointer transition-colors">
+                  {t('panel.insertImages')}
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,.tif,.tiff"
+                    className="hidden"
+                    onChange={handleImageFilesChange}
+                  />
+                </label>
+              ) : (
+                <label className="w-full flex px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 cursor-pointer transition-colors">
+                  {t('panel.insertFromPdf')}
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={handlePdfFileChange}
+                  />
+                </label>
+              )}
             </div>
           )}
         </div>

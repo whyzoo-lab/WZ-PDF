@@ -3,7 +3,7 @@ import { loadPdfForWriting } from './pdfLoad'
 import { BASELINE_RATIO, type PlacedRun } from './ocrTextLayer'
 import type { OcrWord } from '../types/ocr'
 import type { Annotation } from '../types/annotation'
-import { annotationsForPage } from '../types/annotation'
+import { annotationsForPage, isVolatile } from '../types/annotation'
 import { drawAnnotations } from './annotationCanvas'
 import { toPdfLibY, hexToRgb } from '../utils/coordinates'
 import type { ViewerDoc } from '../types/viewerDoc'
@@ -61,6 +61,15 @@ function needsKoreanFont(s: string): boolean {
  * for every page of a long document. Falls back where `toBlob` is missing
  * (jsdom).
  */
+/** PNG keeps transparency, which JPEG turns black. */
+async function canvasPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+  const blob = typeof canvas.toBlob === 'function'
+    ? await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
+    : null
+  if (blob) return new Uint8Array(await blob.arrayBuffer())
+  return base64ToUint8Array(canvas.toDataURL('image/png'))
+}
+
 async function canvasJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Uint8Array> {
   const blob = typeof canvas.toBlob === 'function'
     ? await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
@@ -277,6 +286,8 @@ export async function exportHwpToPdf(
    * survives the save instead of leaving an image-only PDF.
    */
   ocrWords?: Map<number, OcrWord[]>,
+  /** Only these pages, in this order ("save selection"); all of them when absent. */
+  pageNums?: number[],
 ): Promise<Uint8Array> {
   const { getOrRenderPage } = await import('./pageRender')
 
@@ -284,39 +295,68 @@ export async function exportHwpToPdf(
   // Embedded on first use — a document with no extractable text pays nothing.
   let textFont: PDFFont | null = null
 
-  for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
-    const { canvas, renderScale } = await getOrRenderPage(doc, pageNum)
+  const order = pageNums ?? Array.from({ length: doc.numPages }, (_, i) => i + 1)
+  for (const pageNum of order) {
+    const { canvas } = await getOrRenderPage(doc, pageNum)
 
-    // Composite non-volatile annotations onto a scratch canvas so the exported
-    // page contains stamps/signatures/watermarks/textEdits just like print does.
-    // `compositedCanvas` stays as `canvas` when 2d context is unavailable (e.g.
-    // jsdom in tests); in real browsers it's always the annotated scratch canvas.
-    let compositedCanvas: HTMLCanvasElement = canvas
-    const out = document.createElement('canvas')
-    out.width = canvas.width
-    out.height = canvas.height
-    const ctx = out.getContext('2d')
-    if (ctx) {
-      compositedCanvas = out
-      ctx.drawImage(canvas, 0, 0)
-
-      // Annotation coords are in PDF points; the canvas is at renderScale px/pt.
-      await drawAnnotations(ctx, annotations, pageNum, renderScale)
-    }
-
-    // Embed the composited canvas as JPEG into a pdf-lib page.
-    const jpegImage = await pdfDoc.embedJpg(await canvasJpeg(compositedCanvas, 0.92))
-
-    // Size the PDF page in PDF points (canvas pixels ÷ renderScale) so pdf-lib's
-    // point-unit page matches the document's logical dimensions. The image is
-    // drawn at the same point dimensions so it fills the page exactly.
-    const pageWidth = compositedCanvas.width / renderScale
-    const pageHeight = compositedCanvas.height / renderScale
-    // Known limitation: dimensions are scale-1 pixel sizes used directly as PDF
-    // points with no 96→72 DPI conversion, so the exported page's physical/print
-    // size may differ from the source's true physical dimensions; visual proportions are correct.
+    // The page in PDF points is the page's own size at scale 1 — not the
+    // raster's size: a very large picture's raster is capped (see
+    // imageDocAdapter clampRaster) and would have shrunk the page with it.
+    // Known limitation: those are scale-1 pixel sizes used directly as points,
+    // with no 96→72 DPI conversion; proportions are right, print size may differ.
+    const natural = (await doc.getPage(pageNum)).getViewport({ scale: 1 })
+    const pageWidth = natural.width
+    const pageHeight = natural.height
+    const scale = canvas.width / pageWidth   // raster pixels per point
     const page = pdfDoc.addPage([pageWidth, pageHeight])
-    page.drawImage(jpegImage, { x: 0, y: 0, width: pageWidth, height: pageHeight })
+    const full = { x: 0, y: 0, width: pageWidth, height: pageHeight }
+    const marked = annotationsForPage(annotations, pageNum).some(a => !isVolatile(a))
+
+    // A JPEG or PNG picture goes in as the file it is: no second JPEG pass over
+    // a photo (smaller and sharper), and a PNG keeps its transparency. Marks go
+    // on top as a transparent layer of their own.
+    const encoded = await doc.images?.encoded(pageNum).catch(() => null) ?? null
+    let placed = false
+    if (encoded) {
+      try {
+        const picture = encoded.type === 'jpeg' ? await pdfDoc.embedJpg(encoded.bytes) : await pdfDoc.embedPng(encoded.bytes)
+        page.drawImage(picture, full)
+        placed = true
+      } catch { /* a variant pdf-lib cannot read: drawn from the raster below */ }
+    }
+    if (placed) {
+      if (marked) {
+        const overlay = document.createElement('canvas')
+        overlay.width = canvas.width
+        overlay.height = canvas.height
+        const octx = overlay.getContext('2d')
+        if (octx) {
+          await drawAnnotations(octx, annotations, pageNum, scale)
+          page.drawImage(await pdfDoc.embedPng(await canvasPng(overlay)), full)
+        }
+      }
+    } else {
+      // Composite non-volatile annotations onto a scratch canvas so the
+      // exported page contains stamps/signatures/watermarks/textEdits just like
+      // print does. `compositedCanvas` stays as `canvas` when 2d context is
+      // unavailable (e.g. jsdom in tests).
+      let compositedCanvas: HTMLCanvasElement = canvas
+      const out = document.createElement('canvas')
+      out.width = canvas.width
+      out.height = canvas.height
+      const ctx = out.getContext('2d')
+      if (ctx) {
+        compositedCanvas = out
+        ctx.drawImage(canvas, 0, 0)
+        await drawAnnotations(ctx, annotations, pageNum, scale)
+      }
+      // JPEG for rendered document pages; PNG where a picture may be
+      // transparent — JPEG has no alpha and paints those pixels black.
+      const image = doc.images?.mayHaveAlpha(pageNum)
+        ? await pdfDoc.embedPng(await canvasPng(compositedCanvas))
+        : await pdfDoc.embedJpg(await canvasJpeg(compositedCanvas, 0.92))
+      page.drawImage(image, full)
+    }
 
     // ── Selectable text layer ────────────────────────────────────────────────
     // The picture alone would make an image-only PDF: it looks right but no

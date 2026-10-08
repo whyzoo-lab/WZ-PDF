@@ -206,3 +206,34 @@ describe('Ctrl+S', () => {
     expect(onSave).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('Esc while reading aloud', () => {
+  it('pauses the voice and does nothing else', () => {
+    const d = setup('single', 1)
+    const onSpeechPause = vi.fn()
+    d.rerender({ ...d, annotations: [{ id: 'p', type: 'pen', page: 1 }] as never, onSpeechPause } as never)
+    press({ key: 'Escape' })
+    expect(onSpeechPause).toHaveBeenCalledTimes(1)
+    // The markup stays: the second Esc, with the voice paused, clears it.
+    expect(d.clearMarkups).not.toHaveBeenCalled()
+  })
+
+  it('does what Esc otherwise does once the voice is paused', () => {
+    const d = setup('single', 1)
+    d.rerender({ ...d, annotations: [{ id: 'p', type: 'pen', page: 1 }] as never, onSpeechPause: undefined } as never)
+    press({ key: 'Escape' })
+    expect(d.clearMarkups).toHaveBeenCalled()
+  })
+
+  it('keeps the presentation open: the fullscreen view never sees that Esc', () => {
+    const d = setup('fullscreen', 1)
+    const onSpeechPause = vi.fn()
+    d.rerender({ ...d, onSpeechPause } as never)
+    const later = vi.fn()
+    window.addEventListener('keydown', later)
+    press({ key: 'Escape' })
+    window.removeEventListener('keydown', later)
+    expect(onSpeechPause).toHaveBeenCalled()
+    expect(later).not.toHaveBeenCalled()
+  })
+})

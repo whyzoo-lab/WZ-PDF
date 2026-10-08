@@ -39,7 +39,7 @@ export function usePdfPage(
     const target = clampScale(desiredRenderScale)
     const hit = peekCachedPage(pdfDoc, pageNumber)
     // Cache already meets the requested resolution: hand it over synchronously.
-    if (hit && hit.renderScale >= target - 1e-3) {
+    if (hit && hit.requestedScale >= target - 1e-3) {
       setPageData(hit)
       setIsLoading(false)
       return

@@ -278,6 +278,13 @@ describe('ActionBar', () => {
     expect(onSaveOriginal).toHaveBeenCalled()
   })
 
+  it('leaves "Save as PDF" out of the menu beside the save button when the document is a PDF', () => {
+    render(<ActionBar {...defaultProps} onSaveOriginal={vi.fn()} originalExt=".pdf" pdfIsOriginal />)
+    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    expect(screen.getByText('Save original file')).toBeInTheDocument()
+    expect(screen.queryByText('Save as PDF')).not.toBeInTheDocument()
+  })
+
   it('gives a reflowing document the same save menu, without the page-only formats', () => {
     render(<ActionBar {...defaultProps} hasPdf={false} flowDoc onExportHtml={undefined} onExportImages={undefined}
       onSaveOriginal={vi.fn()} onExportExe={vi.fn()} />)

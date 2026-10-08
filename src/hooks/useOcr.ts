@@ -51,11 +51,19 @@ export function useOcr(pdfDoc: ViewerDoc | null, numPages: number): UseOcrReturn
       // the per-tab budget. Coordinates are recovered via the effective scale.
       const scale = computeOcrScale(canvas.width, canvas.height, ocrMaxDimension())
       let input = canvas
-      if (scale < 1) {
+      // A transparent picture's empty pixels read as black to the recognizer:
+      // dark text on "black" is no text at all. It reads them on white paper.
+      const transparent = pdfDoc.images?.mayHaveAlpha(page) ?? false
+      if (scale < 1 || transparent) {
         const small = document.createElement('canvas')
         small.width = Math.max(1, Math.round(canvas.width * scale))
         small.height = Math.max(1, Math.round(canvas.height * scale))
-        small.getContext('2d')?.drawImage(canvas, 0, 0, small.width, small.height)
+        const ctx = small.getContext('2d')
+        if (ctx) {
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, small.width, small.height)
+          ctx.drawImage(canvas, 0, 0, small.width, small.height)
+        }
         input = small
       }
       const lines = await predict(input)

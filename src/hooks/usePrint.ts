@@ -51,8 +51,15 @@ async function renderPageWithAnnotations(
   const ctx = out.getContext('2d')
   if (!ctx) throw new Error('2d context unavailable')
   await page.render({ canvas: out, viewport }).promise
-  // Annotation coordinates are in PDF points; the canvas is at print scale.
-  await drawAnnotations(ctx, annotations, pageNumber, PRINT_RENDER_SCALE)
+  // Annotation coordinates are in PDF points; the canvas is at print scale —
+  // or below it, where a very large picture capped its raster.
+  await drawAnnotations(ctx, annotations, pageNumber, PRINT_RENDER_SCALE * (out.width / viewport.width))
+  // Paper is white: a transparent picture's empty pixels would otherwise be
+  // encoded black by the JPEG below.
+  ctx.globalCompositeOperation = 'destination-over'
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, out.width, out.height)
+  ctx.globalCompositeOperation = 'source-over'
 
   // A Blob URL, not a data URL: `toBlob` encodes off the main thread, and a
   // 200-page document held as base64 strings was several hundred MB of JS

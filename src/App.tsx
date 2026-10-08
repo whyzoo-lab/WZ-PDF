@@ -33,6 +33,7 @@ import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, PAGE_ATTR } from './utils/constants'
 import { classifyDocFile, DOCUMENT_ACCEPT } from './utils/detectDocType'
 import { pickSaveTarget, saveBlobTo, stripDocExt } from './utils/download'
 import { documentFileName, openableExt } from './utils/docFileName'
+import { rememberPath } from './services/documentPaths'
 import { pageSuffix } from './utils/pageSuffix'
 import { PagePanel } from './components/panel/PagePanel'
 import { Toast } from './components/Toast'
@@ -179,11 +180,17 @@ export default function App() {
   const {
     pdfDoc, numPages, isLoading, error, kind, email, markdown, office,
     passwordPrompt, submitPassword, cancelPassword, documentPassword,
+    startPage,
   } = usePdfDocument(file)
   // A reflowing document is loaded and on screen. Guarded on the payload as
   // well as the kind so it is false during the load, when there is nothing to
   // zoom, print or present yet.
   const flowDoc = isFlowKind(kind) && (markdown !== null || email !== null || office !== null)
+  // The name in the title: the document's, or for pictures the one in view —
+  // a folder of photos is paged through like a viewer, picture by picture.
+  const displayName = kind === 'image' && pdfDoc?.images && file
+    ? pdfDoc.images.nameOf(Math.min(Math.max(1, currentPage), pdfDoc.images.entries.length))
+    : (file?.name ?? '')
   // Word, PowerPoint and spreadsheets: what their view offers the toolbar
   // (fit width, page jumps, a PDF of the document), and — for the paged two —
   // which page is on screen.
@@ -279,7 +286,9 @@ export default function App() {
   // to parse PDF document … No PDF header found". Stamps, signatures and
   // watermarks still work on those pages (they are saved into a PDF), so the
   // edit switch stays; only the page tools are withheld.
-  const pagesEditable = kind === 'pdf'
+  // A PDF's pages are edited in its bytes, an image collection's in its list of
+  // pictures (services/imageSetOps.ts); HWP and single-format others are fixed.
+  const pagesEditable = kind === 'pdf' || (kind === 'image' && !!pdfDoc?.images)
   const pageEditUnavailable = bytesUnavailable ?? (pagesEditable ? null : t('panel.pdfOnly'))
 
   // ── Hooks: feature bundles ────────────────────────────────────────────────
@@ -328,7 +337,7 @@ export default function App() {
     file, fileBytes, pdfDoc, numPages, annotations, kind, documentPassword, savePassword,
     ocrResults: ocr.ocrResults,
     bytesUnavailable, onSuccess: showToast, onError: showToast, onPdfSaved: markSaved,
-    getMarkdownText,
+    getMarkdownText, currentPage,
   })
 
   // The padlock decides *what saving will do*; it does not save. Otherwise one
@@ -355,15 +364,30 @@ export default function App() {
     setScrollToPage(1)
   }, [recordEdit, remapAnnotations, file])
 
+  // An image collection edited: its new list replaces it, as new bytes replace
+  // a PDF. The reader stays on the picture they were looking at.
+  const currentPageRef = useRef(1)
+  const handleImagesOpResult = useCallback((next: File, pageMapping: Map<number, number>) => {
+    recordEdit()
+    remapAnnotations(pageMapping)
+    setFile(next)
+    const stay = pageMapping.get(currentPageRef.current) ?? 1
+    setCurrentPage(stay)
+    setScrollToPage(stay)
+  }, [recordEdit, remapAnnotations])
+
   const {
     isPageOperating,
     handleDeletePages,
     handleInsertBlankPage,
     handleInsertFromPdf,
     handleReorderPages,
+    handleInsertImages,
   } = usePageOperations({
     fileBytes, documentPassword, bytesUnavailable: pageEditUnavailable, onResult: handlePageOpResult,
     onError: err => showToast(errorMessage(err)),
+    imageDoc: kind === 'image' ? pdfDoc : null,
+    onImagesResult: handleImagesOpResult,
   })
 
   // ── Warm the viewer chunks once the shell is on screen ────────────────────
@@ -410,8 +434,8 @@ export default function App() {
 
   // Window title — marked while there are unsaved changes, as editors do.
   useEffect(() => {
-    document.title = file ? `${unsaved ? '● ' : ''}WZ Reader - ${file.name}` : 'WZ Reader'
-  }, [file, unsaved])
+    document.title = file ? `${unsaved ? '● ' : ''}WZ Reader - ${displayName}` : 'WZ Reader'
+  }, [file, unsaved, displayName])
 
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────
   useEffect(() => {
@@ -511,6 +535,8 @@ export default function App() {
     // Listed on the start screen next time. Paths only, and only files that
     // came from disk (not URLs, attachments or an embedded viewer's bytes).
     if (filePath) void window.electronAPI?.addRecentFile?.(filePath).catch(() => {})
+    // A picture opened from disk brings its folder along (services/imageSet.ts).
+    if (filePath) rememberPath(f, filePath)
     // A new document starts clean: no annotations carried over from the last
     // one (they used to be — the previous file's stamps landed on the same
     // page numbers of the next), no history to undo into it, nothing unsaved.
@@ -522,6 +548,9 @@ export default function App() {
     setPendingStamp(null)
     setPendingSignature(null)
     setRotation(0)
+    // From the top: the page counter (and, for pictures, the name in the
+    // title) used to carry the last document's page number over.
+    setCurrentPage(1)
     setViewMode('single')
     setShowSearch(false)
     clearSearch()
@@ -537,6 +566,28 @@ export default function App() {
   // be re-registered every time the document is edited.
   const unsavedRef = useRef(unsaved)
   useLayoutEffect(() => { unsavedRef.current = unsaved })
+  useLayoutEffect(() => { currentPageRef.current = currentPage })
+
+  // A new document starts at its top. The page list is the same scroll
+  // container from one document to the next, so the last one's position used
+  // to carry over — and with it the page counter (a 3-page ZIP opened after a
+  // 9-page folder showed "3 / 3").
+  useEffect(() => {
+    document.getElementById('pdf-single-container')?.scrollTo({ top: 0 })
+  }, [pdfDoc])
+
+  // A picture opened from its folder opens at itself, not at the folder's
+  // first picture.
+  useEffect(() => {
+    if (!pdfDoc || startPage <= 1) return
+    // After the fit zoom has settled (debounced in useFitZoom): scrolling first
+    // and resizing every page after it lands somewhere else.
+    const timer = setTimeout(() => {
+      setCurrentPage(startPage)
+      setScrollToPage(startPage)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [pdfDoc, startPage])
   // What waits on the "save / don't save / cancel" answer: opening another
   // document, or restarting to install an update.
   const [pendingLeave, setPendingLeave] = useState<{ reason: 'open' | 'update'; proceed: () => void } | null>(null)
@@ -574,6 +625,20 @@ export default function App() {
     }
     loadPdfFile(f, window.electronAPI?.pathForFile?.(f) || undefined)
   }, [loadPdfFile, showToast])
+
+  /**
+   * Several files picked or dropped together. Two or more pictures become one
+   * collection — the way to gather photos from different places into one PDF;
+   * otherwise the first file opens as before.
+   */
+  const handleUploadMany = useCallback((files: File[]) => {
+    const pictures = files.filter(f => classifyDocFile(f).isImage && !/\.zip$/i.test(f.name))
+    if (files.length < 2 || pictures.length < 2) { if (files[0]) handleUpload(files[0]); return }
+    import('./services/imageSet')
+      .then(({ collectionForFiles }) => collectionForFiles(pictures))
+      .then(collection => loadPdfFile(collection))
+      .catch(err => showToast(errorMessage(err)))
+  }, [handleUpload, loadPdfFile, showToast])
 
   /**
    * Open a document by path — the OS handing one over, or a recent document on
@@ -674,9 +739,15 @@ export default function App() {
   // ── Scroll to page after grid → single switch ─────────────────────────────
   useEffect(() => {
     if (viewMode === 'single' && scrollToPage !== null) {
-      const timer = setTimeout(() => {
+      // A document that has only just opened may not have laid its pages out
+      // yet; the target is looked for again for a moment rather than given up
+      // on — a picture opened from its folder used to land on the first one.
+      let tries = 0
+      let timer: ReturnType<typeof setTimeout>
+      const attempt = () => {
         const el = document.getElementById(`pdf-page-${scrollToPage}`)
         const container = document.getElementById('pdf-single-container')
+        if ((!el || !container) && ++tries < 40) { timer = setTimeout(attempt, 50); return }
         // Scroll ONLY the dedicated scroll container. el.scrollIntoView()
         // walks up and scrolls every scrollable ancestor — including the
         // overflow-hidden #root/main — which pushes the ActionBar off-screen
@@ -687,7 +758,8 @@ export default function App() {
           container.scrollBy({ top: delta, behavior: 'smooth' })
         }
         setScrollToPage(null)
-      }, 50)
+      }
+      timer = setTimeout(attempt, 50)
       return () => clearTimeout(timer)
     }
   }, [viewMode, scrollToPage])
@@ -1016,6 +1088,21 @@ export default function App() {
    */
   const handleSavePages = useCallback(async (pageNums: number[]) => {
     if (pageNums.length === 0) return
+    if (kind !== 'pdf') {
+      if (!pdfDoc) return
+      const suggested = `${stripDocExt(file?.name ?? 'document')}${pageSuffix(pageNums)}.pdf`
+      const target = await pickSaveTarget(suggested, { description: 'PDF document', accept: { 'application/pdf': ['.pdf'] } })
+      if (target.kind === 'canceled') return
+      try {
+        const [{ exportHwpToPdf }, { doneOcrWords }] = await Promise.all([import('./services/pdfExporter'), import('./types/ocr')])
+        const bytes = await exportHwpToPdf(pdfDoc, annotations, undefined, doneOcrWords(ocr.ocrResults), pageNums)
+        const saved = await saveBlobTo(target, new Blob([bytes as BlobPart], { type: 'application/pdf' }), suggested)
+        if (saved) showToast(t('panel.savedSelected', { n: pageNums.length }))
+      } catch (err) {
+        showToast(errorMessage(err))
+      }
+      return
+    }
     if (!fileBytes) {
       if (bytesUnavailable) showToast(bytesUnavailable)
       return
@@ -1036,7 +1123,7 @@ export default function App() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : String(err))
     }
-  }, [fileBytes, file, documentPassword, bytesUnavailable, showToast])
+  }, [kind, pdfDoc, annotations, ocr.ocrResults, fileBytes, file, documentPassword, bytesUnavailable, showToast])
 
   // ── Word / PowerPoint / spreadsheet → PDF ──────────────────────────────────
   // The view lays its document out for paper (OfficeViewHandle.pdfJob) and the
@@ -1357,6 +1444,7 @@ export default function App() {
     onSpeechNext: tts.status === 'idle' ? undefined : tts.next,
     onSpeechPlayPause: tts.status === 'idle' ? undefined
       : () => { void (tts.status === 'paused' ? tts.resume() : tts.pause()) },
+    onSpeechPause: tts.status === 'speaking' ? () => { void tts.pause() } : undefined,
     onUndo: canEditHistory ? handleUndo : undefined,
     onRedo: canEditHistory ? handleRedo : undefined,
     onSave: handleSaveShortcut,
@@ -1406,6 +1494,7 @@ export default function App() {
     isPanelOpen,
     onTogglePanel: () => setIsPanelOpen(v => !v),
     onUpload: handleUpload,
+    onUploadMany: handleUploadMany,
     onOpenUrl: () => setShowUrlModal(true),
     // The same save menu for every format: a PDF (the main button), the file
     // itself, and a viewer exe — Word, PowerPoint and sheets print through
@@ -1413,6 +1502,7 @@ export default function App() {
     onExportPdf: office !== null ? () => { void handleSaveOfficePdf() } : () => { void handleExportPdf() },
     onSaveOriginal: markdown !== null ? () => { void markdownSaveRef.current?.() } : () => { void handleSaveOriginal() },
     originalExt: file ? `.${openableExt(documentFileName(file.name, kind, fileBytes ?? new Uint8Array()))}` : undefined,
+    pdfIsOriginal: kind === 'pdf',
     onPassword: handlePassword,
     saveLocked: !!savePassword,
     // Booklet, HTML viewer and page images: page documents only.
@@ -1427,7 +1517,7 @@ export default function App() {
     // also what hides the button.
     onToggleSpeech: window.electronAPI?.ttsSynthesize ? handleToggleSpeech : undefined,
     isSpeaking: tts.status !== 'idle',
-    fileName: file?.name,
+    fileName: file ? displayName : undefined,
     unsaved,
     onUndo: canEditHistory ? handleUndo : undefined,
     onRedo: canEditHistory ? handleRedo : undefined,
@@ -1550,11 +1640,11 @@ export default function App() {
       {!locked && <input
         ref={fileInputRef}
         type="file"
+        multiple
         accept={DOCUMENT_ACCEPT}
         className="hidden"
         onChange={e => {
-          const f = e.target.files?.[0]
-          if (f) handleUpload(f)
+          handleUploadMany(Array.from(e.target.files ?? []))
           e.target.value = ''
         }}
       />}
@@ -1582,9 +1672,10 @@ export default function App() {
               readOnlyNote={appMode === 'editor' && !pagesEditable ? t('panel.pdfOnly') : undefined}
               onError={showToast}
               onClose={() => setIsPanelOpen(false)}
-              // Only for PDFs: extraction is pdf-lib's job, and it has nothing
-              // to say about a HWP page or an image.
-              onSavePages={kind === 'pdf' && !chromeless ? handleSavePages : undefined}
+              // A PDF's pages are copied out with pdf-lib; any other page
+              // document's are drawn into a new PDF, as "save as PDF" does.
+              onSavePages={!chromeless ? handleSavePages : undefined}
+              onInsertImages={kind === 'image' && pdfDoc?.images ? (after, files) => { void handleInsertImages(after, files) } : undefined}
               onSelectionChange={handlePanelSelection}
               onScrollToPage={page => {
                 setScrollToPage(page)
@@ -1611,8 +1702,7 @@ export default function App() {
           onDragOver={e => e.preventDefault()}
           onDrop={e => {
             e.preventDefault()
-            const f = e.dataTransfer.files[0]
-            if (f) handleUpload(f)
+            handleUploadMany(Array.from(e.dataTransfer.files))
           }}
           onDoubleClick={handleMainDoubleClick}
           // No "Save image as…" on a page in a private viewer.

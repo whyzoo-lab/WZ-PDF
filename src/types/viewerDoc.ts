@@ -31,6 +31,42 @@ export interface ViewerPage {
   getTextContent(): Promise<{ items: unknown[] }>
 }
 
+/** The type of a File that is an image collection's manifest (services/imageSet.ts). */
+export const IMAGE_SET_MIME = 'application/x-wz-image-set'
+
+/** One page of an image collection: a file, and which page of it (multi-page TIFF). */
+export interface ImageSetEntry { src: string; page?: number }
+
+/** The frames of an animated image (GIF, animated WebP), decoded on demand. */
+export interface ImageAnimation {
+  frameCount: number
+  /** Frame `i`, and how long it stays up in ms. The caller closes `image`. */
+  frame(i: number): Promise<{ image: VideoFrame; duration: number }>
+  close(): void
+}
+
+/**
+ * What an image collection knows beyond its pages: one image, the images in
+ * its folder, a selection, or a ZIP — all shown as one document. See
+ * services/imageSet.ts.
+ */
+export interface ImageSetView {
+  /** The collection's name — the folder's, or the first file's. */
+  name: string
+  /** Page order. */
+  entries: ImageSetEntry[]
+  /** File name of page n's image (1-based). */
+  nameOf(page: number): string
+  /** Page n's file, as it is on disk. */
+  original(page: number): Promise<{ bytes: ArrayBuffer; name: string }>
+  /** The file's own bytes when a PDF can take them as they are (JPEG, PNG). */
+  encoded(page: number): Promise<{ bytes: Uint8Array; type: 'jpeg' | 'png' } | null>
+  /** Anything but a JPEG may have transparent pixels. */
+  mayHaveAlpha(page: number): boolean
+  /** Frames to animate page n with, or null when it is a still picture. */
+  animation(page: number): Promise<ImageAnimation | null>
+}
+
 /**
  * The subset of pdfjs's `PDFDocumentProxy` the app actually uses. Both the real
  * pdfjs document and the HWP adapter satisfy this, so all downstream code is
@@ -42,5 +78,7 @@ export interface ViewerDoc {
   /** Native positioned text for a page (HWP only — enables real text selection
    *  without OCR). Absent on the pdfjs path (PDF uses its own text layer). */
   getPageText?(pageNumber: number): Promise<HwpTextRun[]>
+  /** Present on image collections only. */
+  images?: ImageSetView
   destroy(): void
 }

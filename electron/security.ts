@@ -263,7 +263,9 @@ export function pinnedRequest(target: PinnedTarget, signal: AbortSignal): Promis
 
 /** Formats whose first bytes identify them, so a renamed file can be caught. */
 const BINARY_DOCUMENT_EXTENSIONS = [
-  'pdf', 'hwp', 'hwpx', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp',
+  'pdf', 'hwp', 'hwpx', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tif', 'tiff',
+  // A ZIP of pictures (what "save images" writes) opens as one collection.
+  'zip',
   // Office: zip packages, and legacy .xls in the same OLE2 container as .hwp.
   'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods',
 ] as const
@@ -299,6 +301,13 @@ export function isTextDocumentPath(lowerPath: string): boolean {
   return (TEXT_DOCUMENT_EXTENSIONS as readonly string[]).includes(extensionOf(lowerPath))
 }
 
+/** Pictures — what opening one picture gathers from its folder. */
+export const IMAGE_DOCUMENT_EXTENSIONS: readonly string[] = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tif', 'tiff']
+
+export function isImageDocumentPath(lowerPath: string): boolean {
+  return IMAGE_DOCUMENT_EXTENSIONS.includes(extensionOf(lowerPath))
+}
+
 export function hasSupportedDocumentSignature(bytes: Uint8Array): boolean {
   const at = (i: number, ...expected: number[]) => expected.every((b, n) => bytes[i + n] === b)
   return (
@@ -310,6 +319,7 @@ export function hasSupportedDocumentSignature(bytes: Uint8Array): boolean {
     at(0, 0x47, 0x49, 0x46, 0x38) ||                                // GIF8
     at(0, 0x42, 0x4d) ||                                            // BM
     // RIFF….WEBP — RIFF alone is also .wav/.avi, so the tag at byte 8 matters.
-    (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50))
+    (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) ||
+    at(0, 0x49, 0x49, 0x2a, 0x00) || at(0, 0x4d, 0x4d, 0x00, 0x2a)  // TIFF, little / big endian
   )
 }

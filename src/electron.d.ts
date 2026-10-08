@@ -19,6 +19,9 @@ interface Window {
     /** Read a local file by path — avoids fetch('file://') CORS issues. */
     readFile: (filePath: string) => Promise<ArrayBuffer>
 
+    /** The pictures in the same folder as this one, in Explorer's order. */
+    listFolderImages?: (filePath: string) => Promise<{ path: string; name: string; size: number }[]>
+
     /** Size of a local document, after the same checks `readFile` makes. */
     statFile: (filePath: string) => Promise<{ size: number }>
 

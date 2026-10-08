@@ -35,6 +35,14 @@ async function renderThumbnail(doc: ViewerDoc, pageNumber: number): Promise<stri
   } else {
     await page.render({ canvas, viewport }).promise
   }
+  // On white: a JPEG has no transparency, and a transparent picture's empty
+  // pixels came out black.
+  const flat = canvas.getContext('2d')
+  if (flat) {
+    flat.globalCompositeOperation = 'destination-over'
+    flat.fillStyle = '#ffffff'
+    flat.fillRect(0, 0, canvas.width, canvas.height)
+  }
   return canvas.toDataURL('image/jpeg', 0.8)
 }
 

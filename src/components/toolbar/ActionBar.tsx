@@ -56,6 +56,8 @@ export interface ActionBarProps {
   numPages: number
   currentPage: number
   onUpload: (file: File) => void
+  /** Several files at once (two or more pictures become one collection). */
+  onUploadMany?: (files: File[]) => void
   /** Open the "load from URL" modal. */
   onOpenUrl: () => void
   /** Absent where printing is not allowed (a private viewer): no print button. */
@@ -101,6 +103,13 @@ export interface ActionBarProps {
   onSaveOriginal?: () => void
   /** Its extension, shown beside that item. */
   originalExt?: string
+  /**
+   * The document is a PDF: "Save as PDF" is then what the save button beside
+   * the menu already does, so the menu next to it leaves it out — the two
+   * rows read as the same thing. The folded menu keeps it, since there is no
+   * save button there.
+   */
+  pdfIsOriginal?: boolean
   /** The padlock: puts a password on the next save, or takes it back off. */
   onPassword: () => void
   /** True when the next save will put a password on the file. */
@@ -149,6 +158,7 @@ export function ActionBar({
   numPages,
   currentPage,
   onUpload,
+  onUploadMany,
   onOpenUrl,
   onPrint,
   onAppModeChange,
@@ -179,6 +189,7 @@ export function ActionBar({
   onExportPdf,
   onSaveOriginal,
   originalExt,
+  pdfIsOriginal = false,
   onPassword,
   saveLocked = false,
   onExportSpreads,
@@ -329,15 +340,17 @@ export function ActionBar({
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) onUpload(file)
+    const files = Array.from(e.target.files ?? [])
+    if (files.length > 1 && onUploadMany) onUploadMany(files)
+    else if (files[0]) onUpload(files[0])
     e.target.value = ''
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (file && classifyDocFile(file).supported) onUpload(file)
+    const files = Array.from(e.dataTransfer.files).filter(f => classifyDocFile(f).supported)
+    if (files.length > 1 && onUploadMany) onUploadMany(files)
+    else if (files[0]) onUpload(files[0])
   }
 
   const handlePresetClick = async (presetId: string, svg: string) => {
@@ -722,16 +735,18 @@ export function ActionBar({
     : null
 
   // ── Export dropdown menu body (shared by the split button & collapsed menu) ─
-  const exportMenuItems = (onDone: () => void) => (
+  const exportMenuItems = (onDone: () => void, besideSaveButton = false) => (
     <>
       {onSaveOriginal && (
-        <button onClick={() => { onSaveOriginal(); onDone() }} title={t('export.originalTitle')} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+        <button onClick={() => { onSaveOriginal(); onDone() }} title={t(pdfIsOriginal ? 'export.originalTitlePdf' : 'export.originalTitle')} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
           <IconFile /><span>{t('export.original')}</span><span className="ml-auto text-gray-400 text-[11px]">{originalExt}</span>
         </button>
       )}
-      <button onClick={() => { onExportPdf(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-        <IconSave /><span>{t('export.pdf')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
-      </button>
+      {!(besideSaveButton && pdfIsOriginal) && (
+        <button onClick={() => { onExportPdf(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
+          <IconSave /><span>{t('export.pdf')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
+        </button>
+      )}
       {onExportSpreads && (
         <button onClick={() => { onExportSpreads(); onDone() }} title={t('export.spreadTitle')} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
           <IconSpread /><span>{t('export.spread')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
@@ -849,7 +864,7 @@ export function ActionBar({
           ><IconChevron /></button>
           {exportMenuOpen && (
             <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[175px]">
-              {exportMenuItems(() => setExportMenuOpen(false))}
+              {exportMenuItems(() => setExportMenuOpen(false), true)}
             </div>
           )}
         </div>
@@ -1047,7 +1062,7 @@ export function ActionBar({
 
       {editorRow}
 
-      {!embed && <input ref={fileInputRef} type="file" accept={DOCUMENT_ACCEPT} className="hidden" onChange={handleFileChange} />}
+      {!embed && <input ref={fileInputRef} type="file" multiple accept={DOCUMENT_ACCEPT} className="hidden" onChange={handleFileChange} />}
 
       {/* Stamp dropdown portal — rendered in <body> to escape toolbar overflow */}
       {stampPortal}

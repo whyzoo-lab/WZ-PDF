@@ -4,6 +4,7 @@ import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva'
 import type Konva from 'konva'
 import type { ViewerDoc, DocKind } from '../../types/viewerDoc'
 import { usePdfPage } from '../../hooks/usePdfPage'
+import { usePageAnimation } from '../../hooks/usePageAnimation'
 import { AnnotationLayer } from '../annotations/AnnotationLayer'
 import { PdfTextLayer } from './PdfTextLayer'
 import type { TextLayerHighlight, TextEditCommit } from './PdfTextLayer'
@@ -23,6 +24,13 @@ const PEN_STROKE_WIDTH = 14   // PDF points → renders ~21px at zoom=1
 const PEN_OPACITY      = 0.4
 const RECT_COLOR        = '#FF0000'
 const RECT_STROKE_WIDTH = 2   // PDF points
+
+/** Light grey squares behind a transparent picture. */
+const CHECKERBOARD = {
+  backgroundColor: '#ffffff',
+  backgroundImage: 'conic-gradient(#e5e7eb 25%, transparent 0 50%, #e5e7eb 0 75%, transparent 0)',
+  backgroundSize: '16px 16px',
+}
 
 interface PdfPageProps {
   pdfDoc: ViewerDoc
@@ -95,6 +103,11 @@ function PdfPageInner({
   // no config for this, so we reach the underlying 2D context once after mount —
   // read-only access to a field, not a patched library.
   const pageLayerRef = useRef<import('konva/lib/Layer').Layer>(null)
+  // An animated GIF / WebP plays in place of its first frame (images only).
+  const animated = usePageAnimation(pdfDoc, pageNumber, pageData?.canvas ?? null, pageLayerRef)
+  // Transparent pictures sit on a checkerboard, as image viewers show them;
+  // the raster itself stays transparent, so saving and printing are not affected.
+  const checkerboard = kind === 'image' && !!pdfDoc.images?.mayHaveAlpha(pageNumber)
   useEffect(() => {
     const raw = (pageLayerRef.current?.getCanvas()?.getContext() as unknown as
       { _context?: CanvasRenderingContext2D } | undefined)?._context
@@ -490,7 +503,7 @@ function PdfPageInner({
       )}
       {/* The canvas is either duplicated by the text layer above it or carries
           nothing readable at all, so it is never worth announcing on its own. */}
-      <div aria-hidden style={{ position: 'absolute', top: 0, left: 0, ...rotationStyle }}>
+      <div aria-hidden style={{ position: 'absolute', top: 0, left: 0, ...rotationStyle, ...(checkerboard ? CHECKERBOARD : null) }}>
         <Stage
           width={renderedW}
           height={renderedH}
@@ -509,7 +522,7 @@ function PdfPageInner({
         >
           <Layer ref={pageLayerRef}>
             <KonvaImage
-              image={pageData.canvas}
+              image={animated ?? pageData.canvas}
               x={0}
               y={0}
               width={renderedW}

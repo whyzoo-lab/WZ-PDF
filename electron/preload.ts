@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFile: (filePath: string): Promise<ArrayBuffer> =>
     ipcRenderer.invoke('read-file', filePath),
 
+  /** The pictures in the same folder as this one, in Explorer's order. */
+  listFolderImages: (filePath: string): Promise<{ path: string; name: string; size: number }[]> =>
+    ipcRenderer.invoke('list-folder-images', filePath),
+
   /** Size of a local document, after the same checks `readFile` makes. */
   statFile: (filePath: string): Promise<{ size: number }> =>
     ipcRenderer.invoke('stat-file', filePath),

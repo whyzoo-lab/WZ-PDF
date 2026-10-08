@@ -13,8 +13,8 @@ describe('detectDocType', () => {
   it('detects HWPX by zip magic + .hwpx extension', () => {
     expect(detectDocType('a.hwpx', buf(0x50,0x4B,0x03,0x04))).toBe('hwp')
   })
-  it('does not treat a plain .zip as hwp', () => {
-    expect(detectDocType('a.zip', buf(0x50,0x4B,0x03,0x04))).toBe('unknown')
+  it('does not treat a plain .zip as hwp — it may be a ZIP of pictures', () => {
+    expect(detectDocType('a.zip', buf(0x50,0x4B,0x03,0x04))).toBe('image')
   })
   it('falls back to extension when bytes are short', () => {
     expect(detectDocType('a.hwp', buf(0x00))).toBe('hwp')
@@ -78,9 +78,14 @@ describe('detectDocType — content wins over a misleading name', () => {
     expect(detectDocType('document.pdf', enc(zip))).toBe('hwp')
   })
 
-  it('still refuses a plain zip', () => {
+  it('reads a .zip as pictures, and a ZIP named otherwise by its name', () => {
     expect(detectDocType('document.pdf', enc('PK\x03\x04' + '\x00'.repeat(40)))).toBe('pdf')
-    expect(detectDocType('a.zip', enc('PK\x03\x04' + '\x00'.repeat(40)))).toBe('unknown')
+    expect(detectDocType('a.zip', enc('PK\x03\x04' + '\x00'.repeat(40)))).toBe('image')
+  })
+
+  it('recognizes TIFF by its signature, either byte order', () => {
+    expect(detectDocType('scan', buf(0x49, 0x49, 0x2A, 0x00, 8, 0, 0, 0))).toBe('image')
+    expect(detectDocType('scan.pdf', buf(0x4D, 0x4D, 0x00, 0x2A, 0, 0, 0, 8))).toBe('image')
   })
 
   it('spots a message by its headers even when named .pdf', () => {

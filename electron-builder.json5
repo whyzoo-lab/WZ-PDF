@@ -203,7 +203,9 @@
     { "ext": "jpeg",     "name": "WZPDF.jpeg",    "description": "JPEG Image",                 "role": "Viewer", "icon": "build/icon.ico" },
     { "ext": "gif",      "name": "WZPDF.gif",     "description": "GIF Image",                  "role": "Viewer", "icon": "build/icon.ico" },
     { "ext": "bmp",      "name": "WZPDF.bmp",     "description": "Bitmap Image",               "role": "Viewer", "icon": "build/icon.ico" },
-    { "ext": "webp",     "name": "WZPDF.webp",    "description": "WebP Image",                 "role": "Viewer", "icon": "build/icon.ico" }
+    { "ext": "webp",     "name": "WZPDF.webp",    "description": "WebP Image",                 "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "tif",      "name": "WZPDF.tif",     "description": "TIFF Image",                 "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "tiff",     "name": "WZPDF.tiff",    "description": "TIFF Image",                 "role": "Viewer", "icon": "build/icon.ico" }
   ],
 
   // `build:exe` runs `electron-builder --win portable` then `--win nsis`

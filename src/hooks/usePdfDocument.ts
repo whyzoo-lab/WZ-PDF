@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ViewerDoc, DocKind } from '../types/viewerDoc'
+import { IMAGE_SET_MIME, type ViewerDoc, type DocKind } from '../types/viewerDoc'
 import type { ParsedEmail } from '../services/emlParser'
 import { detectDocType } from '../utils/detectDocType'
 import { markOpen, resetOpenMarks } from '../services/openPerf'
@@ -32,6 +32,11 @@ interface UsePdfDocumentReturn {
   markdown: string | null
   /** Set only for kind 'docx' / 'pptx' / 'sheet' (pdfDoc stays null). */
   office: OfficeSource | null
+  /**
+   * The page to show first: for a picture opened from a folder, the picture
+   * itself, among its neighbours. 1 for everything else.
+   */
+  startPage: number
   /**
    * The document is encrypted and pdfjs is waiting for a password. `wrong` is
    * true on a second and later ask, i.e. the last attempt was rejected.
@@ -71,6 +76,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
   const [email, setEmail] = useState<ParsedEmail | null>(null)
   const [markdown, setMarkdown] = useState<string | null>(null)
   const [office, setOffice] = useState<OfficeSource | null>(null)
+  const [startPage, setStartPage] = useState(1)
   const [passwordPrompt, setPasswordPrompt] = useState<{ wrong: boolean } | null>(null)
   const [documentPassword, setDocumentPassword] = useState<string | null>(null)
   /**
@@ -125,6 +131,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
       doc: ViewerDoc | null; kind: DocKind
       email: ParsedEmail | null; markdown: string | null
       office?: OfficeSource
+      startPage?: number
     }
 
     /**
@@ -253,6 +260,13 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
 
       const buffer = await readAll(file)
       markOpen('bytes')
+      // An image collection after a page edit or an undo: its manifest, not a
+      // file from disk (services/imageSet.ts).
+      if (file.type === IMAGE_SET_MIME) {
+        const { openManifest } = await import('../services/imageDocAdapter')
+        const doc = await openManifest(buffer)
+        return { doc, kind: 'image', email: null, markdown: null, startPage: doc.startPage }
+      }
       const type = detectDocType(file.name, buffer)
       if (type === 'eml') {
         // Messages skip the page pipeline entirely — see EmailView.
@@ -275,10 +289,19 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
         return { doc: null, kind: type, email: null, markdown: null, office: { kind: type, name: file.name, bytes: buffer } }
       }
       if (type === 'image') {
-        // Images are page-like, so they become a one-page ViewerDoc and reuse
-        // the whole viewer/annotate/export pipeline unchanged.
-        const { createImageViewerDoc } = await import('../services/imageDocAdapter')
-        return { doc: await createImageViewerDoc(buffer, file.type), kind: 'image', email: null, markdown: null }
+        // Pictures are page-like, so they reuse the whole page pipeline. One
+        // picture brings the rest of its folder along (opened at itself), and a
+        // ZIP of pictures opens as all of them — see services/imageSet.ts.
+        const [{ openManifest }, set] = await Promise.all([
+          import('../services/imageDocAdapter'),
+          import('../services/imageSet'),
+        ])
+        const isZip = new Uint8Array(buffer, 0, Math.min(4, buffer.byteLength)).every((b, i) => b === [0x50, 0x4b, 0x03, 0x04][i])
+        const manifest = isZip
+          ? await set.collectionForZip(buffer, file.name)
+          : await set.collectionForImage(file, buffer)
+        const doc = await openManifest(await manifest.arrayBuffer())
+        return { doc, kind: 'image', email: null, markdown: null, startPage: doc.startPage }
       }
       if (type === 'hwp') {
         const { loadHwp } = await import('../services/hwpEngine')
@@ -290,7 +313,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
     }
 
     load()
-      .then(({ doc, kind, email, markdown, office }) => {
+      .then(({ doc, kind, email, markdown, office, startPage: start }) => {
         loadedDoc = doc
         if (cancelled) { release(); return }
         setPdfDoc(doc)
@@ -299,6 +322,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
         setEmail(email)
         setMarkdown(markdown)
         setOffice(office ?? null)
+        setStartPage(start ?? 1)
         setIsLoading(false)
       })
       .catch(err => {
@@ -320,7 +344,7 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
   }, [file])
 
   return {
-    pdfDoc, numPages, isLoading, error, kind, email, markdown, office,
+    pdfDoc, numPages, isLoading, error, kind, email, markdown, office, startPage,
     passwordPrompt, submitPassword, cancelPassword, documentPassword,
   }
 }

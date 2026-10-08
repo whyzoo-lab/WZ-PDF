@@ -7,6 +7,8 @@ const JPEG = [0xFF, 0xD8, 0xFF]
 const GIF  = [0x47, 0x49, 0x46, 0x38]            // GIF8
 const BMP  = [0x42, 0x4D]                        // BM
 const RIFF = [0x52, 0x49, 0x46, 0x46]            // RIFF … WEBP
+const TIFF_LE = [0x49, 0x49, 0x2A, 0x00]         // II*\0
+const TIFF_BE = [0x4D, 0x4D, 0x00, 0x2A]         // MM\0*
 
 function startsWith(bytes: Uint8Array, sig: number[]): boolean {
   if (bytes.length < sig.length) return false
@@ -20,7 +22,7 @@ function startsWith(bytes: Uint8Array, sig: number[]): boolean {
  * detectDocType). The PDF rule is permissive (`type` contains "pdf" OR .pdf
  * extension) so browser MIME quirks don't reject valid files.
  */
-const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'avif', 'ico']
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'avif', 'ico', 'tif', 'tiff']
 const MARKDOWN_EXTS = ['md', 'markdown', 'mdown', 'mkd']
 /** Word documents. Only the XML format: legacy .doc has no light reader. */
 export const WORD_EXTS = ['docx']
@@ -36,8 +38,8 @@ export const SHEET_EXTS = ['xlsx', 'xlsm', 'xls', 'ods', 'csv']
  * from the menu filtered it out while F2 and double-click let it through.
  */
 export const DOCUMENT_ACCEPT =
-  'application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp,.md,.markdown,text/markdown,'
-  + '.docx,.pptx,.xlsx,.xlsm,.xls,.ods,.csv,text/csv'
+  'application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp,.tif,.tiff,.md,.markdown,text/markdown,'
+  + '.docx,.pptx,.xlsx,.xlsm,.xls,.ods,.csv,text/csv,.zip,application/zip'
 
 export function classifyDocFile(file: File): {
   isPdf: boolean; isHwp: boolean; isEml: boolean; isImage: boolean; isMarkdown: boolean
@@ -49,7 +51,8 @@ export function classifyDocFile(file: File): {
   const isPdf = file.type.includes('pdf') || name.endsWith('.pdf')
   const isHwp = name.endsWith('.hwp') || name.endsWith('.hwpx')
   const isEml = file.type === 'message/rfc822' || name.endsWith('.eml')
-  const isImage = file.type.startsWith('image/') || IMAGE_EXTS.includes(ext)
+  // A ZIP of pictures opens as one collection; any other ZIP fails with a message.
+  const isImage = file.type.startsWith('image/') || IMAGE_EXTS.includes(ext) || ext === 'zip' || file.type === 'application/zip'
   const isMarkdown = file.type === 'text/markdown' || MARKDOWN_EXTS.includes(ext)
   const isOffice = WORD_EXTS.includes(ext) || SLIDE_EXTS.includes(ext) || SHEET_EXTS.includes(ext)
   return {
@@ -116,9 +119,13 @@ export function detectDocType(
     if (ext === 'hwpx') return 'hwp'
     const office = officeZipKind(bytes)
     if (office) return office
+    // A ZIP named as one is read as a collection of pictures (what "save
+    // images" writes); one with none inside says so when it is opened.
+    if (ext === 'zip') return 'image'
   }
   if (startsWith(head, PNG) || startsWith(head, JPEG) ||
-      startsWith(head, GIF) || startsWith(head, BMP)) return 'image'
+      startsWith(head, GIF) || startsWith(head, BMP) ||
+      startsWith(head, TIFF_LE) || startsWith(head, TIFF_BE)) return 'image'
   // WEBP is RIFF with a 'WEBP' tag at byte 8 — RIFF alone is also .wav/.avi.
   if (startsWith(head, RIFF) &&
       String.fromCharCode(...head.slice(8, 12)) === 'WEBP') return 'image'

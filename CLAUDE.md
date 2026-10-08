@@ -136,6 +136,18 @@ comparison — whole-document character multiset, not just per-page equality,
 since pagination shifts make every page after a break look different — before
 trying a later version.
 
+**0.8.7 was tried and rejected too (Oct 2026).** No API we use was removed
+(+120 functions), but across twelve real RFPs, plans and forms, four lost text:
+2,461 characters of a 231-page RFP, and in a KICOX RFP the heading
+`○ 기술평가항목 및 배점한도`, a whole table row (`사회적기업 / 고용노동부장관 /
+사회적기업인증서`) and list numbers `1)`, `2)`. Eight were identical or only
+re-paginated. The script that did it compares 0.8.2 and a candidate installed
+outside the project, in plain Node: load each `rhwp.js` with `initSync`, join
+`getPageTextLayout` runs per document, and diff the character multisets.
+
+**TypeScript stays on 6.0** while typescript-eslint's peer range ends below
+6.1 (8.71.1: `>=4.8.4 <6.1.0`); 7.0 is the rewritten compiler.
+
 **Korean fonts** — rhwp resolves each HWP font through a CSS fallback chain, e.g.
 for 바탕: `"바탕", Batang, 바탕, Nanum Myeongjo, …, Noto Serif KR, …, serif`. On
 Korean Windows the first entries are installed system fonts and win, so nothing
@@ -158,13 +170,64 @@ Two traps, both handled in `src/services/hwpFonts.ts`:
    so it first checks whether a Korean face already resolves and no-ops if so
    (measured on Korean Windows: 21 ms, zero bytes fetched).
 
-### Images (jpg / png / bmp / gif / webp)
+### Images (jpg / png / bmp / gif / webp / tiff) — collections of pictures
 
-An image is page-like in the way mail is not — fixed geometry, one page, no
-reflow — so `src/services/imageDocAdapter.ts` presents it as a **one-page
-ViewerDoc** instead of adding a separate viewer. Zoom, rotation, fit,
-annotations, print, OCR and every export then work through the paths they
-already use, with no branching downstream.
+An image is page-like in the way mail is not — fixed geometry, no reflow — so
+pictures go through the page pipeline as a ViewerDoc instead of a separate
+viewer: zoom, rotation, the page list, two-page/grid/fullscreen, annotations,
+OCR, read-aloud (after OCR), print and every export work unchanged, with the
+same shortcuts as a PDF. What is new since 1.25 is that the document is a
+**collection**:
+
+- **One picture opened from disk brings its folder** (`collectionForImage`):
+  every picture beside it, in Explorer's natural order, opened at itself
+  (`startPage`; App scrolls there once the fit zoom has settled). The folder
+  comes from `list-folder-images` (main), which takes only the folder of a
+  picture `read-file` would accept, returns names and sizes only (each file is
+  still read through `read-file`), caps at 2,000 around the opened one, and
+  treats siblings of an OS-provided UNC path as OS-provided. The opened file's
+  path is recorded by App in `services/documentPaths.ts` (kept apart so the
+  startup bundle pays nothing).
+- **Several pictures picked or dropped together** become one collection
+  (`handleUploadMany`); a **ZIP of pictures** (what "save images" writes)
+  opens as its pictures, inflated lazily (`detectDocType` returns `image` for a
+  `.zip` that is not Office/HWPX).
+- **The collection is a manifest File** (`IMAGE_SET_MIME`): an ordered list of
+  entries naming sources in a registry (`services/imageSet.ts`). Page edits
+  (delete, reorder, insert blank, "add images" — `services/imageSetOps.ts`)
+  produce a new manifest and go through `setFile`, exactly as a PDF page edit
+  replaces its bytes, so undo/redo and annotation remapping work unchanged.
+- **Nothing is decoded up front.** Page sizes come from file headers
+  (`services/imageInfo.ts`: PNG/JPEG incl. EXIF orientation/GIF/BMP/WebP/TIFF),
+  a picture is decoded when its page is drawn and dropped once painted. A
+  thumbnail decodes at thumbnail size (unrotated pictures only — whether
+  `createImageBitmap`'s resize box is before or after EXIF rotation is not
+  something to bet on).
+- **Page size**: pixels, but the longest side capped at `PAGE_MAX` (1600 pt),
+  or a 9000-px photo was eleven times the screenshot beside it and a 9000-pt
+  PDF page. The raster is capped too (`clampRaster`: 16,384 px a side, 64 M px):
+  Chromium refuses larger canvases and a 48 MP photo at 300 % came out blank.
+  `pageRender` therefore reports the raster's **actual** `renderScale`
+  (OCR, region copy, text edits, print and export map pixels with it) and
+  decides reuse on `requestedScale`.
+- **TIFF** via `utif2` (pinned, MIT; pako comes with JSZip already), lazy chunk.
+  A multi-page TIFF is one entry per page; CCITT fax pages work.
+- **Transparency**: the raster stays transparent. On screen a checkerboard sits
+  behind pictures that may have alpha (anything but JPEG); thumbnails, print and
+  OCR composite onto white (JPEG and the recognizer read empty pixels as black);
+  the PDF exporter embeds PNG (with SMask) instead of JPEG for them.
+- **Animated GIF / WebP** play on screen (`usePageAnimation`, frames from
+  WebCodecs `ImageDecoder` into a canvas that replaces the raster while the page
+  is mounted; idles while hidden). Print, export, thumbnails and OCR use the
+  first frame.
+- **Save as PDF**: one PDF for the collection, named after it (the folder). A
+  JPEG (EXIF orientation 1) or PNG goes in **as the file it is** — no second
+  JPEG pass — with marks as a transparent layer on top; others are drawn from
+  the raster. Verified in a packaged build: 9 pictures → 9 pages, 1 DCTDecode,
+  3 SMasks, 880 KB including a 9000×6000 PNG. "Save original" saves the
+  picture in view; the EXE carries one picture as itself and a collection as
+  its PDF. "Save selection" works for every page kind (`exportHwpToPdf`'s
+  `pageNums`).
 
 Decoding uses `createImageBitmap` (Promise-based, so it resolves even when the
 window isn't painting), falling back to `<img>` only on engines without it.

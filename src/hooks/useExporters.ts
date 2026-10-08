@@ -34,6 +34,8 @@ interface UseExportersArgs {
   onPdfSaved?: () => void
   /** Markdown as it stands in the editor, which may differ from the file. */
   getMarkdownText?: () => string | null
+  /** The page in view — for an image collection, whose picture "save original" saves. */
+  currentPage?: number
 }
 
 /**
@@ -72,8 +74,14 @@ export function useExporters({
   onError,
   onPdfSaved,
   getMarkdownText,
+  currentPage = 1,
 }: UseExportersArgs) {
   const [isExporting, setIsExporting] = useState(false)
+  // What saved files are named after: the document — or for pictures the
+  // collection (the folder's name), not whichever picture happened to be the
+  // one double-clicked.
+  const images = kind === 'image' ? pdfDoc?.images ?? null : null
+  const baseName = images ? stripDocExt(images.name) : file ? stripDocExt(file.name) : 'document'
 
   /**
    * A PDF has bytes to work from; a document too large to hold does not. Said
@@ -132,19 +140,26 @@ export function useExporters({
 
   /**
    * The document as it is now, under a name that says what it is: the file's
-   * own bytes, or for Markdown the editor's text (saved or not).
+   * own bytes, or for Markdown the editor's text (saved or not), or for an
+   * image collection the picture in view. The name is known at once (a save
+   * picker must open while the click still counts); the bytes may need a read.
    */
-  const currentDocument = useCallback((): { bytes: ArrayBuffer; name: string } | null => {
+  const currentDocument = useCallback((): { name: string; bytes: () => Promise<ArrayBuffer> } | null => {
     if (kind === 'md') {
       const text = getMarkdownText?.()
       if (text != null) {
         const encoded = new TextEncoder().encode(text)
-        return { bytes: encoded.slice().buffer, name: documentFileName(file?.name, kind, encoded) }
+        return { name: documentFileName(file?.name, kind, encoded), bytes: async () => encoded.slice().buffer }
       }
     }
+    const images = pdfDoc?.images
+    if (kind === 'image' && images) {
+      const page = Math.min(Math.max(1, currentPage), images.entries.length)
+      return { name: images.nameOf(page), bytes: async () => (await images.original(page)).bytes }
+    }
     if (!fileBytes) return null
-    return { bytes: fileBytes, name: documentFileName(file?.name, kind, fileBytes) }
-  }, [kind, getMarkdownText, fileBytes, file])
+    return { name: documentFileName(file?.name, kind, fileBytes), bytes: async () => fileBytes }
+  }, [kind, getMarkdownText, pdfDoc, currentPage, fileBytes, file])
 
   /**
    * What a viewer exe carries. The file itself — a deck stays a deck, a HWP a
@@ -160,16 +175,18 @@ export function useExporters({
       const recognized = kind !== 'hwp'
         && [...(ocrResults?.values() ?? [])].some(r => r.status === 'done' && r.words.length > 0)
       const passwordChanged = (savePassword ?? null) !== (documentPassword ?? null)
-      if (marked || recognized || passwordChanged) {
+      // Several pictures go as the one PDF they make together; one goes as itself.
+      const collection = kind === 'image' && (pdfDoc?.images?.entries.length ?? 1) > 1
+      if (marked || recognized || passwordChanged || collection) {
         const pdf = await savedPdf(savePassword ?? undefined)
-        const name = `${stripDocExt(documentFileName(file?.name, kind, fileBytes ?? new Uint8Array()))}.pdf`
+        const name = images ? `${baseName}.pdf` : `${stripDocExt(documentFileName(file?.name, kind, fileBytes ?? new Uint8Array()))}.pdf`
         return { bytes: await pdf.arrayBuffer(), name }
       }
     }
     const doc = currentDocument()
     if (!doc) throw new Error(bytesUnavailable ?? t('doc.notReady'))
-    return doc
-  }, [kind, annotations, ocrResults, savePassword, documentPassword, savedPdf, file, fileBytes, currentDocument, bytesUnavailable])
+    return { name: doc.name, bytes: await doc.bytes() }
+  }, [kind, annotations, ocrResults, savePassword, documentPassword, savedPdf, file, fileBytes, currentDocument, bytesUnavailable, pdfDoc, images, baseName])
 
   /** "원본 저장": the file itself, under another name or in another place. */
   const handleSaveOriginal = useCallback(async () => {
@@ -184,7 +201,7 @@ export function useExporters({
     if (target.kind === 'canceled') return
     setIsExporting(true)
     try {
-      if (await saveBlobTo(target, new Blob([doc.bytes]), doc.name)) {
+      if (await saveBlobTo(target, new Blob([await doc.bytes()]), doc.name)) {
         onSuccess(t('export.originalDone', { name: doc.name }))
       }
     } catch (err) {
@@ -219,7 +236,7 @@ export function useExporters({
     try {
       // The converter `topdf` uses, so the app and the console tool agree.
       const { documentToPdf } = await import('../services/cliBridge')
-      const bytes = await documentToPdf(doc.bytes, doc.name)
+      const bytes = await documentToPdf(await doc.bytes(), doc.name)
       const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
       if (await saveBlobTo(target, blob, outName)) {
         onSuccess(t('export.pdfDone', { name: outName }))
@@ -247,7 +264,7 @@ export function useExporters({
   const handleExportSpreads = useCallback(async () => {
     if (!bytesReady()) return
     const password = savePassword ?? undefined
-    const outName = `${file ? stripDocExt(file.name) : 'document'}_booklet.pdf`
+    const outName = `${baseName}_booklet.pdf`
     const target = await pickSaveTarget(outName, {
       description: 'PDF document', accept: { 'application/pdf': ['.pdf'] },
     })
@@ -268,17 +285,17 @@ export function useExporters({
     } finally {
       setIsExporting(false)
     }
-  }, [bytesReady, savePassword, file, savedPdf, onSuccess, onError])
+  }, [bytesReady, savePassword, baseName, savedPdf, onSuccess, onError])
 
   /** Save as PDF. Resolves true once the file is written. */
   const handleExportPdf = useCallback(async (): Promise<boolean> => {
     if (kind === 'md' || kind === 'eml') return saveFlowPdf()
     if (!bytesReady()) return false
     const password = savePassword ?? undefined
-    const baseName = file ? stripDocExt(file.name) : 'document'
     // The name says which of the three things happened, so the file is still
     // recognisable a week later.
-    const suffix = password ? '_locked' : documentPassword ? '_unlocked' : '_annotated'
+    // Pictures saved as one PDF are just that PDF: nothing was "annotated".
+    const suffix = password ? '_locked' : documentPassword ? '_unlocked' : images ? '' : '_annotated'
     const downloadName = `${baseName}${suffix}.pdf`
     // Ask where to save BEFORE building anything: the picker needs the click's
     // activation, which a long export would outlive. It also means the success
@@ -313,7 +330,7 @@ export function useExporters({
     } finally {
       setIsExporting(false)
     }
-  }, [kind, saveFlowPdf, bytesReady, savedPdf, file, documentPassword, savePassword, onSuccess, onError, onPdfSaved])
+  }, [kind, saveFlowPdf, bytesReady, savedPdf, documentPassword, savePassword, onSuccess, onError, onPdfSaved, images, baseName])
 
   const handleExportHtml = useCallback(async () => {
     // The generated page embeds the whole file, so a document too large to hold
@@ -325,7 +342,7 @@ export function useExporters({
       return
     }
     const filename = file?.name ?? 'document.pdf'
-    const outName = `${stripDocExt(filename)}.html`
+    const outName = `${baseName}.html`
     const target = await pickSaveTarget(outName, {
       description: 'HTML viewer', accept: { 'text/html': ['.html'] },
     })
@@ -347,12 +364,12 @@ export function useExporters({
     } finally {
       setIsExporting(false)
     }
-  }, [bytesReady, viewerPdfBytes, kind, fileBytes, file, onSuccess, onError])
+  }, [bytesReady, viewerPdfBytes, kind, fileBytes, file, baseName, onSuccess, onError])
 
   const handleExportImages = useCallback(async () => {
     if (!pdfDoc) return
-    const filename = file?.name ?? 'document.pdf'
-    const outName = `${stripDocExt(filename)}_images.zip`
+    const filename = images ? `${baseName}.pdf` : file?.name ?? 'document.pdf'
+    const outName = `${baseName}_images.zip`
     const target = await pickSaveTarget(outName, {
       description: 'ZIP archive', accept: { 'application/zip': ['.zip'] },
     })
@@ -371,7 +388,7 @@ export function useExporters({
     } finally {
       setIsExporting(false)
     }
-  }, [pdfDoc, numPages, file, onSuccess, onError])
+  }, [pdfDoc, numPages, file, images, baseName, onSuccess, onError])
 
   // EXE Viewer:
   //   - Electron: appends the document (see `exeDocument`) onto a copy of the

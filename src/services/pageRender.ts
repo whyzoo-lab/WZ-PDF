@@ -9,6 +9,13 @@ export interface PageData {
   width: number              // LOGICAL width  (= PDF points * PDF_RENDER_SCALE) — display/coords
   height: number             // LOGICAL height (= PDF points * PDF_RENDER_SCALE)
   renderScale: number        // actual pixels-per-point of `canvas` (canvas.width = points * renderScale)
+  /**
+   * The scale that was asked for. Usually the same; smaller `renderScale`
+   * means the page capped its raster (a huge picture — see imageDocAdapter
+   * clampRaster). Reuse is decided on this, or a capped page would be drawn
+   * again on every request that it can never satisfy.
+   */
+  requestedScale: number
 }
 
 
@@ -133,7 +140,10 @@ async function renderPage(pdfDoc: ViewerDoc, pageNumber: number, renderScale: nu
   // Timing mark only; no-ops after the first page of each document.
   const { markOpen } = await import('./openPerf')
   markOpen('first-page')
-  return { canvas, width: logical.width, height: logical.height, renderScale }
+  // What the page actually drew, which a picture may have capped: everything
+  // that maps canvas pixels to points (OCR, region copy, text edits) needs this.
+  const actual = canvas.width / page.getViewport({ scale: 1 }).width
+  return { canvas, width: logical.width, height: logical.height, renderScale: actual, requestedScale: renderScale }
 }
 
 /**
@@ -155,7 +165,7 @@ export function getOrRender(pdfDoc: ViewerDoc, pageNumber: number, minRenderScal
   const target = clampScale(minRenderScale)
   const cache = getCacheMap(pdfDoc)
   const hit = cache.get(pageNumber)
-  if (hit && hit.renderScale >= target - 1e-3) return Promise.resolve(touch(hit))
+  if (hit && hit.requestedScale >= target - 1e-3) return Promise.resolve(touch(hit))
 
   const inflight = getInflightMap(pdfDoc)
   const pending = inflight.get(pageNumber)
@@ -165,7 +175,7 @@ export function getOrRender(pdfDoc: ViewerDoc, pageNumber: number, minRenderScal
     .then(data => {
       // Only keep the highest-resolution result (renders may finish out of order).
       const cur = cache.get(pageNumber)
-      if (!cur || data.renderScale >= cur.renderScale) cache.set(pageNumber, touch(data))
+      if (!cur || data.requestedScale >= cur.requestedScale) cache.set(pageNumber, touch(data))
       if (inflight.get(pageNumber)?.p === p) inflight.delete(pageNumber)
       const result = cache.get(pageNumber) ?? data
       evictOverBudget(pdfDoc)

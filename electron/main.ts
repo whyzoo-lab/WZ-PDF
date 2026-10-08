@@ -26,6 +26,7 @@ import {
   assertPublicHttpUrl,
   hasSupportedDocumentSignature,
   isAllowedDocumentPath,
+  isImageDocumentPath,
   isTextDocumentPath,
   allowsPermission,
   isTrustedRendererUrl,
@@ -649,6 +650,42 @@ async function openValidatedDocument(filePath: unknown) {
     throw err
   }
 }
+
+// ── IPC: the pictures beside one ──────────────────────────────────────────
+// Opening a picture opens its folder's pictures with it, as an image viewer
+// does, so the next and previous ones are a page away. Only pictures, only the
+// folder of a picture the renderer could open anyway, and only names and
+// sizes — each one is still read through read-file and its checks.
+const MAX_FOLDER_IMAGES = 2000
+ipcMain.handle('list-folder-images', async (event, filePath: unknown) => {
+  assertTrustedIpcSender(event)
+  const doc = await openValidatedDocument(filePath)
+  await doc.handle.close()
+  const opened = path.resolve(filePath as string)
+  if (!isImageDocumentPath(opened.toLowerCase())) throw new Error('Not a picture')
+  const dir = path.dirname(opened)
+  const found: { path: string; name: string; size: number }[] = []
+  for (const entry of await fs.promises.readdir(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !isImageDocumentPath(entry.name.toLowerCase())) continue
+    const full = path.join(dir, entry.name)
+    try {
+      const { size } = await fs.promises.stat(full)
+      if (size > 0 && size <= MAX_FILE_SIZE) found.push({ path: full, name: entry.name, size })
+    } catch { /* vanished or unreadable: left out */ }
+  }
+  found.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+  // A folder of thousands: the ones around the picture that was opened.
+  let list = found
+  if (found.length > MAX_FOLDER_IMAGES) {
+    const here = Math.max(0, found.findIndex(f => f.path.toLowerCase() === opened.toLowerCase()))
+    const from = Math.min(Math.max(0, here - MAX_FOLDER_IMAGES / 2), found.length - MAX_FOLDER_IMAGES)
+    list = found.slice(from, from + MAX_FOLDER_IMAGES)
+  }
+  // A picture the user double-clicked on a network share: its neighbours are
+  // part of the same request, so they may be read too.
+  if (osProvidedPaths.has(opened)) for (const f of list) osProvidedPaths.add(path.resolve(f.path))
+  return list
+})
 
 /** Reject a binary document whose first bytes are not a format we open. */
 async function assertDocumentSignature(handle: Awaited<ReturnType<typeof fs.promises.open>>): Promise<void> {
