@@ -199,6 +199,9 @@
 
     /* ── Print ── */
     @media print {
+      /* Light-on-dark on screen; on paper bold words in tips came out nearly
+         white on white. */
+      :root { --text: #111; --dim: #444; }
       body { background: #fff; color: #000; }
       .wrap { padding: 20px; max-width: 100%; }
       nav.toc { display: none; }
@@ -215,8 +218,7 @@
   <!-- ── Header ── -->
   <header>
     <div class="logo">WZ Reader</div>
-    <div class="tagline">Fast and simple PDF — User Guide</div>
-    <div class="version">v1.3.1</div>
+    <div class="tagline">Every document, fast and simple — User Guide</div>
   </header>
 
   <!-- ── Table of Contents ── -->
@@ -225,12 +227,16 @@
     <ul class="toc-chips">
       <li><a href="#open">📂 Opening files</a></li>
       <li><a href="#view">🖥️ View modes</a></li>
-      <li><a href="#pages">📄 Page management</a></li>
+      <li><a href="#office">📊 Word · PowerPoint · Excel</a></li>
+      <li><a href="#mail">✉️ Mail · Markdown</a></li>
+      <li><a href="#speech">🔊 Read aloud</a></li>
+      <li><a href="#pages">📄 Pages</a></li>
       <li><a href="#ocr">🔍 Text recognition (OCR)</a></li>
-      <li><a href="#stamp">🖊️ Stamp · Signature · Watermark</a></li>
+      <li><a href="#stamp">🖊️ Stamps · signatures · watermarks</a></li>
+      <li><a href="#password">🔐 Passwords</a></li>
       <li><a href="#markup">✏️ On-screen markup</a></li>
       <li><a href="#present">🎯 Presenter tools</a></li>
-      <li><a href="#export">💾 Exporting</a></li>
+      <li><a href="#export">💾 Saving</a></li>
       <li><a href="#print">🖨️ Printing</a></li>
       <li><a href="#shortcuts">⌨️ Keyboard shortcuts</a></li>
     </ul>
@@ -238,55 +244,59 @@
 
 
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- Opening files                                             -->
+  <!-- Opening files                                            -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="open">
     <div class="s-head">
       <div class="s-icon">📂</div>
       <div class="s-title">
         <h2>Opening files</h2>
-        <div class="sub">Five ways to open a PDF</div>
+        <div class="sub">PDF, HWP, Word, PowerPoint, Excel, mail, Markdown and images</div>
       </div>
     </div>
+
+    <p class="lead">Formats: <strong>PDF</strong> · <strong>HWP</strong> (.hwp .hwpx) · <strong>Word</strong> (.docx) · <strong>PowerPoint</strong> (.pptx) · <strong>Excel</strong> (.xlsx .xls .ods .csv) · <strong>mail</strong> (.eml) · <strong>Markdown</strong> (.md) · <strong>images</strong> (jpg png gif bmp webp). No Office or Hancom Office needed.</p>
 
     <ul class="method-list">
       <li>
         <span class="mi">🖱️</span>
-        <span>Click the <strong>Open</strong> button at the top and choose a file.</span>
-      </li>
-      <li>
-        <span class="mi">⌨️</span>
-        <span>Press <kbd>F2</kbd> to bring up the file picker instantly.</span>
+        <span>Click <strong>📂 Open file</strong> at the top, or press <kbd>F2</kbd>.</span>
       </li>
       <li>
         <span class="mi">🗂️</span>
-        <span><strong>Drag and drop</strong> a PDF onto the window to open it right away.</span>
+        <span><strong>Drag and drop</strong> a file onto the window.</span>
       </li>
       <li>
-        <span class="mi">💻</span>
-        <span><strong>Double-click the empty area</strong> when no file is open to bring up the picker.</span>
+        <span class="mi">🕘</span>
+        <span>Reopen one from <strong>Recent files</strong> on the start screen. <em>(desktop app)</em></span>
       </li>
       <li>
         <span class="mi">📁</span>
-        <span><strong>Double-click a PDF in Windows Explorer</strong> and WZ Reader opens it automatically. <em>(installed version only)</em></span>
+        <span><strong>Double-click a file</strong> in Windows Explorer and it opens in WZ Reader. <em>(installed version)</em></span>
       </li>
       <li>
         <span class="mi">🔗</span>
-        <span>Use <strong>Open ▾ → Open from URL</strong> and paste a direct link to load a PDF from the web. <em>(If the site blocks cross-origin access, download the file and open it directly.)</em></span>
+        <span>Use <strong>📂 ▾ → Open from URL</strong> and paste a link to a document on the web. <em>(If the site blocks cross-origin access, download the file and open it.)</em></span>
       </li>
     </ul>
+    <div class="tip">
+      🔐 A <strong>password-protected PDF</strong> asks for its password when it opens. See <a href="#password">Passwords</a>.
+    </div>
+    <div class="tip">
+      🐘 <strong>PDFs over 500 MB</strong> open too (up to about 2 GB): only the parts in view are read, so they open quickly — view only. <em>(desktop app)</em>
+    </div>
+
   </section>
 
-
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- View modes                                                -->
+  <!-- View modes                                               -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="view">
     <div class="s-head">
       <div class="s-icon">🖥️</div>
       <div class="s-title">
         <h2>View modes</h2>
-        <div class="sub">Switch the layout to match what you're doing</div>
+        <div class="sub">Switch the layout to match what you are doing</div>
       </div>
     </div>
 
@@ -294,347 +304,524 @@
       <div class="card">
         <div class="c-icon">📄</div>
         <div class="c-name">Single page</div>
-        <div class="c-desc">Scroll one page at a time, top to bottom. The default view.</div>
+        <div class="c-desc">Scroll one page at a time, top to bottom. The default.</div>
       </div>
       <div class="card">
         <div class="c-icon">📖</div>
         <div class="c-name">Two-page spread</div>
-        <div class="c-desc">Show two pages side by side — great for reading like a book.</div>
+        <div class="c-desc">Two pages side by side, like a book. A wide page gets a row of its own.</div>
       </div>
       <div class="card">
         <div class="c-icon">🗂️</div>
         <div class="c-name">Grid view</div>
-        <div class="c-desc">See every page at a glance. Click one to jump to it.</div>
+        <div class="c-desc">Every page at a glance. Click one to jump to it.</div>
       </div>
       <div class="card">
         <div class="c-icon">🎬</div>
         <div class="c-name">Fullscreen</div>
-        <div class="c-desc">Fill the whole screen — perfect for talks and presentations.</div>
+        <div class="c-desc">Fill the whole screen — made for talks and presentations.</div>
+      </div>
+    </div>
+    <div class="tip">
+      💡 <strong>Zoom:</strong> <kbd>Ctrl</kbd> + mouse wheel, or the <strong>+</strong> / <strong>–</strong> buttons. <strong>Fit width</strong> makes the text bigger and sharper.
+    </div>
+    <div class="tip">
+      🔎 <strong>Find:</strong> <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>F</kbd> searches the document, in every format.
+    </div>
+    <div class="tip">
+      🎬 <strong>Fullscreen:</strong> <kbd>F5</kbd> starts from the first page, <kbd>Alt</kbd><span class="sc-sep">+</span><kbd>F5</kbd> from the page you are on.
+    </div>
+
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Word · PowerPoint · Excel                                -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="office">
+    <div class="s-head">
+      <div class="s-icon">📊</div>
+      <div class="s-title">
+        <h2>Word · PowerPoint · Excel</h2>
+        <div class="sub">As they were written — tables, charts and pictures, without Office</div>
       </div>
     </div>
 
-    <div class="tip">
-      💡 <strong>Zoom:</strong> Hold <kbd>Ctrl</kbd> and scroll the mouse wheel to zoom in/out. You can also use the <strong>+</strong> / <strong>–</strong> buttons or the rotate button at the top.
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📝</span><span class="f-name">Word</span></div>
+        <div class="f-desc">Pages break where Word breaks them, with headers, footers and bullets.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📽️</span><span class="f-name">PowerPoint</span></div>
+        <div class="f-desc">Slides look as they do in PowerPoint. Hidden slides are skipped in the slideshow.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📈</span><span class="f-name">Excel</span></div>
+        <div class="f-desc">Fonts, colours, borders, merged cells and number formats as written. <strong>Every row</strong> of a sheet with 200,000+ rows.</div>
+      </div>
     </div>
-    <div class="tip">
-      🎬 <strong>Enter fullscreen:</strong> Pick it from the top menu or press <kbd>F5</kbd>. To start from the page you are on, press <kbd>Alt</kbd>+<kbd>F5</kbd>.
+
+    <p class="lead" style="margin-top:18px">Word and PowerPoint get the same <strong>single · two-page · grid</strong> layouts, page counter and page list as a PDF.</p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🗒️</span><span class="f-name">Speaker notes</span></div>
+        <div class="f-desc">A deck with notes shows them in a yellow box under each slide. Toggle them with the notes button.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">💬</span><span class="f-name">Slideshow captions</span></div>
+        <div class="f-desc">In the fullscreen slideshow the notes run along the bottom as <strong>captions</strong>. <kbd>C</kbd> or the corner button turns them off.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🎬</span><span class="f-name">Narrated video</span></div>
+        <div class="f-desc">A deck with notes saves as an MP4 with the <strong>film button</strong>: the notes read aloud, with subtitles a player can switch on and off. <em>(desktop app)</em></div>
+      </div>
     </div>
+    <div class="tip tip-ok">
+      💾 All three <strong>save as PDF</strong> with text you can still select and search.
+    </div>
+
   </section>
 
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Mail · Markdown                                          -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="mail">
+    <div class="s-head">
+      <div class="s-icon">✉️</div>
+      <div class="s-title">
+        <h2>Mail · Markdown</h2>
+        <div class="sub">Messages and notes, read like documents</div>
+      </div>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">✉️</span><span class="f-name">Mail (.eml)</span></div>
+        <div class="f-desc">Sender, recipients and body, with <strong>attachments</strong> you can save or open. Korean mail (EUC-KR) comes out right.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🛡️</span><span class="f-name">Remote images blocked</span></div>
+        <div class="f-desc">Images from the web stay hidden until you ask, so opening a message does not tell the sender.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📝</span><span class="f-name">Markdown (.md)</span></div>
+        <div class="f-desc">Headings, tables, code and task lists, typeset — with a <strong>contents</strong> rail that follows your reading.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">✏️</span><span class="f-name">Edit Markdown</span></div>
+        <div class="f-desc">Turn on the <strong>pencil</strong> at the top to edit the source. <kbd>Ctrl</kbd>+<kbd>S</kbd> saves the .md file.</div>
+      </div>
+    </div>
+    <div class="tip">
+      💡 Mail and Markdown print, search, go fullscreen, read aloud and save as PDF too. Printed and saved <strong>as text</strong>, so they stay sharp and selectable.
+    </div>
+
+  </section>
 
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- Page management                                           -->
+  <!-- Read aloud                                               -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="speech">
+    <div class="s-head">
+      <div class="s-icon">🔊</div>
+      <div class="s-title">
+        <h2>Read aloud</h2>
+        <div class="sub">A natural voice, reading on your PC — no internet needed</div>
+      </div>
+    </div>
+
+    <p class="lead">Press the <strong>🔊 speaker</strong> button or <kbd>S</kbd> (or <kbd>Alt</kbd><span class="sc-sep">+</span><kbd>S</kbd>) and the document is read from where you are, a sentence at a time. The sentence is highlighted and the view follows it.</p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🎙️</span><span class="f-name">Voice · speed</span></div>
+        <div class="f-desc">Pick one of ten voices and a speed, then <strong>Apply</strong> — the next sentence uses them.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">⏮️</span><span class="f-name">Move around</span></div>
+        <div class="f-desc"><kbd>Alt</kbd><span class="sc-sep">+</span><kbd>←</kbd> previous sentence, <kbd>Alt</kbd><span class="sc-sep">+</span><kbd>→</kbd> next, <kbd>Alt</kbd><span class="sc-sep">+</span><kbd>Space</kbd> pause/resume.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📽️</span><span class="f-name">Presentations</span></div>
+        <div class="f-desc">A PowerPoint deck with speaker notes is read <strong>from its notes (the script)</strong>. In fullscreen the slides turn as it reads.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📷</span><span class="f-name">Scanned documents</span></div>
+        <div class="f-desc">Run <a href="#ocr">text recognition</a> first, and the recognized text is what gets read.</div>
+      </div>
+    </div>
+    <div class="tip tip-ok">
+      📥 <strong>The first time</strong>, you are asked before the voice (383 MB) is downloaded. After that it works offline, and nothing you read leaves the computer. <em>(desktop app)</em>
+    </div>
+
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Pages                                                    -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="pages">
     <div class="s-head">
       <div class="s-icon">📄</div>
       <div class="s-title">
-        <h2>Page management</h2>
-        <div class="sub">Navigate and edit from the left panel — editing requires Editor mode</div>
+        <h2>Pages</h2>
+        <div class="sub">Navigate and edit from the page list — add, delete and reorder are PDF only</div>
       </div>
     </div>
 
     <div class="feat-grid">
       <div class="feat">
         <div class="f-head"><span class="f-icon">🖱️</span><span class="f-name">Jump to a page</span></div>
-        <div class="f-desc">Click a page thumbnail in the left list to jump straight to it.</div>
+        <div class="f-desc">Click a thumbnail in the list on the left.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">↕️</span><span class="f-name">Reorder</span></div>
-        <div class="f-desc">Drag thumbnails up or down to rearrange pages freely.</div>
+        <div class="f-desc">Drag thumbnails up or down. <em>(edit mode)</em></div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">➕</span><span class="f-name">Add pages</span></div>
-        <div class="f-desc">Insert a blank page, or pull in pages from another PDF file.</div>
+        <div class="f-desc">Insert a blank page, or pages from another PDF. <em>(edit mode)</em></div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">🗑️</span><span class="f-name">Delete pages</span></div>
-        <div class="f-desc">Select the pages you want to remove and press Delete or the trash button.</div>
+        <div class="f-desc">Select pages and press <kbd>Delete</kbd>. Changed your mind? <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Z</kbd>. <em>(edit mode)</em></div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📤</span><span class="f-name">Save selection</span></div>
+        <div class="f-desc">Select pages, <strong>right-click → Save selection</strong>, and just those pages become a new PDF. Works in view mode too.</div>
       </div>
     </div>
-
     <div class="tip tip-ok">
-      ✅ <strong>Select multiple pages at once:</strong> Hold <kbd>Ctrl</kbd> or <kbd>Shift</kbd> while clicking to select several pages together.
+      ✅ <strong>Select several:</strong> hold <kbd>Ctrl</kbd> or <kbd>Shift</kbd> while clicking.
     </div>
     <div class="tip">
-      💡 <strong>No worries:</strong> When you delete or reorder pages, stamps and signatures follow along automatically. Watermarks stay in place too.
+      💡 Stamps and signatures follow their page when pages are deleted or reordered.
     </div>
+
   </section>
 
-
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- Text recognition (OCR)                                    -->
+  <!-- Text recognition (OCR)                                   -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="ocr">
     <div class="s-head">
       <div class="s-icon">🔍</div>
       <div class="s-title">
         <h2>Text recognition (OCR)</h2>
-        <div class="sub">Read text from scanned or image-only PDFs — Korean &amp; English</div>
+        <div class="sub">Read the text in scans and photos — Korean and English</div>
       </div>
     </div>
 
-    <p class="lead">When a PDF holds its text as images — so you can't select or search it — running <strong>OCR</strong> recognizes the characters so you can select and copy them. It runs <strong>entirely on your device</strong>, with no extra software and no internet connection.</p>
+    <p class="lead">When the text is a picture, nothing can be copied or searched. Recognize it and you can select, copy, search and read it aloud. It runs <strong>on your device</strong>, no internet needed.</p>
 
     <div class="feat-grid">
       <div class="feat">
-        <div class="f-head"><span class="f-icon">📄</span><span class="f-name">Current page</span></div>
-        <div class="f-desc">Choose <strong>Current page</strong> from the <strong>OCR</strong> menu to quickly recognize just the page you're viewing.</div>
+        <div class="f-head"><span class="f-icon">📄</span><span class="f-name">This page</span></div>
+        <div class="f-desc">The <strong>text recognition</strong> button, or <kbd>R</kbd> (or <kbd>Alt</kbd><span class="sc-sep">+</span><kbd>R</kbd>). Or click the page <strong>four times</strong>.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">📚</span><span class="f-name">Whole document</span></div>
-        <div class="f-desc">Choose <strong>Whole document</strong> to recognize every page in turn. Progress is shown, and you can <strong>cancel</strong> midway.</div>
+        <div class="f-desc"><strong>Whole document</strong> from the ▾ menu beside the button, or <kbd>R</kbd> twice. Progress is shown; you can cancel.</div>
       </div>
       <div class="feat">
-        <div class="f-head"><span class="f-icon">🖱️</span><span class="f-name">Select &amp; copy</span></div>
-        <div class="f-desc">Once recognition finishes, drag over the text to select and copy it — aligned naturally to the original characters.</div>
+        <div class="f-head"><span class="f-icon">✂️</span><span class="f-name">Copy a region</span></div>
+        <div class="f-desc">Hold <kbd>Ctrl</kbd> and drag over an area: just that part is recognized and <strong>copied to the clipboard</strong>.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">💾</span><span class="f-name">Keep it in the PDF</span></div>
+        <div class="f-desc"><strong>Save as PDF</strong> afterwards and the text goes into the file, searchable in any PDF reader.</div>
       </div>
     </div>
-
-    <div class="tip tip-ok">
-      ✅ <strong>Fully offline:</strong> Recognition happens entirely on your device. Your document is never sent anywhere.
-    </div>
     <div class="tip">
-      💡 <strong>Already has real text?</strong> You can search it directly with <kbd>Ctrl</kbd>+<kbd>F</kbd> — no OCR needed. Use OCR for scans and photos where the text is an image.
+      💡 A PDF that already has text needs no recognition — <kbd>Ctrl</kbd>+<kbd>F</kbd> finds it straight away.
     </div>
-    <div class="tip tip-warn">
-      📱 <strong>On phones:</strong> Large pages or tight device memory can make recognition slow or stall. For big documents, prefer running OCR on a PC.
-    </div>
+
   </section>
 
-
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- Stamp / Signature / Watermark                             -->
+  <!-- Stamps / signatures / watermarks                         -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="stamp">
     <div class="s-head">
       <div class="s-icon">🖊️</div>
       <div class="s-title">
-        <h2>Stamps, signatures &amp; watermarks</h2>
-        <div class="sub">Marks saved permanently into the PDF — available in Editor mode</div>
+        <h2>Stamps · signatures · watermarks</h2>
+        <div class="sub">Marks that stay in the file — turn on edit mode with the pencil at the top</div>
       </div>
     </div>
 
     <div class="feat-grid">
       <div class="feat">
-        <div class="f-head"><span class="f-icon">📮</span><span class="f-name">Add a stamp</span></div>
-        <div class="f-desc">Click the stamp icon, pick a stamp, then click where you want it on the PDF. Size and angle are fully adjustable.</div>
+        <div class="f-head"><span class="f-icon">📮</span><span class="f-name">Stamps</span></div>
+        <div class="f-desc">Pick a preset from the stamp button, or <strong>upload an image</strong> of your own. Each click on a page stamps it.</div>
       </div>
       <div class="feat">
-        <div class="f-head"><span class="f-icon">✍️</span><span class="f-name">Add a signature</span></div>
-        <div class="f-desc">Click the signature icon to open a popup. Draw your signature with the mouse or touch, then place it where you like.</div>
+        <div class="f-head"><span class="f-icon">🗂️</span><span class="f-name">My stamps</span></div>
+        <div class="f-desc">An uploaded stamp is cleaned up (white background removed, margins trimmed) and kept in <strong>My stamps</strong>, at the size you last gave it.</div>
       </div>
       <div class="feat">
-        <div class="f-head"><span class="f-icon">🔏</span><span class="f-name">Add a watermark</span></div>
-        <div class="f-desc">Lay translucent text across the whole document. Set the text, size, color, and angle — it applies to every page automatically.</div>
+        <div class="f-head"><span class="f-icon">✍️</span><span class="f-name">Signatures</span></div>
+        <div class="f-desc">Click the signature button, draw with mouse or touch, and place it.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🔏</span><span class="f-name">Watermarks</span></div>
+        <div class="f-desc">Set the text, size, colour and angle, and every page gets a translucent watermark.</div>
       </div>
     </div>
-
     <div class="tip tip-ok">
-      ✅ <strong>Delete a mark:</strong> Click a stamp or signature to select it, then press <kbd>Delete</kbd> or <kbd>Backspace</kbd>.
+      📋 <strong>The same stamp on every page:</strong> select it, <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>C</kbd>, pick pages in the page list, <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>V</kbd> — it lands in the same spot on all of them.
     </div>
     <div class="tip">
-      💡 <strong>Save to keep it:</strong> These marks are committed to the file only when you <strong>Save as PDF</strong>. See <a href="#export">Exporting</a> below.
+      ↩️ <strong>Undo:</strong> <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Z</kbd>, redo <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Y</kbd>. Delete a selected stamp or signature with <kbd>Delete</kbd>. <kbd>ESC</kbd> puts the stamp tool down.
     </div>
+    <div class="tip">
+      💾 Marks go into the file when you <strong>save as PDF</strong>. Opening another document or closing with unsaved marks asks first.
+    </div>
+
   </section>
 
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Passwords                                                -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="password">
+    <div class="s-head">
+      <div class="s-icon">🔐</div>
+      <div class="s-title">
+        <h2>Passwords</h2>
+        <div class="sub">Open locked PDFs, and lock or unlock when you save</div>
+      </div>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🔓</span><span class="f-name">Opening</span></div>
+        <div class="f-desc">A locked PDF asks for its password, and asks again if it was wrong.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🔒</span><span class="f-name">Lock · unlock</span></div>
+        <div class="f-desc">The <strong>padlock</strong> at the top decides what the <em>next save</em> does. It does not save by itself — <strong>Save as PDF</strong> carries it out.</div>
+      </div>
+    </div>
+    <div class="tip">
+      💡 A document that arrived locked is <strong>saved locked</strong> unless you unlock it with the padlock first. The file name gets <code>_locked</code> or <code>_unlocked</code>.
+    </div>
+
+  </section>
 
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- On-screen markup                                          -->
+  <!-- On-screen markup                                         -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="markup">
     <div class="s-head">
       <div class="s-icon">✏️</div>
       <div class="s-title">
         <h2>On-screen markup</h2>
-        <div class="sub">Highlight during talks &amp; lectures — not saved to the file</div>
+        <div class="sub">For emphasis — never saved to the file</div>
       </div>
     </div>
-
-    <p class="lead">Tools for drawing temporarily on screen. Handy for pointing out or emphasizing something during a presentation. They're <strong>never saved into the PDF</strong>, so you can wipe them clean anytime.</p>
 
     <div class="feat-grid">
       <div class="feat">
         <div class="f-head"><span class="f-icon">🖌️</span><span class="f-name"><kbd>1</kbd> Yellow highlighter</span></div>
-        <div class="f-desc">Drag the mouse to draw freely in translucent yellow. Press <kbd>1</kbd> again to turn it off.</div>
+        <div class="f-desc">Drag to draw in translucent yellow. Press <kbd>1</kbd> again to stop.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">⬜</span><span class="f-name"><kbd>2</kbd> Red rectangle</span></div>
-        <div class="f-desc">Drag to draw a red outline box — great for framing an area. Press <kbd>2</kbd> again to turn it off.</div>
+        <div class="f-desc">Drag to frame an area. Press <kbd>2</kbd> again to stop.</div>
       </div>
     </div>
-
     <div class="tip tip-warn">
-      🧹 <strong>Clear everything:</strong> Press <kbd>ESC</kbd> to erase all markup and exit drawing mode. The <strong>Reset</strong> button at the top does the same.
+      🧹 <strong>Clear all:</strong> press <kbd>ESC</kbd> or the <strong>eraser</strong> button at the top. In fullscreen, a second <kbd>ESC</kbd> leaves fullscreen.
     </div>
-    <div class="tip">
-      💡 <strong>In fullscreen:</strong> Press <kbd>ESC</kbd> once to clear markup, and again to leave fullscreen.
-    </div>
+
   </section>
 
-
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- Presenter tools (ZoomIt-style)                            -->
+  <!-- Presenter tools (ZoomIt-style)                           -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="present">
     <div class="s-head">
       <div class="s-icon">🎯</div>
       <div class="s-title">
         <h2>Presenter tools</h2>
-        <div class="sub">A set of emphasis tools for fullscreen — built for talks &amp; lectures</div>
+        <div class="sub">Emphasis tools in fullscreen — shown on screen only, never saved</div>
       </div>
     </div>
-
-    <p class="lead">Press <kbd>F5</kbd> to enter <strong>fullscreen</strong> and the presenter tools come alive. Switch tools with a single keystroke to draw on screen, point with a laser, or zoom into a spot. <strong>Everything shows on screen only and is never saved to the PDF.</strong></p>
 
     <div class="feat-grid">
       <div class="feat">
         <div class="f-head"><span class="f-icon">✒️</span><span class="f-name"><kbd>P</kbd> Pen</span></div>
-        <div class="f-desc">Drag to draw freehand lines. Great for underlining a key point.</div>
+        <div class="f-desc">Draw freely by dragging.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">🖍️</span><span class="f-name"><kbd>H</kbd> Highlighter</span></div>
-        <div class="f-desc">A thick, translucent stroke that highlights over text.</div>
+        <div class="f-desc">Paint over text with a thick translucent stroke.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">▭</span><span class="f-name"><kbd>R</kbd> Rectangle</span></div>
-        <div class="f-desc">Drag to frame an area with a box.</div>
+        <div class="f-desc">Frame the area you drag over.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">➤</span><span class="f-name"><kbd>A</kbd> Arrow</span></div>
-        <div class="f-desc">Draw an arrow from start to end to point at a spot.</div>
+        <div class="f-desc">Point at a spot with an arrow.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">🔴</span><span class="f-name"><kbd>L</kbd> Laser pointer</span></div>
-        <div class="f-desc">A red dot follows your mouse. Point without leaving any marks.</div>
+        <div class="f-desc">A red dot that follows the mouse and leaves no trace.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">🔎</span><span class="f-name"><kbd>Z</kbd> Spotlight zoom</span></div>
-        <div class="f-desc">Magnify around the cursor. Adjust the level with the mouse wheel.</div>
+        <div class="f-desc">Magnify around the mouse; the wheel sets the zoom.</div>
       </div>
     </div>
 
-    <p class="lead" style="margin-top:18px">While a drawing tool is active, change color and width on the fly.</p>
+    <p class="lead" style="margin-top:18px">Change colour and width while drawing.</p>
+
     <div class="feat-grid">
       <div class="feat">
-        <div class="f-head"><span class="f-icon">🎨</span><span class="f-name"><kbd>1</kbd>–<kbd>5</kbd> Color</span></div>
-        <div class="f-desc">Red · green · blue · yellow · orange for the pen, highlighter, rectangle, and arrow.</div>
+        <div class="f-head"><span class="f-icon">🎨</span><span class="f-name"><kbd>1</kbd>–<kbd>5</kbd> Colour</span></div>
+        <div class="f-desc">Red · green · blue · yellow · orange.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">↔️</span><span class="f-name"><kbd>[</kbd> <kbd>]</kbd> Width</span></div>
-        <div class="f-desc"><kbd>[</kbd> thinner, <kbd>]</kbd> thicker — adjust the stroke width in steps.</div>
+        <div class="f-desc"><kbd>[</kbd> thinner, <kbd>]</kbd> thicker.</div>
       </div>
       <div class="feat">
         <div class="f-head"><span class="f-icon">↩️</span><span class="f-name"><kbd>Ctrl</kbd>+<kbd>Z</kbd> · <kbd>E</kbd></span></div>
-        <div class="f-desc"><kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes the last stroke; <kbd>E</kbd> erases everything you drew.</div>
+        <div class="f-desc">Remove the last stroke · erase everything.</div>
       </div>
     </div>
-
     <div class="tip">
-      💡 <strong>Press the same key again to turn it off:</strong> e.g. press <kbd>P</kbd> once more to drop the pen and return to plain viewing.
+      💡 Word, mail and Markdown in fullscreen scroll a screenful at a time; <kbd>+</kbd> / <kbd>–</kbd> size the text and <kbd>0</kbd> resets it. PowerPoint opens as a slideshow.
     </div>
     <div class="tip tip-warn">
-      ⎋ <strong>Two-step ESC:</strong> If anything is drawn or a tool is active, one <kbd>ESC</kbd> clears it all. From a clean state, press <kbd>ESC</kbd> again to leave fullscreen.
+      ⎋ <strong>Two-step ESC:</strong> with marks or a tool on, the first <kbd>ESC</kbd> clears them; the next leaves fullscreen.
     </div>
+
   </section>
 
-
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- Exporting                                                 -->
+  <!-- Saving                                                   -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="export">
     <div class="s-head">
       <div class="s-icon">💾</div>
       <div class="s-title">
-        <h2>Exporting</h2>
-        <div class="sub">Pick a format from the Export menu at the top</div>
+        <h2>Saving</h2>
+        <div class="sub">The save button = Save as PDF (Ctrl+S) · the ▾ menu beside it has the rest</div>
       </div>
     </div>
 
+    <p class="lead">Every format has the same three in the ▾ menu: <strong>Save original file</strong>, <strong>Save as PDF</strong> and <strong>Export as EXE</strong>. PDF, HWP and images add booklet, HTML and images.</p>
+
     <div class="export-list">
+      <div class="export-row">
+        <div class="e-icon">🗎</div>
+        <div>
+          <div class="e-name">Save original file</div>
+          <div class="e-desc">The file as it was opened, under another name — a deck stays .pptx, a message .eml.</div>
+        </div>
+      </div>
       <div class="export-row">
         <div class="e-icon">📄</div>
         <div>
           <div class="e-name">Save as PDF</div>
-          <div class="e-desc">Save a PDF with stamps, signatures, and watermarks baked in. The most common way to save.</div>
+          <div class="e-desc">A PDF with your stamps, signatures, watermarks and recognized text. Word, PowerPoint, Excel, mail and Markdown become <strong>PDFs whose text you can select</strong>.</div>
+        </div>
+      </div>
+      <div class="export-row">
+        <div class="e-icon">📚</div>
+        <div>
+          <div class="e-name">Save as booklet</div>
+          <div class="e-desc">The two-page view as a PDF, two pages per sheet — print it and fold it.</div>
+          <span class="e-tag">PDF · HWP · images</span>
         </div>
       </div>
       <div class="export-row">
         <div class="e-icon">🌐</div>
         <div>
-          <div class="e-name">Save as HTML</div>
-          <div class="e-desc">Save a single HTML file that opens anywhere with just a web browser. Handy for sharing without extra software.</div>
+          <div class="e-name">Save HTML</div>
+          <div class="e-desc">One HTML file that opens in any browser.</div>
+          <span class="e-tag">PDF · HWP · images</span>
         </div>
       </div>
       <div class="export-row">
         <div class="e-icon">🖼️</div>
         <div>
-          <div class="e-name">Save as Images</div>
-          <div class="e-desc">Convert each page to a high-resolution PNG and bundle them into a ZIP. Useful when you need to edit or insert images.</div>
+          <div class="e-name">Save images</div>
+          <div class="e-desc">Every page as a high-resolution PNG, in a ZIP.</div>
+          <span class="e-tag">PDF · HWP · images</span>
         </div>
       </div>
       <div class="export-row">
         <div class="e-icon">📦</div>
         <div>
           <div class="e-name">Export as EXE</div>
-          <div class="e-desc">Save a program (.exe) that carries the open document — PDF, HWP, Word, PowerPoint, Excel, mail or Markdown, in its own format. The recipient just double-clicks it; nothing to install. With stamps or signatures on it, it carries the PDF that includes them, and a password-protected PDF still asks for its password.</div>
+          <div class="e-desc">A program (.exe) that carries the open document <strong>in its own format</strong> — the recipient just double-clicks it, nothing to install; a deck comes with its slideshow and notes. With stamps or signatures on it, it carries the PDF that includes them, and a locked PDF still asks for its password.</div>
           <span class="e-tag">Desktop app (installed or portable)</span>
         </div>
       </div>
     </div>
+    <div class="tip">
+      🎬 A PowerPoint deck with notes can also be saved as a narrated video (MP4) with the <strong>film button</strong>. See <a href="#office">Word · PowerPoint · Excel</a>.
+    </div>
+
   </section>
 
-
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- Printing                                                  -->
+  <!-- Printing                                                 -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="print">
     <div class="s-head">
       <div class="s-icon">🖨️</div>
       <div class="s-title">
         <h2>Printing</h2>
-        <div class="sub">Prints with stamps, signatures, and watermarks included</div>
+        <div class="sub">What you see — stamps, signatures and watermarks included</div>
       </div>
     </div>
 
-    <p>Click the <strong>Print</strong> button at the top or press <kbd>Ctrl</kbd>+<kbd>P</kbd> to open the print dialog. What you see on screen is what prints, so check your layout first.</p>
+    <p class="lead">Click <strong>Print</strong> or press <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>P</kbd>; a preview comes first. PowerPoint prints on slide-sized paper, Word at each page's own size, and mail and Markdown <strong>as text</strong>, so they stay sharp.</p>
+
   </section>
 
-
   <!-- ════════════════════════════════════════════════════════ -->
-  <!-- Keyboard shortcuts                                        -->
+  <!-- Keyboard shortcuts                                       -->
   <!-- ════════════════════════════════════════════════════════ -->
   <section id="shortcuts">
     <div class="s-head">
       <div class="s-icon">⌨️</div>
       <div class="s-title">
         <h2>Keyboard shortcuts</h2>
-        <div class="sub">Learn these to work much faster</div>
+        <div class="sub">Learn these and everything gets faster</div>
       </div>
     </div>
 
     <div class="sc-group">
-      <div class="sc-group-title">📂 File · View</div>
+      <div class="sc-group-title">📂 Files · view</div>
       <div class="sc-list">
         <div class="sc-row">
           <div class="sc-keys"><kbd>F1</kbd></div>
-          <div class="sc-desc">Open this help</div>
+          <div class="sc-desc">Open this guide</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>F2</kbd></div>
-          <div class="sc-desc">Open a PDF file</div>
+          <div class="sc-desc">Open a file</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>S</kbd></div>
+          <div class="sc-desc">Save as PDF (saves the .md while editing Markdown)</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>F5</kbd></div>
-          <div class="sc-desc">View in fullscreen (from the first page)</div>
+          <div class="sc-desc">Fullscreen — from the first page</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>Alt</kbd><span class="sc-sep">+</span><kbd>F5</kbd></div>
-          <div class="sc-desc">View in fullscreen from the page you are on</div>
+          <div class="sc-desc">Fullscreen — from the page you are on</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>F</kbd></div>
-          <div class="sc-desc">Find text in the document (search)</div>
+          <div class="sc-desc">Find</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>P</kbd></div>
@@ -642,45 +829,55 @@
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Wheel</kbd></div>
-          <div class="sc-desc">Zoom in / out (except in Fullscreen / Grid)</div>
+          <div class="sc-desc">Zoom in / out</div>
         </div>
       </div>
     </div>
 
     <div class="sc-group">
-      <div class="sc-group-title">🎯 Presenter tools (fullscreen)</div>
+      <div class="sc-group-title">🖊️ Editing</div>
       <div class="sc-list">
         <div class="sc-row">
-          <div class="sc-keys"><kbd>P</kbd><span class="sc-sep">/</span><kbd>H</kbd><span class="sc-sep">/</span><kbd>R</kbd><span class="sc-sep">/</span><kbd>A</kbd></div>
-          <div class="sc-desc">Pen / Highlighter / Rectangle / Arrow (press again to turn off)</div>
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Z</kbd><span class="sc-sep">/</span><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Y</kbd></div>
+          <div class="sc-desc">Undo / redo</div>
         </div>
         <div class="sc-row">
-          <div class="sc-keys"><kbd>L</kbd></div>
-          <div class="sc-desc">Laser pointer</div>
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>C</kbd><span class="sc-sep">/</span><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>X</kbd><span class="sc-sep">/</span><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>V</kbd></div>
+          <div class="sc-desc">Copy / cut / paste a stamp or signature (onto every page picked in the page list)</div>
         </div>
         <div class="sc-row">
-          <div class="sc-keys"><kbd>Z</kbd></div>
-          <div class="sc-desc">Spotlight zoom — adjust level with the wheel</div>
-        </div>
-        <div class="sc-row">
-          <div class="sc-keys"><kbd>1</kbd><span class="sc-sep">–</span><kbd>5</kbd></div>
-          <div class="sc-desc">Change color (red · green · blue · yellow · orange)</div>
-        </div>
-        <div class="sc-row">
-          <div class="sc-keys"><kbd>[</kbd><span class="sc-sep">/</span><kbd>]</kbd></div>
-          <div class="sc-desc">Thinner / thicker stroke</div>
-        </div>
-        <div class="sc-row">
-          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Z</kbd></div>
-          <div class="sc-desc">Undo the last stroke</div>
-        </div>
-        <div class="sc-row">
-          <div class="sc-keys"><kbd>E</kbd></div>
-          <div class="sc-desc">Erase everything you drew</div>
+          <div class="sc-keys"><kbd>Delete</kbd></div>
+          <div class="sc-desc">Delete the selected stamp, signature or pages</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>ESC</kbd></div>
-          <div class="sc-desc">Clear marks → (again) exit fullscreen</div>
+          <div class="sc-desc">Put the stamp tool down</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sc-group">
+      <div class="sc-group-title">🔍 Text recognition · 🔊 Read aloud</div>
+      <div class="sc-list">
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>R</kbd><span class="sc-sep">/</span><kbd>Alt</kbd><span class="sc-sep">+</span><kbd>R</kbd></div>
+          <div class="sc-desc">Recognize this page</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>R</kbd> <kbd>R</kbd></div>
+          <div class="sc-desc">Recognize the whole document</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>S</kbd><span class="sc-sep">/</span><kbd>Alt</kbd><span class="sc-sep">+</span><kbd>S</kbd></div>
+          <div class="sc-desc">Start / stop reading aloud</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Alt</kbd><span class="sc-sep">+</span><kbd>←</kbd><span class="sc-sep">/</span><kbd>Alt</kbd><span class="sc-sep">+</span><kbd>→</kbd></div>
+          <div class="sc-desc">Previous / next sentence (while reading)</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Alt</kbd><span class="sc-sep">+</span><kbd>Space</kbd></div>
+          <div class="sc-desc">Pause / resume (while reading)</div>
         </div>
       </div>
     </div>
@@ -690,59 +887,83 @@
       <div class="sc-list">
         <div class="sc-row">
           <div class="sc-keys"><kbd>1</kbd></div>
-          <div class="sc-desc">Toggle yellow highlighter</div>
+          <div class="sc-desc">Yellow highlighter on / off</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>2</kbd></div>
-          <div class="sc-desc">Toggle red rectangle</div>
+          <div class="sc-desc">Red rectangle on / off</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>ESC</kbd></div>
-          <div class="sc-desc">Clear all markup + exit drawing → (again) exit fullscreen</div>
+          <div class="sc-desc">Clear all markup → (again) exit fullscreen</div>
         </div>
       </div>
     </div>
 
     <div class="sc-group">
-      <div class="sc-group-title">🖊️ Delete marks</div>
+      <div class="sc-group-title">🎯 Presenter tools (fullscreen)</div>
       <div class="sc-list">
         <div class="sc-row">
-          <div class="sc-keys"><kbd>Delete</kbd></div>
-          <div class="sc-desc">Delete the selected stamp / signature, or the selected page</div>
+          <div class="sc-keys"><kbd>P</kbd><span class="sc-sep">/</span><kbd>H</kbd><span class="sc-sep">/</span><kbd>R</kbd><span class="sc-sep">/</span><kbd>A</kbd></div>
+          <div class="sc-desc">Pen / highlighter / rectangle / arrow (same key again turns it off)</div>
         </div>
         <div class="sc-row">
-          <div class="sc-keys"><kbd>Backspace</kbd></div>
-          <div class="sc-desc">Delete the selected stamp / signature</div>
+          <div class="sc-keys"><kbd>L</kbd></div>
+          <div class="sc-desc">Laser pointer</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Z</kbd></div>
+          <div class="sc-desc">Spotlight zoom — wheel sets the zoom</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>1</kbd><span class="sc-sep">–</span><kbd>5</kbd></div>
+          <div class="sc-desc">Colour (red · green · blue · yellow · orange)</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>[</kbd><span class="sc-sep">/</span><kbd>]</kbd></div>
+          <div class="sc-desc">Thinner / thicker</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Z</kbd></div>
+          <div class="sc-desc">Remove the last stroke</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>E</kbd></div>
+          <div class="sc-desc">Erase everything</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>C</kbd></div>
+          <div class="sc-desc">Slideshow captions (speaker notes) on / off</div>
+        </div>
+        <div class="sc-row">
+          <div class="sc-keys"><kbd>ESC</kbd></div>
+          <div class="sc-desc">Clear marks → (again) exit fullscreen</div>
         </div>
       </div>
     </div>
 
     <div class="sc-group">
-      <div class="sc-group-title">🎬 Fullscreen only</div>
+      <div class="sc-group-title">🎬 Moving in fullscreen</div>
       <div class="sc-list">
         <div class="sc-row">
           <div class="sc-keys"><kbd>→</kbd><span class="sc-sep">/</span><kbd>↓</kbd><span class="sc-sep">/</span><kbd>Space</kbd><span class="sc-sep">/</span><kbd>Enter</kbd></div>
-          <div class="sc-desc">Next page — USB clicker compatible</div>
+          <div class="sc-desc">Next page — works with USB clickers</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>←</kbd><span class="sc-sep">/</span><kbd>↑</kbd><span class="sc-sep">/</span><kbd>PageUp</kbd></div>
           <div class="sc-desc">Previous page</div>
         </div>
         <div class="sc-row">
-          <div class="sc-keys"><kbd>Home</kbd></div>
-          <div class="sc-desc">Go to the first page</div>
-        </div>
-        <div class="sc-row">
-          <div class="sc-keys"><kbd>End</kbd></div>
-          <div class="sc-desc">Go to the last page</div>
+          <div class="sc-keys"><kbd>Home</kbd><span class="sc-sep">/</span><kbd>End</kbd></div>
+          <div class="sc-desc">First / last page</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys"><kbd>+</kbd><span class="sc-sep">/</span><kbd>–</kbd></div>
-          <div class="sc-desc">Zoom in / out</div>
+          <div class="sc-desc">Zoom in / out (text size for Word, mail, Markdown)</div>
         </div>
         <div class="sc-row">
-          <div class="sc-keys">🖱️ Background click</div>
-          <div class="sc-desc">Next page — presentation style</div>
+          <div class="sc-keys">🖱️ Click the background</div>
+          <div class="sc-desc">Next page</div>
         </div>
         <div class="sc-row">
           <div class="sc-keys">👆 Two-finger swipe</div>
@@ -755,7 +976,7 @@
 
   <footer>
     WZ Reader &nbsp;·&nbsp; Press <kbd>F1</kbd> anytime to reopen this guide 😊<br>
-    When a new version is out, a notice appears at the top-right on launch — click it to grab the latest. <em>(installed version, with internet)</em>
+    New versions are <strong>downloaded automatically</strong>, and a <strong>Restart</strong> button appears at the top right. If you skip it, the update installs when you close the app. You can turn this off on the start screen. <em>(installed version)</em>
   </footer>
 
 </div>
