@@ -1,16 +1,10 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
+  <!-- WZ Reader. Drawn as strokes, not text, so it looks the same with any
+       installed fonts — the favicon, the exe icon (scripts/build-icon.cjs) and
+       the OG image (scripts/build-og.cjs) all render this one shape. -->
   <rect width="512" height="512" rx="96" fill="#0A84FF"/>
-
-  <!-- Large PDF Text -->
-  <text
-    x="256"
-    y="320"
-    text-anchor="middle"
-    font-family="Arial, Helvetica, sans-serif"
-    font-size="220"
-    font-weight="900"
-    letter-spacing="-18"
-    fill="white"
-  >PDF</text>
+  <g stroke="#fff" stroke-width="46" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M76 172 L118 340 L157 228 L196 340 L238 172"/>
+    <path d="M290 172 L436 172 L290 340 L436 340"/>
+  </g>
 </svg>

@@ -22,11 +22,13 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" v
 
   <rect width="1200" height="630" fill="url(#bg)"/>
 
-  <!-- App icon: rounded blue square with PDF -->
-  <g transform="translate(110, 195)">
-    <rect width="240" height="240" rx="46" fill="#0A84FF"/>
-    <text x="120" y="158" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-          font-size="92" font-weight="900" letter-spacing="-6" fill="#ffffff">PDF</text>
+  <!-- App icon: public/icon.svg (512 units) scaled to 240 px -->
+  <g transform="translate(110, 195) scale(0.46875)">
+    <rect width="512" height="512" rx="96" fill="#0A84FF"/>
+    <g fill="none" stroke="#fff" stroke-width="46" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M76 172 L118 340 L157 228 L196 340 L238 172"/>
+      <path d="M290 172 L436 172 L290 340 L436 340"/>
+    </g>
   </g>
 
   <!-- Wordmark + tagline -->

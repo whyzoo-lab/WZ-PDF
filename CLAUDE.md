@@ -1388,6 +1388,16 @@ installed copies depend on stayed, deliberately:
 A fresh install defaults to `C:\Program Files\WZ Reader\`; an updated one keeps
 `C:\Program Files\WZ PDF\`. Both hold `WZ PDF.exe`.
 
+**The icon** (1.25.1; it read "PDF" before, which also stamped "PDF" on every
+.docx and .hwp associated with the app) is "WZ" drawn as strokes in
+`public/icon.svg` — paths, not text, so it does not depend on installed fonts.
+That one file is the favicon and the toolbar logo, `build:icon` turns it into
+`build/icon.ico` (exe, installer, file associations), and `build-og.cjs`
+repeats the same paths for the OG image. Change all three together.
+`public/sample.pdf` (the landing page's demo document) is `help.en.html`
+printed by headless Chrome (`--print-to-pdf --no-pdf-header-footer`); reprint
+it when the guide changes.
+
 ### Distribution (Windows)
 
 `npm run build:exe` runs **two electron-builder invocations sequentially** —
