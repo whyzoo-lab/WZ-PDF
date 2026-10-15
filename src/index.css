@@ -40,34 +40,93 @@ body {
   background: #0f172a;
 }
 
-/* iPhone notch / home-indicator padding lives on the ActionBar so it doesn't
-   shrink #root and trigger the body-overflow issue described above. */
-header {
-  padding-top: env(safe-area-inset-top, 0);
+/* The page background, and the title bar in the same colour, so the
+   document and its title read as one surface (the tools live in the dark rail
+   beside them). Lighter than the gray-300 it replaced, which was heavy to sit
+   in front of for long. */
+:root {
+  --wz-canvas: #e6e7ea;
 }
 
-/* ── Electron: unify the OS title-bar with our ActionBar ─────────────────── */
+/* iPhone notch / home-indicator padding lives on the bars at the edges, not
+   on #root, so it doesn't shrink #root and trigger the body-overflow issue
+   described above. */
+.wz-titlebar {
+  padding-top: env(safe-area-inset-top, 0);
+}
+.wz-bottombar {
+  padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+}
+
+/* ── Electron: the title bar is the window's ─────────────────────────────── */
 /* Electron is configured with titleBarStyle: 'hidden' + titleBarOverlay, so
-   the OS draws min/max/close buttons over the top-right of our header. To
-   make the header double as the window's drag handle:
-     1. Mark the header as a drag region.
-     2. Mark anything interactive inside it as `no-drag` (otherwise clicks
-        get swallowed by the drag handler).
-     3. Reserve ~140px on the right so our own buttons don't sit behind the
-        OS controls.
-   In a regular browser these properties are simply ignored. */
-.is-electron header {
+   the OS draws min/max/close over the top-right of the window — over the
+   right end of our title bar. So:
+     1. The title bar (and the logo at the top of the rail) is the window's
+        drag handle.
+     2. Anything interactive inside it is `no-drag`, or clicks are swallowed.
+     3. ~140px on the right is kept clear of the OS buttons.
+   In a regular browser these properties are simply ignored. A class, not the
+   `header` element: Markdown and mail have headers of their own. */
+.is-electron .wz-titlebar,
+.is-electron .wz-drag {
   -webkit-app-region: drag;
   app-region: drag;
+}
+.is-electron .wz-titlebar {
   padding-right: 140px;  /* clears the Windows min/max/close cluster */
 }
-.is-electron header button,
-.is-electron header input,
-.is-electron header a,
-.is-electron header label,
-.is-electron header [role='button'] {
+.is-electron .wz-titlebar button,
+.is-electron .wz-titlebar input,
+.is-electron .wz-titlebar a,
+.is-electron .wz-titlebar label,
+.is-electron .wz-titlebar [role='button'] {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+/* ── Scrollbars: thin, round, no arrows ─────────────────────────────────── */
+/* Windows' default bars are 17 px of grey track with arrow buttons at both
+   ends, on every scrolling pane — the document, the page list, menus. These
+   are a translucent pill that reads on the light page background and on the
+   dark page list alike, and darkens under the pointer.
+   The 10 px is the hit area; the transparent border leaves ~6 px drawn.
+   Chromium (Electron, Chrome) draws them from ::-webkit-scrollbar. The
+   standard scrollbar-width / scrollbar-color are kept for the browsers
+   without it, because where Chromium sees them it ignores ::-webkit-scrollbar
+   entirely and draws its own. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.45);
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+  min-height: 32px;
+  min-width: 32px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.75);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: rgba(71, 85, 105, 0.85);
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  }
 }
 
 /* Text-entry inputs should never trigger iOS focus zoom (font >= 16px).

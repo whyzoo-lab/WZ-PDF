@@ -1,23 +1,22 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
-import { createPortal } from 'react-dom'
+import React, { useEffect, useState, type ReactNode } from 'react'
 import type { AppMode, ViewMode } from '../../types/viewModes'
 import type { ActiveMode } from '../../types/annotation'
 import { STAMP_PRESETS, svgToPng } from '../../utils/stampPresets'
 import type { SavedStamp } from '../../services/stampLibrary'
-import { classifyDocFile } from '../../utils/detectDocType'
+import { classifyDocFile, DOCUMENT_ACCEPT } from '../../utils/detectDocType'
 import { t } from '../../i18n'
-import { DOCUMENT_ACCEPT } from '../../utils/detectDocType'
 import {
   IconSingle, IconSpread, IconGrid, IconFullscreen, IconRotate, IconSelect, IconUndo, IconRedo, IconFolderOpen, IconSave,
   IconStamp, IconSignature, IconWatermark, IconDelete, IconLink,
-  IconHtml, IconImage, IconChevron, IconPrint, IconOcr, IconReset,
-  IconExe, IconLock, IconLockOpen, IconPencil, IconMenu, IconMore, IconFitWidth,
-  IconSpeak, IconStopSpeak, IconRotateLeft, IconVideo, IconFile,
+  IconHtml, IconImage, IconPrint, IconOcr, IconReset,
+  IconExe, IconLock, IconLockOpen, IconPencil, IconFitWidth,
+  IconSpeak, IconStopSpeak, IconRotateLeft, IconVideo, IconFile, IconSearch, IconPages, IconNotes,
 } from './icons'
 import { OcrAnnouncer } from '../OcrAnnouncer'
-import { Sep, BTN_BASE, BTN_IDLE, BTN_ACTIVE, BTN_ARMED, TITLE_MIN_WIDTH, TITLE_GUTTER } from './toolbarStyles'
 import { ZoomControl } from './ZoomControl'
-import { useToolbarCollapse } from '../../hooks/useToolbarCollapse'
+import { TitleBar } from './TitleBar'
+import { ToolRail } from './ToolRail'
+import { MENU_ROW, MenuDivider, type RailAxis, type RailItem } from './rail'
 
 export interface ActionBarProps {
   /** A page-based document is open (PDF / HWP / image) — the ViewerDoc pipeline. */
@@ -40,8 +39,7 @@ export interface ActionBarProps {
   slideNotes?: { on: boolean; onToggle: () => void }
   /** A deck with speaker notes, in the desktop app: record it as a narrated video. */
   onSaveSlideVideo?: () => void
-  /** Embed mode (?embed): hide file-open, export and the viewer/editor toggle
-   *  so the toolbar is a clean read-only viewer for website embedding. */
+  /** Embed mode (?embed) or a private viewer: no open, save, edit or password. */
   embed?: boolean
   appMode: AppMode
   viewMode: ViewMode
@@ -62,6 +60,8 @@ export interface ActionBarProps {
   onOpenUrl: () => void
   /** Absent where printing is not allowed (a private viewer): no print button. */
   onPrint?: () => void
+  /** Open the find bar (the same as Ctrl+F). */
+  onFind?: () => void
   onAppModeChange: (mode: AppMode) => void
   onViewModeChange: (mode: ViewMode) => void
   onZoomIn: () => void
@@ -94,21 +94,16 @@ export interface ActionBarProps {
   onCancelOcr: () => void
   isOcrRunning: boolean
   ocrProgress: { done: number; total: number } | null
-  // ── Export menu ────────────────────────────────────────────────────────────
+  // ── Saving ─────────────────────────────────────────────────────────────────
   // The same three for every format — the file itself, a PDF of it, and a
   // viewer exe carrying it — plus the page-only formats where there are pages.
-  /** Save as PDF: the main save button and Ctrl+S, whatever is open. */
+  /** Save as PDF: first in the save menu, and Ctrl+S, whatever is open. */
   onExportPdf: () => void
   /** Save the file itself under another name (".pptx" stays a deck). */
   onSaveOriginal?: () => void
   /** Its extension, shown beside that item. */
   originalExt?: string
-  /**
-   * The document is a PDF: "Save as PDF" is then what the save button beside
-   * the menu already does, so the menu next to it leaves it out — the two
-   * rows read as the same thing. The folded menu keeps it, since there is no
-   * save button there.
-   */
+  /** The document is a PDF: "save the file itself" then says what that means. */
   pdfIsOriginal?: boolean
   /** The padlock: puts a password on the next save, or takes it back off. */
   onPassword: () => void
@@ -127,7 +122,7 @@ export interface ActionBarProps {
   onToggleSpeech?: () => void
   /** Reading is under way — the button becomes a stop button. */
   isSpeaking?: boolean
-  /** Shown centred in the title bar. Absent when no document is open. */
+  /** Shown in the title bar. Absent when no document is open. */
   fileName?: string
   /** There are changes the saved file does not have — marked beside the name. */
   unsaved?: boolean
@@ -136,208 +131,60 @@ export interface ActionBarProps {
   onRedo?: () => void
   canUndo?: boolean
   canRedo?: boolean
+  /** The document area, laid out between the title bar and the rails. */
+  children?: ReactNode
 }
 
-export function ActionBar({
-  hasPdf,
-  flowDoc,
-  canEdit = true,
-  pagedFlow = false,
-  slideNotes,
-  onSaveSlideVideo,
-  embed = false,
-  appMode,
-  viewMode,
-  zoom,
-  rotation,
-  activeMode,
-  selectedId,
-  isPanelOpen,
-  onTogglePanel,
-  isExporting,
-  numPages,
-  currentPage,
-  onUpload,
-  onUploadMany,
-  onOpenUrl,
-  onPrint,
-  onAppModeChange,
-  onViewModeChange,
-  onZoomIn,
-  onZoomOut,
-  onZoomReset,
-  onZoomSet,
-  onFitWidth,
-  onRotate,
-  onRotateLeft,
-  onModeChange,
-  onStampSelect,
-  savedStamps = [],
-  onSavedStampSelect,
-  onSavedStampRemove,
-  onStampUpload,
-  onSignatureClick,
-  onWatermarkClick,
-  onDeleteSelected,
-  onResetMarkups,
-  hasMarkups,
-  onRunOcr,
-  onRunOcrAll,
-  onCancelOcr,
-  isOcrRunning,
-  ocrProgress,
-  onExportPdf,
-  onSaveOriginal,
-  originalExt,
-  pdfIsOriginal = false,
-  onPassword,
-  saveLocked = false,
-  onExportSpreads,
-  onExportHtml,
-  onExportImages,
-  onExportExe,
-  onToggleSpeech,
-  isSpeaking = false,
-  fileName,
-  unsaved = false,
-  onUndo,
-  onRedo,
-  canUndo = false,
-  canRedo = false,
-}: ActionBarProps) {
-  // An amber dot before the name while there are unsaved changes — the same
-  // cue editors use, and the one hint that closing now would lose something.
-  const nameLabel = fileName ? (
-    <>
-      {unsaved && (
-        <span className="mr-1 text-amber-300" title={t('doc.unsaved')}>●<span className="sr-only">{t('doc.unsaved')}</span></span>
-      )}
-      {fileName}
-    </>
-  ) : null
-  const [stampPanelOpen, setStampPanelOpen] = useState(false)
-  const [stampMenuRect, setStampMenuRect] = useState<DOMRect | null>(null)
-  const [exportMenuOpen, setExportMenuOpen] = useState(false)
-  const [openMenuOpen, setOpenMenuOpen] = useState(false)
-  const [leftMenuOpen, setLeftMenuOpen] = useState(false)
-  const [rightMenuOpen, setRightMenuOpen] = useState(false)
-  const [ocrMenuOpen, setOcrMenuOpen] = useState(false)
-  const ocrRef        = useRef<HTMLDivElement>(null)
-  const fileInputRef  = useRef<HTMLInputElement>(null)
-  const stampBtnRef   = useRef<HTMLButtonElement>(null)
-  const stampPortalRef = useRef<HTMLDivElement>(null)
-  const exportRef     = useRef<HTMLDivElement>(null)
-  const openRef       = useRef<HTMLDivElement>(null)
-  const leftClusterRef  = useRef<HTMLDivElement>(null)
-  const rightClusterRef = useRef<HTMLDivElement>(null)
-  const titleRef        = useRef<HTMLDivElement>(null)
-  const leftMenuRef   = useRef<HTMLDivElement>(null)
-  const rightMenuRef  = useRef<HTMLDivElement>(null)
+// Phones only: a desktop window snapped to half a small screen (~680 px)
+// still has room for a side rail.
+const WIDE = '(min-width: 600px)'
 
+/** A desktop-wide window (rails at the side) or a phone (bars at the bottom). */
+function useWide(): boolean {
+  const [wide, setWide] = useState(() => typeof window.matchMedia !== 'function' || window.matchMedia(WIDE).matches)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const m = window.matchMedia(WIDE)
+    const on = () => setWide(m.matches)
+    m.addEventListener('change', on)
+    return () => m.removeEventListener('change', on)
+  }, [])
+  return wide
+}
+
+/**
+ * The app's chrome around the document: a dark rail of tools down the left
+ * (a bar along the bottom on a phone), an edit rail beside it while editing,
+ * and a thin title bar in the page background's colour across the top —
+ * name, page, zoom, and the window controls.
+ *
+ * It used to be one 48 px bar over everything with twenty controls in it,
+ * folded into two hamburger menus whenever the window got narrow. Every
+ * control is now one `RailItem`, which the rail, the phone's bottom bar and
+ * the "..." overflow all draw the same way.
+ */
+export function ActionBar(props: ActionBarProps) {
+  const {
+    hasPdf, flowDoc, canEdit = true, pagedFlow = false, slideNotes, onSaveSlideVideo, embed = false,
+    appMode, viewMode, zoom, rotation, activeMode, selectedId, isPanelOpen, onTogglePanel, isExporting,
+    numPages, currentPage, onUpload, onUploadMany, onOpenUrl, onPrint, onFind, onAppModeChange, onViewModeChange,
+    onZoomIn, onZoomOut, onZoomReset, onZoomSet, onFitWidth, onRotate, onRotateLeft, onModeChange,
+    onStampSelect, savedStamps = [], onSavedStampSelect, onSavedStampRemove, onStampUpload,
+    onSignatureClick, onWatermarkClick, onDeleteSelected, onResetMarkups, hasMarkups,
+    onRunOcr, onRunOcrAll, onCancelOcr, isOcrRunning, ocrProgress,
+    onExportPdf, onSaveOriginal, originalExt, pdfIsOriginal = false, onPassword, saveLocked = false,
+    onExportSpreads, onExportHtml, onExportImages, onExportExe,
+    onToggleSpeech, isSpeaking = false, fileName, unsaved = false,
+    onUndo, onRedo, canUndo = false, canRedo = false, children,
+  } = props
+  // The hidden picker, held in state rather than a ref: the menus that click
+  // it are built during render.
+  const [fileInput, setFileInput] = useState<HTMLInputElement | null>(null)
+  const pickFiles = () => fileInput?.click()
+  const wide = useWide()
+  const axis: RailAxis = wide ? 'column' : 'row'
   const isFullscreen = viewMode === 'fullscreen'
-
-  // Re-measure the toolbar whenever the visible control set changes.
-  const contentKey = [
-    hasPdf, flowDoc, pagedFlow, !!slideNotes, !!onSaveOriginal, !!onSaveSlideVideo, embed, appMode, viewMode, !!selectedId, hasMarkups, !!ocrProgress, !!onExportExe,
-  ].join('|')
-  const { ref: headerRef, collapsed } = useToolbarCollapse(contentKey)
-
-  // Close a dropdown when clicking outside of it. The stamp portal lives in
-  // <body>, so it checks both its portal node and its trigger button.
-  useEffect(() => {
-    if (!stampPanelOpen) return
-    const onMouseDown = (e: MouseEvent) => {
-      const inPortal = stampPortalRef.current?.contains(e.target as Node)
-      const inBtn    = stampBtnRef.current?.contains(e.target as Node)
-      if (!inPortal && !inBtn) setStampPanelOpen(false)
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [stampPanelOpen])
-
-  useEffect(() => {
-    const menus: [boolean, React.RefObject<HTMLElement | null>, (v: boolean) => void][] = [
-      [exportMenuOpen, exportRef, setExportMenuOpen],
-      [openMenuOpen, openRef, setOpenMenuOpen],
-      [leftMenuOpen, leftMenuRef, setLeftMenuOpen],
-      [rightMenuOpen, rightMenuRef, setRightMenuOpen],
-      [ocrMenuOpen, ocrRef, setOcrMenuOpen],
-    ]
-    const active = menus.filter(([open]) => open)
-    if (active.length === 0) return
-    const onMouseDown = (e: MouseEvent) => {
-      for (const [, ref, set] of active) {
-        if (ref.current && !ref.current.contains(e.target as Node)) set(false)
-      }
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [exportMenuOpen, openMenuOpen, leftMenuOpen, rightMenuOpen, ocrMenuOpen])
-
-  // Switching between the inline and collapsed layouts hides the other mode's
-  // dropdowns; reset them so a stale-open menu doesn't reappear on switch back.
-  useEffect(() => {
-    const close = collapsed
-      ? [setExportMenuOpen, setOpenMenuOpen]
-      : [setLeftMenuOpen, setRightMenuOpen]
-    close.forEach(fn => fn(false))
-  }, [collapsed])
-
-  /**
-   * Fit the centred file name to whatever gap the two clusters leave, and hide
-   * it when there is not one.
-   *
-   * A breakpoint cannot answer this: the clusters' widths depend on the format,
-   * the mode and whether anything is selected, so the same window width has a
-   * different amount of room from one document to the next — which is how the
-   * name ended up printed straight through the rotate buttons. Because the name
-   * is centred on the *bar*, it can only stay clear of both clusters if it is
-   * narrower than `barWidth - 2 x widerCluster`; that is the number measured
-   * here.
-   *
-   * Applied to the node rather than to state on purpose: this runs on every
-   * resize, and a re-render per frame to set one width is waste.
-   */
-  useLayoutEffect(() => {
-    const header = headerRef.current
-    const title = titleRef.current
-    if (!header || !title) return
-
-    const fit = () => {
-      const left = leftClusterRef.current?.offsetWidth ?? 0
-      const right = rightClusterRef.current?.offsetWidth ?? 0
-      const bar = header.clientWidth
-      const room = Math.min(bar - 2 * left, bar - 2 * right) - TITLE_GUTTER
-      const el = titleRef.current
-      if (!el) return
-      if (room < TITLE_MIN_WIDTH) {
-        el.style.visibility = 'hidden'
-        return
-      }
-      el.style.visibility = 'visible'
-      const span = el.firstElementChild as HTMLElement | null
-      if (span) span.style.maxWidth = `${Math.floor(room)}px`
-    }
-
-    fit()
-    // Both, deliberately. ResizeObserver catches the bar changing width without
-    // the window doing so (the page panel opening, a cluster growing); the
-    // window listener catches the case where the observer is deferred, which
-    // Chromium does for a window that is not on screen.
-    window.addEventListener('resize', fit)
-    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit)
-    ro?.observe(header)
-    return () => {
-      window.removeEventListener('resize', fit)
-      ro?.disconnect()
-    }
-  }, [headerRef, collapsed, contentKey, fileName])
-
-  const openStampMenu = () => {
-    if (stampPanelOpen) { setStampPanelOpen(false); return }
-    if (stampBtnRef.current) setStampMenuRect(stampBtnRef.current.getBoundingClientRect())
-    setStampPanelOpen(true)
-  }
+  const anyDoc = hasPdf || flowDoc
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -347,725 +194,256 @@ export function ActionBar({
   }
 
   const handleDrop = (e: React.DragEvent) => {
+    // The document area takes its own drops; this catches the rails and title.
+    if (e.defaultPrevented) return
     e.preventDefault()
     const files = Array.from(e.dataTransfer.files).filter(f => classifyDocFile(f).supported)
     if (files.length > 1 && onUploadMany) onUploadMany(files)
     else if (files[0]) onUpload(files[0])
   }
 
-  const handlePresetClick = async (presetId: string, svg: string) => {
+  const handlePresetClick = async (presetId: string, svg: string, done: () => void) => {
     try {
-      const pngDataUrl = await svgToPng(svg)
-      onStampSelect(pngDataUrl, presetId)
-      setStampPanelOpen(false)
+      onStampSelect(await svgToPng(svg), presetId)
+      done()
       onModeChange('stamp')
     } catch (err) {
       console.error('Failed to convert stamp SVG:', err)
     }
   }
 
-  const handleCustomUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCustomUpload = (e: React.ChangeEvent<HTMLInputElement>, done: () => void) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (onStampUpload) {
-      onStampUpload(file)
-      setStampPanelOpen(false)
-      e.target.value = ''
-      return
-    }
+    e.target.value = ''
+    done()
+    if (onStampUpload) { onStampUpload(file); return }
     const reader = new FileReader()
     reader.onload = ev => {
       const result = ev.target?.result
       if (typeof result !== 'string') return
       onStampSelect(result)
-      setStampPanelOpen(false)
       onModeChange('stamp')
     }
     reader.readAsDataURL(file)
-    e.target.value = ''
   }
 
-  // ── Button style helpers ──────────────────────────────────────────────────
-  const viewBtn = (mode: ViewMode) =>
-    `${BTN_BASE} ${viewMode === mode ? BTN_ACTIVE : BTN_IDLE}`
-  // The editing tools carry their names beside the icons where there is room:
-  // a stamp, a signature and a watermark glyph are not self-explanatory, and
-  // this row is only on screen for the job of editing, so the space is there.
-  const labelledToolBtn = (mode: ActiveMode) =>
-    `flex items-center justify-center gap-1.5 h-9 min-w-9 px-2 md:px-3 rounded-full transition-colors shrink-0 ${activeMode === mode ? BTN_ARMED : BTN_IDLE}`
-  const toolLabel = (text: string) => <span className="hidden md:inline text-xs">{text}</span>
-  const iconBtn = (extra = '') => `${BTN_BASE} ${BTN_IDLE} ${extra}`
-
-  // ── Reusable control clusters (shared by the bar and the collapsed menus) ──
-  const brandingCluster = (
-    <div className="flex items-center gap-2.5 px-1.5 py-0.5 select-none">
-      <img src="./icon.svg" alt="" className="w-7 h-7 rounded-md shrink-0" draggable={false} />
-      <span className="text-lg font-bold tracking-tight bg-gradient-to-br from-sky-400 to-violet-400 bg-clip-text text-transparent leading-none">
-        WZ Reader
-      </span>
-      <span className="hidden sm:inline text-xs text-gray-400 ml-1">{t('app.tagline')}</span>
-      <span
-        className="ml-1 rounded-full border border-gray-700 px-2 py-px text-[11px] font-medium text-gray-400 tabular-nums"
-        title={t('app.version')}
-      >
-        v{__APP_VERSION__}
-      </span>
-    </div>
+  const row = (icon: ReactNode, text: string, onClick: () => void, done: () => void, extra?: ReactNode, opts: { title?: string; className?: string; disabled?: boolean; checked?: boolean } = {}) => (
+    <button
+      role={opts.checked === undefined ? 'menuitem' : 'menuitemradio'}
+      aria-checked={opts.checked}
+      title={opts.title}
+      disabled={opts.disabled}
+      onClick={() => { onClick(); done() }}
+      className={`${MENU_ROW} ${opts.className ?? ''}`}
+    >
+      {icon}<span className="flex-1">{text}</span>{extra}
+    </button>
   )
+  const ext = (s: string) => <span className="text-[11px] text-gray-400">{s}</span>
 
-  // Split out because a reflowing document gets this button and nothing else
-  // from the view cluster: single / spread / grid are all page arrangements.
-  const fullscreenButton = (
-    <button className={viewBtn('fullscreen')} onClick={() => onViewModeChange('fullscreen')} title={t('tool.fullscreen')} aria-label={t('tool.fullscreen')}><IconFullscreen /></button>
-  )
+  // ── The tool rail ─────────────────────────────────────────────────────────
+  const items: RailItem[] = []
+  const add = (item: RailItem | false | null | undefined) => { if (item) items.push(item) }
 
-  const viewCluster = (
-    <div className="flex items-center gap-0.5 shrink-0">
-      <button className={viewBtn('single')}     onClick={() => onViewModeChange('single')}     title={t('tool.single')}     aria-label={t('tool.single')}><IconSingle /></button>
-      <button className={viewBtn('spread')}     onClick={() => onViewModeChange('spread')}     title={t('tool.spread')}     aria-label={t('tool.spread')}><IconSpread /></button>
-      <button className={viewBtn('grid')}       onClick={() => onViewModeChange('grid')}       title={t('tool.grid')}       aria-label={t('tool.grid')}><IconGrid /></button>
-      {fullscreenButton}
-    </div>
-  )
+  add(!embed && {
+    id: 'open', group: 'file', label: t('tool.open'), icon: <IconFolderOpen />,
+    menu: done => (
+      <>
+        {row(<IconFolderOpen />, t('tool.openFile'), pickFiles, done)}
+        {row(<IconLink />, t('tool.openUrl'), onOpenUrl, done)}
+      </>
+    ),
+  })
+  add(anyDoc && !embed && {
+    id: 'save', group: 'file', label: t('tool.save'), icon: <IconSave />, disabled: isExporting,
+    menu: done => (
+      <>
+        {row(<IconSave />, t('export.pdf'), onExportPdf, done, <kbd className="font-sans text-[11px] text-gray-400">Ctrl+S</kbd>)}
+        {onSaveOriginal && row(<IconFile />, t('export.original'), onSaveOriginal, done, ext(originalExt ?? ''), { title: t(pdfIsOriginal ? 'export.originalTitlePdf' : 'export.originalTitle') })}
+        {onExportSpreads && row(<IconSpread />, t('export.spread'), onExportSpreads, done, ext('.pdf'), { title: t('export.spreadTitle') })}
+        {onExportHtml && row(<IconHtml />, t('export.html'), onExportHtml, done, ext('.html'))}
+        {onExportImages && row(<IconImage />, t('export.images'), onExportImages, done, ext('.zip'))}
+        {onExportExe && (
+          <>
+            <MenuDivider />
+            {row(<IconExe />, t('export.exe'), onExportExe, done, ext('.exe'), { title: t('export.exeTitle'), className: 'text-emerald-300' })}
+          </>
+        )}
+      </>
+    ),
+  })
+  add(anyDoc && onPrint && { id: 'print', group: 'file', label: t('tool.print'), hint: 'Ctrl+P', icon: <IconPrint />, onClick: onPrint })
+  add(onSaveSlideVideo && { id: 'video', group: 'file', label: t('video.save'), icon: <IconVideo />, onClick: onSaveSlideVideo, disabled: isExporting })
 
-  const pageCounter = (
-    <span className="text-xs text-gray-400 tabular-nums shrink-0 px-1 min-w-[56px] text-center">
+  const pages = hasPdf || pagedFlow
+  add(pages && !isFullscreen && { id: 'pages', group: 'view', label: t('tool.pages'), icon: <IconPages />, onClick: onTogglePanel, active: isPanelOpen, pressed: isPanelOpen })
+  add(pages && {
+    id: 'layout', group: 'view', label: t('tool.layout'),
+    icon: viewMode === 'spread' ? <IconSpread /> : viewMode === 'grid' ? <IconGrid /> : <IconSingle />,
+    menu: done => (
+      <>
+        {row(<IconSingle />, t('tool.single'), () => onViewModeChange('single'), done, undefined, { checked: viewMode === 'single' })}
+        {row(<IconSpread />, t('tool.spread'), () => onViewModeChange('spread'), done, undefined, { checked: viewMode === 'spread' })}
+        {row(<IconGrid />, t('tool.grid'), () => onViewModeChange('grid'), done, undefined, { checked: viewMode === 'grid' })}
+      </>
+    ),
+  })
+  // Both directions: one-way rotation means three presses to undo a mis-click.
+  add(hasPdf && !isFullscreen && {
+    id: 'rotate', group: 'view', label: t('tool.rotateMenu', { deg: rotation }), icon: <IconRotate />, active: rotation !== 0,
+    menu: done => (
+      <>
+        {row(<IconRotateLeft />, t('tool.rotateLeft', { deg: rotation }), onRotateLeft, done)}
+        {row(<IconRotate />, t('tool.rotate', { deg: rotation }), onRotate, done)}
+      </>
+    ),
+  })
+  add(anyDoc && { id: 'fullscreen', group: 'view', label: t('tool.fullscreen'), icon: <IconFullscreen />, onClick: () => onViewModeChange('fullscreen'), active: isFullscreen })
+  add(slideNotes && !isFullscreen && { id: 'notes', group: 'view', label: t('office.notesToggle'), icon: <IconNotes />, onClick: slideNotes.onToggle, active: slideNotes.on, pressed: slideNotes.on })
+
+  add(anyDoc && onFind && { id: 'find', group: 'tools', label: t('tool.find'), hint: 'Ctrl+F', icon: <IconSearch />, onClick: onFind })
+  add(hasPdf && {
+    id: 'ocr', group: 'tools', label: t('tool.ocr'), icon: <IconOcr />,
+    armed: !!ocrProgress, badge: ocrProgress ? `${ocrProgress.done}/${ocrProgress.total}` : undefined,
+    menu: done => (
+      <>
+        {row(<IconOcr />, t('ocr.menuCurrent'), onRunOcr, done, <kbd className="font-sans text-[11px] text-gray-400">{t('ocr.keyCurrent')}</kbd>, { disabled: isOcrRunning || numPages === 0 })}
+        {row(<IconOcr />, t('ocr.menuAll'), onRunOcrAll, done, <kbd className="font-sans text-[11px] text-gray-400">{t('ocr.keyAll')}</kbd>, { disabled: isOcrRunning || numPages === 0 })}
+        {ocrProgress && (
+          <>
+            <MenuDivider />
+            {row(<span className="w-4 text-center">✕</span>, t('ocr.cancel'), onCancelOcr, done, ext(`${ocrProgress.done}/${ocrProgress.total}`), { className: 'text-red-300' })}
+          </>
+        )}
+      </>
+    ),
+  })
+  add(onToggleSpeech && anyDoc && {
+    id: 'speak', group: 'tools', label: isSpeaking ? t('tts.stop') : t('tts.read'), icon: isSpeaking ? <IconStopSpeak /> : <IconSpeak />,
+    onClick: onToggleSpeech, armed: isSpeaking, pressed: isSpeaking,
+  })
+  // Pen and rectangle work in viewer mode too (keys 1 and 2), so clearing
+  // them is not an editing action and stays on this rail.
+  add(hasMarkups && !isFullscreen && { id: 'eraser', group: 'tools', label: t('tool.reset'), icon: <IconReset />, onClick: onResetMarkups })
+
+  // Pinned at the far end: two states rather than actions.
+  const pinned: RailItem[] = []
+  if (!embed && canEdit && anyDoc) pinned.push({
+    id: 'edit', label: t('tool.editLock'), icon: <IconPencil />, switchOn: appMode === 'editor', warn: appMode === 'editor',
+    onClick: () => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor'),
+  })
+  // The padlock only ever means a password. It arms the next save rather than
+  // saving, so its glyph reports the state the file will be written in.
+  if (hasPdf && !embed) pinned.push({
+    id: 'password', label: saveLocked ? t('tool.passwordRemove') : t('tool.passwordSet'),
+    icon: saveLocked ? <IconLock /> : <IconLockOpen />, warn: saveLocked, disabled: isExporting, onClick: onPassword,
+  })
+
+  // ── The edit rail ─────────────────────────────────────────────────────────
+  // Editing is a different job from reading, so its tools get a rail of their
+  // own, shown only while editing. Their glyphs are not self-explanatory, so
+  // each carries a caption.
+  const editing = hasPdf && appMode === 'editor' && !isFullscreen
+  const editItems: RailItem[] = []
+  if (editing) {
+    if (onUndo) editItems.push({ id: 'undo', group: 'history', label: t('tool.undo'), caption: t('tool.undoShort'), icon: <IconUndo />, onClick: onUndo, disabled: !canUndo })
+    if (onRedo) editItems.push({ id: 'redo', group: 'history', label: t('tool.redo'), caption: t('tool.redoShort'), icon: <IconRedo />, onClick: onRedo, disabled: !canRedo })
+    editItems.push(
+      { id: 'select', group: 'tools', label: t('tool.select'), caption: t('tool.select'), icon: <IconSelect />, armed: activeMode === 'select', onClick: () => onModeChange('select') },
+      {
+        id: 'stamp', group: 'tools', label: t('tool.stamp'), caption: t('tool.stamp'), icon: <IconStamp />, armed: activeMode === 'stamp',
+        menu: done => (
+          <div className="flex flex-col gap-0.5 px-1">
+            {STAMP_PRESETS.map(p => (
+              <button key={p.id} role="menuitem" onClick={() => { void handlePresetClick(p.id, p.svg, done) }}
+                className="whitespace-nowrap rounded px-3 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-700">{p.label}</button>
+            ))}
+            {savedStamps.length > 0 && onSavedStampSelect && (
+              <>
+                <div className="mt-1 border-t border-gray-600 px-3 pb-0.5 pt-1.5 text-[11px] text-gray-400">{t('stamp.mine')}</div>
+                {savedStamps.map(s => (
+                  <div key={s.id} className="group flex items-center rounded hover:bg-gray-700">
+                    <button onClick={() => { onSavedStampSelect(s); done() }} title={s.name}
+                      className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-200">
+                      {/* A light tile, so a dark or red seal on transparency shows on the dark menu. */}
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white/90">
+                        <img src={s.src} alt="" className="max-h-6 max-w-6 object-contain" />
+                      </span>
+                      <span className="truncate">{s.name}</span>
+                    </button>
+                    {onSavedStampRemove && (
+                      <button onClick={() => onSavedStampRemove(s.id)}
+                        aria-label={t('stamp.remove', { name: s.name })} title={t('stamp.remove', { name: s.name })}
+                        className="mr-1 shrink-0 rounded p-1 text-gray-400 opacity-0 hover:bg-gray-600 hover:text-gray-100 focus:opacity-100 group-hover:opacity-100">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <div className="mb-0.5 border-t border-gray-600" />
+              </>
+            )}
+            <label className="cursor-pointer rounded px-3 py-1.5 text-left text-xs text-gray-200 hover:bg-gray-700">
+              {t('stamp.uploadImage')}
+              <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={e => handleCustomUpload(e, done)} />
+            </label>
+          </div>
+        ),
+      },
+      { id: 'signature', group: 'tools', label: t('tool.signature'), caption: t('tool.signature'), icon: <IconSignature />, armed: activeMode === 'signature', onClick: () => { onModeChange('signature'); onSignatureClick() } },
+      { id: 'watermark', group: 'tools', label: t('tool.watermark'), caption: t('tool.watermark'), icon: <IconWatermark />, armed: activeMode === 'watermark', onClick: () => { onModeChange('watermark'); onWatermarkClick() } },
+    )
+    if (selectedId) editItems.push({ id: 'delete', group: 'delete', label: t('tool.delete'), caption: t('tool.delete'), hint: 'Delete', icon: <IconDelete />, danger: true, onClick: onDeleteSelected })
+  }
+
+  // ── The title bar's right end: where in the document, and how big ─────────
+  const counter = pages && !isFullscreen ? (
+    <span className="px-1 text-xs text-gray-600 tabular-nums whitespace-nowrap" aria-label={t('tool.pageOf', { n: currentPage, total: numPages })}>
       {currentPage} / {numPages}
     </span>
-  )
-
-  const zoomCluster = (
-    <div className="flex items-center gap-0.5 shrink-0">
-      <ZoomControl zoom={zoom} onZoomIn={onZoomIn} onZoomOut={onZoomOut} onZoomSet={onZoomSet} onZoomReset={onZoomReset} />
-      <button
-        onClick={onFitWidth}
-        className={iconBtn()}
-        title={t('tool.fitWidth')}
-        aria-label={t('tool.fitWidth')}
-      ><IconFitWidth /></button>
-    </div>
-  )
-
-  // Both directions. One-way rotation means three presses to undo a mis-click,
-  // which is exactly when someone is most annoyed by it.
-  const rotateButton = (
-    <div className="flex items-center gap-0.5 shrink-0">
-      <button
-        onClick={onRotateLeft}
-        className={`${iconBtn()} ${rotation !== 0 ? 'text-blue-400' : ''}`}
-        title={t('tool.rotateLeft', { deg: rotation })}
-        aria-label={t('tool.rotateLeft', { deg: rotation })}
-      ><IconRotateLeft /></button>
-      <button
-        onClick={onRotate}
-        className={`${iconBtn()} ${rotation !== 0 ? 'text-blue-400' : ''}`}
-        title={t('tool.rotate', { deg: rotation })}
-        aria-label={t('tool.rotate', { deg: rotation })}
-      ><IconRotate /></button>
-    </div>
-  )
-
-  const pagesButton = (
-    <button
-      className={`${BTN_BASE} ${isPanelOpen ? BTN_ACTIVE : BTN_IDLE} shrink-0`}
-      onClick={onTogglePanel}
-      title={t('tool.pages')}
-      aria-label={t('tool.pages')}
-    >
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
-        <rect x="2" y="3" width="7" height="14" rx="1"/>
-        <path d="M13 6h4M13 10h4M13 14h4" strokeLinecap="round"/>
-      </svg>
-    </button>
-  )
-
-  // A deck's speaker notes (the presentation script) under each slide.
-  const notesButton = slideNotes ? (
-    <button
-      className={`${BTN_BASE} ${slideNotes.on ? BTN_ACTIVE : BTN_IDLE} shrink-0`}
-      onClick={slideNotes.onToggle}
-      aria-pressed={slideNotes.on}
-      title={t('office.notesToggle')}
-      aria-label={t('office.notesToggle')}
-    >
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="w-4 h-4">
-        <rect x="3" y="2.5" width="14" height="8" rx="1"/>
-        <path d="M4 13.5h12M4 16.5h8" strokeLinecap="round"/>
-      </svg>
-    </button>
   ) : null
-
-  const eraserButton = hasMarkups ? (
-    <button className={iconBtn()} onClick={onResetMarkups} title={t('tool.reset')} aria-label={t('tool.reset')}>
-      <IconReset />
-    </button>
-  ) : null
-
-  const historyButtons = (onUndo || onRedo) ? (
+  const zoomControls = anyDoc && !isFullscreen && viewMode !== 'grid' ? (
     <>
-      <button
-        className={iconBtn('disabled:opacity-30 disabled:pointer-events-none')}
-        onClick={onUndo}
-        disabled={!canUndo}
-        title={t('tool.undo')}
-        aria-label={t('tool.undo')}
-      ><IconUndo /></button>
-      <button
-        className={iconBtn('disabled:opacity-30 disabled:pointer-events-none')}
-        onClick={onRedo}
-        disabled={!canRedo}
-        title={t('tool.redo')}
-        aria-label={t('tool.redo')}
-      ><IconRedo /></button>
-      <span className="mx-1 h-4 w-px bg-gray-700" aria-hidden />
+      <ZoomControl tone="light" zoom={zoom} onZoomIn={onZoomIn} onZoomOut={onZoomOut} onZoomSet={onZoomSet} onZoomReset={onZoomReset} />
+      <button onClick={onFitWidth} title={t('tool.fitWidth')} aria-label={t('tool.fitWidth')}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-gray-600 hover:bg-black/10 hover:text-gray-900">
+        <IconFitWidth />
+      </button>
     </>
   ) : null
 
-  const editorCluster = (
-    <div className="flex items-center gap-0.5 shrink-0">
-      {historyButtons}
-      <button
-        className={labelledToolBtn('select')}
-        onClick={() => { onModeChange('select'); setStampPanelOpen(false) }}
-        title={t('tool.select')}
-        aria-label={t('tool.select')}
-      ><IconSelect />{toolLabel(t('tool.select'))}</button>
-      <button
-        ref={stampBtnRef}
-        className={labelledToolBtn('stamp')}
-        onClick={openStampMenu}
-        title={t('tool.stamp')}
-        aria-label={t('tool.stamp')}
-        aria-expanded={stampPanelOpen}
-      ><IconStamp />{toolLabel(t('tool.stamp'))}</button>
-      <button
-        className={labelledToolBtn('signature')}
-        onClick={() => { onModeChange('signature'); onSignatureClick(); setStampPanelOpen(false) }}
-        title={t('tool.signature')}
-        aria-label={t('tool.signature')}
-      ><IconSignature />{toolLabel(t('tool.signature'))}</button>
-      <button
-        className={labelledToolBtn('watermark')}
-        onClick={() => { onModeChange('watermark'); onWatermarkClick(); setStampPanelOpen(false) }}
-        title={t('tool.watermark')}
-        aria-label={t('tool.watermark')}
-      ><IconWatermark />{toolLabel(t('tool.watermark'))}</button>
-      {selectedId && (
-        <button
-          onClick={onDeleteSelected}
-          className={`${BTN_BASE} bg-red-700 hover:bg-red-600 text-white`}
-          title={t('tool.delete')}
-          aria-label={t('tool.delete')}
-        ><IconDelete /></button>
-      )}
+  // The logo heads the rail on a desktop, and is the window's drag handle there.
+  const logo = (
+    <div className="wz-drag flex h-12 w-full shrink-0 items-center justify-center" title={`WZ Reader v${__APP_VERSION__}`}>
+      <img src="./icon.svg" alt="WZ Reader" className="h-7 w-7 rounded-md" draggable={false} />
     </div>
   )
 
-  // Viewer/editor is a MODE, not just another toggle button, so it gets a
-  // segmented-switch treatment: a recessed track with a single sliding thumb.
-  // The thumb is one element that translates between the two halves, which is
-  // what makes it read as a switch rather than as two independent icon buttons.
-  // The glyph is a pencil in both states and the amber wash carries on/off,
-  // because a padlock now means what it says everywhere else in this app: a
-  // password. Two different locks in one bar was the confusing part.
-  // Nothing to edit with nothing open, so no switch then.
-  const modeToggleCluster = !embed && canEdit && (hasPdf || flowDoc) ? (
-    <button
-      role="switch"
-      aria-checked={appMode === 'editor'}
-      aria-label={t('tool.editLock')}
-      title={appMode === 'editor' ? t('tool.editor') : t('tool.viewer')}
-      onClick={() => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor')}
-      className={`${BTN_BASE} ${
-        appMode === 'editor'
-          ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
-          : BTN_IDLE
-      }`}
-    >
-      <IconPencil />
-    </button>
-  ) : null
-
-  // The padlock, and now it only ever means one thing: a password. It arms the
-  // next save rather than saving, so the glyph reports the state the file will
-  // be written in — closed means the save will lock it. PDF only: it is the one
-  // format whose bytes this app can encrypt.
-  const passwordButton = (hasPdf && !embed) ? (
-    <button
-      onClick={onPassword}
-      disabled={isExporting}
-      className={`${BTN_BASE} ${saveLocked ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30' : BTN_IDLE}`}
-      title={saveLocked ? t('tool.passwordRemove') : t('tool.passwordSet')}
-      aria-label={saveLocked ? t('tool.passwordRemove') : t('tool.passwordSet')}
-    >{saveLocked ? <IconLock /> : <IconLockOpen />}</button>
-  ) : null
-
-  // A plain ghost button like every other tool. It used to carry a filled grey
-  // pill, which made it the only control in the bar that looked like something
-  // you were supposed to press.
-  const printButton = (hasPdf || flowDoc) && onPrint ? (
-    <button
-      onClick={onPrint}
-      className={iconBtn()}
-      title={t('tool.print')}
-      aria-label={t('tool.print')}
-    ><IconPrint /></button>
-  ) : null
-
-  const speakButton = (onToggleSpeech && (hasPdf || flowDoc)) ? (
-    <button
-      type="button"
-      onClick={onToggleSpeech}
-      aria-label={isSpeaking ? t('tts.stop') : t('tts.read')}
-      title={isSpeaking ? t('tts.stop') : t('tts.read')}
-      aria-pressed={isSpeaking}
-      className={`${BTN_BASE} ${isSpeaking ? BTN_ARMED : BTN_IDLE}`}
-    >{isSpeaking ? <IconStopSpeak /> : <IconSpeak />}</button>
-  ) : null
-
-  const ocrCluster = hasPdf ? (
-    <div className="relative inline-flex items-center">
-      <button
-        type="button"
-        onClick={onRunOcr}
-        disabled={isOcrRunning || numPages === 0}
-        aria-label={t('ocr.runCurrent')}
-        title={t('ocr.runCurrent')}
-        className="p-2 rounded hover:bg-gray-700 disabled:opacity-40 text-gray-200"
-      ><IconOcr /></button>
-      {/* The range is a menu, not a second button labelled "ALL": the label
-          meant nothing until hovered, and two adjacent triggers for one tool
-          read as two tools. The main button still does the common case. */}
-      <div ref={ocrRef} className="relative">
-        <button
-          type="button"
-          onClick={() => setOcrMenuOpen(v => !v)}
-          disabled={isOcrRunning || numPages === 0}
-          aria-expanded={ocrMenuOpen}
-          aria-haspopup="menu"
-          aria-label={t('ocr.menu')}
-          title={t('ocr.menu')}
-          className="flex h-9 items-center rounded-full px-0.5 text-gray-400 hover:bg-white/10 hover:text-white disabled:opacity-40"
-        ><IconChevron /></button>
-        {ocrMenuOpen && (
-          <div role="menu" className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[190px]">
-            <button role="menuitem" onClick={() => { onRunOcr(); setOcrMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-              <IconOcr /><span>{t('ocr.menuCurrent')}</span><kbd className="ml-auto text-[11px] text-gray-400 font-sans">{t('ocr.keyCurrent')}</kbd>
-            </button>
-            <button role="menuitem" onClick={() => { onRunOcrAll(); setOcrMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-              <IconOcr /><span>{t('ocr.menuAll')}</span><kbd className="ml-auto text-[11px] text-gray-400 font-sans">{t('ocr.keyAll')}</kbd>
-            </button>
-          </div>
-        )}
-      </div>
-      {/* Recognising a scanned document takes minutes, and the only sign of it
-          was this bare "12/30". For a reader who cannot see it that was minutes
-          of silence with no way to tell progress from a hang. */}
-      <OcrAnnouncer progress={ocrProgress} />
-      {ocrProgress && (
-        <span className="ml-1 text-[11px] text-gray-400 tabular-nums" aria-hidden>
-          {ocrProgress.done}/{ocrProgress.total}
-        </span>
-      )}
-      {ocrProgress && (
-        <button
-          type="button"
-          onClick={onCancelOcr}
-          aria-label={t('ocr.cancel')}
-          title={t('ocr.cancel')}
-          className="ml-1 px-1 text-[10px] rounded hover:bg-gray-700 text-red-300"
-        >✕</button>
-      )}
-    </div>
-  ) : null
-
-  // ── Stamp portal menu ─────────────────────────────────────────────────────
-  const stampPortal = stampPanelOpen && stampMenuRect
-    ? createPortal(
-        <div
-          ref={stampPortalRef}
-          style={{ position: 'fixed', top: stampMenuRect.bottom + 4, left: stampMenuRect.left, zIndex: 9999 }}
-          className="bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-1 flex flex-col gap-0.5 min-w-[140px]"
-        >
-          {STAMP_PRESETS.map(p => (
-            <button
-              key={p.id}
-              onClick={() => { handlePresetClick(p.id, p.svg) }}
-              className="text-xs text-left px-3 py-1.5 hover:bg-gray-700 rounded text-gray-200 whitespace-nowrap"
-            >{p.label}</button>
-          ))}
-          {savedStamps.length > 0 && onSavedStampSelect && (
-            <>
-              <div className="mt-1 border-t border-gray-600 px-3 pt-1.5 pb-0.5 text-[11px] text-gray-400">{t('stamp.mine')}</div>
-              {savedStamps.map(s => (
-                <div key={s.id} className="group flex items-center rounded hover:bg-gray-700">
-                  <button
-                    onClick={() => { onSavedStampSelect(s); setStampPanelOpen(false) }}
-                    title={s.name}
-                    className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-200"
-                  >
-                    {/* A light tile, so a dark or red seal on transparency is visible on the dark menu. */}
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-white/90">
-                      <img src={s.src} alt="" className="max-h-6 max-w-6 object-contain" />
-                    </span>
-                    <span className="truncate">{s.name}</span>
-                  </button>
-                  {onSavedStampRemove && (
-                    <button
-                      onClick={() => onSavedStampRemove(s.id)}
-                      aria-label={t('stamp.remove', { name: s.name })}
-                      title={t('stamp.remove', { name: s.name })}
-                      className="mr-1 shrink-0 rounded p-1 text-gray-400 opacity-0 hover:bg-gray-600 hover:text-gray-100 focus:opacity-100 group-hover:opacity-100"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-                    </button>
-                  )}
-                </div>
-              ))}
-              <div className="mb-0.5 border-t border-gray-600" />
-            </>
-          )}
-          <label className="text-xs text-left px-3 py-1.5 hover:bg-gray-700 rounded cursor-pointer text-gray-200">
-            {t('stamp.uploadImage')}
-            <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleCustomUpload} />
-          </label>
-        </div>,
-        document.body,
-      )
-    : null
-
-  // ── Export dropdown menu body (shared by the split button & collapsed menu) ─
-  const exportMenuItems = (onDone: () => void, besideSaveButton = false) => (
-    <>
-      {onSaveOriginal && (
-        <button onClick={() => { onSaveOriginal(); onDone() }} title={t(pdfIsOriginal ? 'export.originalTitlePdf' : 'export.originalTitle')} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-          <IconFile /><span>{t('export.original')}</span><span className="ml-auto text-gray-400 text-[11px]">{originalExt}</span>
-        </button>
-      )}
-      {!(besideSaveButton && pdfIsOriginal) && (
-        <button onClick={() => { onExportPdf(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-          <IconSave /><span>{t('export.pdf')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
-        </button>
-      )}
-      {onExportSpreads && (
-        <button onClick={() => { onExportSpreads(); onDone() }} title={t('export.spreadTitle')} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-          <IconSpread /><span>{t('export.spread')}</span><span className="ml-auto text-gray-400 text-[11px]">.pdf</span>
-        </button>
-      )}
-      {onExportHtml && (
-        <button onClick={() => { onExportHtml(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-          <IconHtml /><span>{t('export.html')}</span><span className="ml-auto text-gray-400 text-[11px]">.html</span>
-        </button>
-      )}
-      {onExportImages && (
-        <button onClick={() => { onExportImages(); onDone() }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-          <IconImage /><span>{t('export.images')}</span><span className="ml-auto text-gray-400 text-[11px]">.zip</span>
-        </button>
-      )}
-      {onExportExe && (
-        <>
-          <div className="my-1 border-t border-gray-600" />
-          <button onClick={() => { onExportExe(); onDone() }} title={t('export.exeTitle')} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-emerald-300 hover:bg-gray-700 transition-colors">
-            <IconExe /><span>{t('export.exe')}</span><span className="ml-auto text-gray-400 text-[11px]">.exe</span>
-          </button>
-        </>
-      )}
-    </>
+  const toolRail = (
+    <ToolRail axis={axis} items={items} pinned={pinned} label={t('tool.rail')} head={wide ? logo : undefined} />
   )
-
-  // ── Expanded (inline) sections ─────────────────────────────────────────────
-  const expandedLeft = (
-    <div ref={leftClusterRef} className="relative flex items-center gap-0.5 px-2 py-1.5 min-w-0 shrink-0">
-      {/* The name and tagline are for the start screen. Every open document —
-          PDF, Markdown or mail — shows its own name in the middle instead;
-          Markdown and mail used to keep the logo, PDF did not. */}
-      {!hasPdf && !flowDoc && brandingCluster}
-      {flowDoc && !pagedFlow && !isFullscreen && (<><Sep />{fullscreenButton}<Sep />{zoomCluster}</>)}
-      {pagedFlow && (
-        <>
-          {viewCluster}
-          {!isFullscreen && (<><Sep />{pageCounter}</>)}
-          {!isFullscreen && viewMode !== 'grid' && (<><Sep />{zoomCluster}</>)}
-          {!isFullscreen && (<><Sep />{pagesButton}{notesButton}</>)}
-        </>
-      )}
-      {hasPdf && (
-        <>
-          {viewCluster}
-          {!isFullscreen && (<><Sep />{pageCounter}</>)}
-          {!isFullscreen && viewMode !== 'grid' && (<><Sep />{zoomCluster}</>)}
-          {!isFullscreen && (<><Sep />{rotateButton}</>)}
-          {!isFullscreen && (<><Sep />{pagesButton}{eraserButton}</>)}
-        </>
-      )}
-    </div>
-  )
-
-  const expandedRight = (
-    <div ref={rightClusterRef} className="relative flex items-center gap-0.5 px-1.5 sm:px-2 py-1.5 shrink-0 border-l border-gray-700/40">
-      {modeToggleCluster}
-      {modeToggleCluster && <Sep />}
-
-      {/* Open dropdown — file or URL. Hidden in embed mode. */}
-      {!embed && (
-        <div ref={openRef} className="relative">
-          <button
-            onClick={() => setOpenMenuOpen(v => !v)}
-            aria-expanded={openMenuOpen}
-            className={`${BTN_BASE} ${openMenuOpen ? BTN_ACTIVE : BTN_IDLE}`}
-            title={t('tool.open')}
-            aria-label={t('tool.open')}
-          ><IconFolderOpen /></button>
-          {openMenuOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[170px]">
-              <button onClick={() => { fileInputRef.current?.click(); setOpenMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-                <IconFolderOpen /><span>{t('tool.openFile')}</span>
-              </button>
-              <button onClick={() => { onOpenUrl(); setOpenMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors">
-                <IconLink /><span>{t('tool.openUrl')}</span>
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {printButton}
-      {passwordButton}
-      {speakButton}
-      {ocrCluster}
-
-      {onSaveSlideVideo && (
-        <button
-          onClick={onSaveSlideVideo}
-          disabled={isExporting}
-          className={`${BTN_BASE} ${BTN_IDLE} disabled:opacity-40`}
-          title={t('video.save')}
-          aria-label={t('video.save')}
-        ><IconVideo /></button>
-      )}
-      {/* Export — split button: main saves a PDF, chevron opens the format
-          menu. Every format has it: the file itself, a PDF, an exe. */}
-      {(hasPdf || flowDoc) && !embed && (
-        <div ref={exportRef} className="relative flex items-stretch">
-          <button
-            onClick={onExportPdf}
-            disabled={isExporting}
-            className="flex items-center justify-center w-9 h-9 rounded-l bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 transition-all"
-            title={isExporting ? t('tool.exporting') : t('tool.exportPdf')}
-            aria-label={t('tool.exportPdf')}
-          ><IconSave /></button>
-          <button
-            onClick={() => setExportMenuOpen(v => !v)}
-            disabled={isExporting}
-            aria-expanded={exportMenuOpen}
-            aria-label={t('tool.export')}
-            title={t('tool.exportMore')}
-            className="flex items-center justify-center h-9 px-1 rounded-r bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 border-l border-blue-400/40 transition-all"
-          ><IconChevron /></button>
-          {exportMenuOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[175px]">
-              {exportMenuItems(() => setExportMenuOpen(false), true)}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-
-  // ── Collapsed (hamburger) sections ─────────────────────────────────────────
-  const menuItem = 'w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700 transition-colors rounded'
-
-  const collapsedLeft = (
-    <div ref={leftMenuRef} className="relative flex items-center px-2 py-1.5">
-      {(hasPdf || flowDoc) ? (
-        <>
-          <button
-            onClick={() => setLeftMenuOpen(v => !v)}
-            aria-expanded={leftMenuOpen}
-            className={`${BTN_BASE} ${leftMenuOpen ? BTN_ACTIVE : BTN_IDLE}`}
-            title={t('tool.menuLeft')}
-            aria-label={t('tool.menuLeft')}
-          ><IconMenu /></button>
-          {leftMenuOpen && (
-            <div className="absolute left-2 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl p-2 z-50 flex flex-col gap-2">
-              {flowDoc && !pagedFlow && !isFullscreen && (<>{fullscreenButton}{zoomCluster}</>)}
-              {pagedFlow && viewCluster}
-              {pagedFlow && !isFullscreen && viewMode !== 'grid' && zoomCluster}
-              {pagedFlow && !isFullscreen && (<div className="flex items-center gap-0.5">{pagesButton}{notesButton}</div>)}
-              {hasPdf && viewCluster}
-              {hasPdf && !isFullscreen && viewMode !== 'grid' && zoomCluster}
-              {hasPdf && !isFullscreen && (
-                <div className="flex items-center gap-0.5">
-                  {rotateButton}
-                  {pagesButton}
-                  {eraserButton}
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      ) : brandingCluster}
-    </div>
-  )
-
-  // The collapsed bar's middle was empty apart from a page counter floating off
-  // to one side. It is the only place a narrow screen has room for the file
-  // name, so it carries both — and `flex-1 min-w-0` is what actually centres
-  // it between two clusters of unequal width, rather than leaving it wherever
-  // `justify-between` happens to put it.
-  const collapsedCenter = (
-    <div className="flex flex-1 min-w-0 items-center justify-center gap-1.5 px-1">
-      {fileName && (
-        <span className="truncate text-xs text-gray-400 min-w-0">{nameLabel}</span>
-      )}
-      {(hasPdf || pagedFlow) && !isFullscreen && (
-        <span className="shrink-0 text-xs text-gray-400 tabular-nums">
-          {currentPage} / {numPages}
-        </span>
-      )}
-    </div>
-  )
-
-  const collapsedRight = (
-    <div ref={rightMenuRef} className="relative flex items-center px-2 py-1.5 border-l border-gray-700/40">
-      <button
-        onClick={() => setRightMenuOpen(v => !v)}
-        aria-expanded={rightMenuOpen}
-        className={`${BTN_BASE} ${rightMenuOpen ? BTN_ACTIVE : BTN_IDLE}`}
-        title={t('tool.menuRight')}
-        aria-label={t('tool.menuRight')}
-      ><IconMore /></button>
-      {rightMenuOpen && (
-        <div className="absolute right-2 top-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 z-50 min-w-[190px]">
-          {!embed && (
-            <>
-              {/* Same lock switch, as a labelled row inside the dropdown. */}
-              {canEdit && <button
-                role="switch"
-                aria-checked={appMode === 'editor'}
-                onClick={() => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor')}
-                className={menuItem}
-              >
-                <IconPencil />
-                <span className="flex-1 text-left">{t('tool.editLock')}</span>
-                <span className={`text-[11px] font-semibold ${appMode === 'editor' ? 'text-amber-300' : 'text-gray-400'}`}>
-                  {appMode === 'editor' ? 'ON' : 'OFF'}
-                </span>
-              </button>}
-              {hasPdf && (
-                <button onClick={() => { onPassword(); setRightMenuOpen(false) }} className={menuItem} disabled={isExporting}>
-                  {saveLocked ? <IconLock /> : <IconLockOpen />}
-                  <span className="flex-1 text-left">
-                    {saveLocked ? t('tool.passwordRemove') : t('tool.passwordSet')}
-                  </span>
-                </button>
-              )}
-              <div className="my-1 border-t border-gray-600" />
-              <button onClick={() => { fileInputRef.current?.click(); setRightMenuOpen(false) }} className={menuItem}><IconFolderOpen /><span>{t('tool.openFile')}</span></button>
-              <button onClick={() => { onOpenUrl(); setRightMenuOpen(false) }} className={menuItem}><IconLink /><span>{t('tool.openUrl')}</span></button>
-            </>
-          )}
-          {onToggleSpeech && (hasPdf || flowDoc) && (
-            <button
-              onClick={() => { onToggleSpeech(); setRightMenuOpen(false) }}
-              className={menuItem}
-            >
-              {isSpeaking ? <IconStopSpeak /> : <IconSpeak />}
-              <span>{isSpeaking ? t('tts.stop') : t('tts.read')}</span>
-            </button>
-          )}
-          {hasPdf && (
-            <>
-              {onPrint && <button onClick={() => { onPrint(); setRightMenuOpen(false) }} className={menuItem}><IconPrint /><span>{t('tool.print')}</span></button>}
-              <button onClick={() => { onRunOcr(); setRightMenuOpen(false) }} disabled={isOcrRunning || numPages === 0} className={`${menuItem} disabled:opacity-40`}><IconOcr /><span>{t('ocr.runCurrent')}</span></button>
-              <button onClick={() => { onRunOcrAll(); setRightMenuOpen(false) }} disabled={isOcrRunning || numPages === 0} className={`${menuItem} disabled:opacity-40`}><IconOcr /><span>{t('ocr.runAll')}</span></button>
-            </>
-          )}
-          {(hasPdf || flowDoc) && !embed && (
-            <>
-              <div className="my-1 border-t border-gray-600" />
-              {exportMenuItems(() => setRightMenuOpen(false))}
-            </>
-          )}
-          {onSaveSlideVideo && (
-            <button onClick={() => { onSaveSlideVideo(); setRightMenuOpen(false) }} disabled={isExporting} className={`${menuItem} disabled:opacity-40`}>
-              <IconVideo /><span>{t('video.save')}</span>
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-
-  // The document's name, centred in the bar the way a title bar names its
-  // window. Absolutely positioned so it is centred on the *bar*, not on
-  // whatever space the two clusters happen to leave; `pointer-events-none`
-  // keeps it out of the way of the window drag region in the desktop build.
-  // Hidden on narrow screens, where the clusters reach the middle.
-  const titleCentre = fileName ? (
-    <div
-      ref={titleRef}
-      className="pointer-events-none absolute inset-0 flex items-center justify-center"
-      aria-hidden
-      // Width and visibility are set imperatively by the effect below, which is
-      // the only thing that knows how much room the two clusters have left.
-      style={{ visibility: 'hidden' }}
-    >
-      <span className="truncate text-xs text-gray-400">{nameLabel}</span>
-    </div>
-  ) : null
-
-  // Editing tools get their own row rather than more of the main bar. They are
-  // a different job — the bar above navigates the document, this one changes
-  // it — and folding them in was also what pushed the bar into its collapsed
-  // layout as soon as the padlock was opened.
-  const editorRow = (hasPdf && appMode === 'editor' && !isFullscreen) ? (
-    <div className="no-print flex items-center gap-0.5 shrink-0 overflow-x-auto
-                    bg-gray-800/80 border-b border-gray-700 px-2 py-1">
-      <span className="hidden sm:inline shrink-0 pr-1.5 text-[11px] font-medium text-amber-300/80">
-        {t('tool.editTools')}
-      </span>
-      {editorCluster}
-      {/* The markup eraser deliberately stays in the main bar: pen and rectangle
-          can be drawn in viewer mode too (keys 1 and 2), so clearing them is not
-          an editing-mode action. */}
-    </div>
+  const editRail = editItems.length > 0 ? (
+    <ToolRail axis={axis} items={editItems} label={t('tool.editTools')} shade="raised" />
   ) : null
 
   return (
-    <>
-      {/* ── Toolbar ───────────────────────────────────────────────────────────
-          Two clusters justified to the edges, with the file name centred
-          between them. When the inline controls no longer fit (narrow window)
-          `useToolbarCollapse` folds each cluster into a hamburger menu instead
-          of showing a horizontal scrollbar. */}
-      <header
-        ref={headerRef}
-        className="flex items-stretch justify-between bg-gray-900 text-white shadow-md z-10 shrink-0 border-b border-gray-700 relative"
-        onDragOver={e => e.preventDefault()}
-        onDrop={handleDrop}
-      >
-        {!collapsed && titleCentre}
-        {collapsed ? (
-          <>
-            {collapsedLeft}
-            {collapsedCenter}
-            {collapsedRight}
-          </>
-        ) : (
-          <>
-            {expandedLeft}
-            {expandedRight}
-          </>
-        )}
-      </header>
-
-      {editorRow}
-
-      {!embed && <input ref={fileInputRef} type="file" multiple accept={DOCUMENT_ACCEPT} className="hidden" onChange={handleFileChange} />}
-
-      {/* Stamp dropdown portal — rendered in <body> to escape toolbar overflow */}
-      {stampPortal}
-    </>
+    <div
+      className="flex min-h-0 flex-1 overflow-hidden"
+      onDragOver={e => e.preventDefault()}
+      onDrop={handleDrop}
+    >
+      {wide && toolRail}
+      {wide && editRail}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <TitleBar name={fileName} unsaved={unsaved} right={<>{counter}{zoomControls}</>} />
+        {children}
+        {!wide && editRail}
+        {!wide && toolRail}
+      </div>
+      {/* Mounted always: a live region announces only what changes while it exists. */}
+      <OcrAnnouncer progress={ocrProgress} />
+      {!embed && <input ref={setFileInput} type="file" multiple accept={DOCUMENT_ACCEPT} className="hidden" onChange={handleFileChange} />}
+    </div>
   )
 }

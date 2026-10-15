@@ -188,17 +188,16 @@ function createWindow({ opening = false }: { opening?: boolean } = {}) {
     minHeight: 360,
     title: 'WZ Reader',
     // ── Custom title bar ────────────────────────────────────────────────
-    // Hide the native title bar so the ActionBar visually becomes the chrome.
-    // On Windows/Linux we use Window Controls Overlay: the OS still draws
-    // accessible min/max/close buttons in the top-right, but we control the
-    // background color, height, and symbol color so it blends with the app.
-    // On macOS, `hiddenInset` shows the traffic-light controls inset slightly
-    // — they sit on top of our dark toolbar without further configuration.
+    // Hide the native title bar so the app's own thin title bar is the
+    // chrome. On Windows/Linux we use Window Controls Overlay: the OS still
+    // draws accessible min/max/close buttons in the top-right, over the right
+    // end of that bar, in its colour and height. On macOS, `hiddenInset`
+    // shows the traffic lights inset over the top of the dark tool rail.
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     titleBarOverlay: process.platform === 'darwin' ? undefined : {
-      color: '#111827',         // matches Tailwind bg-gray-900 (the ActionBar bg)
-      symbolColor: '#e5e7eb',   // matches Tailwind gray-200 (visible on dark bg)
-      height: 48,               // matches the ActionBar's intrinsic height
+      color: '#e6e7ea',         // --wz-canvas: the title bar and page background
+      symbolColor: '#374151',   // gray-700, dark on the light bar
+      height: 32,               // the title bar's height (TitleBar, h-8)
     },
     backgroundColor: '#111827', // paints the same gray during the brief load gap
     webPreferences: {

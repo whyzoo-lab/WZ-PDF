@@ -205,7 +205,7 @@ export function MarkdownView({
   // opened and fixed, and before `fullscreen` so unlocking wins over presenting.
   if (editing && !fullscreen) {
     return (
-      <div className="flex h-full flex-col bg-gray-300">
+      <div className="flex h-full flex-col bg-[var(--wz-canvas)]">
         <div className="flex items-center gap-3 border-b border-gray-400/50 bg-gray-200 px-4 py-2">
           <span className="text-xs font-semibold text-gray-600">
             {t('md.source')}
@@ -269,7 +269,7 @@ export function MarkdownView({
   return (
     // `relative` makes this element the headings' offsetParent, so the offsets
     // measured above are in the same coordinate space as its own scrollTop.
-    <div ref={scrollRef} onScroll={handleScroll} className="relative h-full overflow-auto bg-gray-300 py-6 px-4">
+    <div ref={scrollRef} onScroll={handleScroll} className="relative h-full overflow-auto bg-[var(--wz-canvas)] py-6 px-4">
       <div className="mx-auto flex max-w-5xl items-start gap-7">
         {showOutline && (
           // Sticky so it stays with you on a long file; hidden on narrow screens,

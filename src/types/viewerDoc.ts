@@ -80,5 +80,13 @@ export interface ViewerDoc {
   getPageText?(pageNumber: number): Promise<HwpTextRun[]>
   /** Present on image collections only. */
   images?: ImageSetView
+  /** The page it opens at, when not the first (a picture opened from its folder). */
+  startPage?: number
+  /**
+   * Page n's size in points without waiting — a guess until the page has been
+   * read. Lets a page that has not been drawn hold its place at about the
+   * right size (image collections read sizes lazily). Absent: US Letter.
+   */
+  pageSizeHint?(page: number): { width: number; height: number }
   destroy(): void
 }

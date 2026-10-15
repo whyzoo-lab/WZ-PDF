@@ -430,7 +430,7 @@ export function PptxView({
           onPick={goTo}
         />
       )}
-      <div ref={scrollRef} onScroll={onScrollList} className="h-full min-w-0 flex-1 overflow-auto bg-gray-300">
+      <div ref={scrollRef} onScroll={onScrollList} className="h-full min-w-0 flex-1 overflow-auto bg-[var(--wz-canvas)]">
         <div
           className={`wz-slides ${layoutClass} py-6`}
           style={{ ...vars(scale), gap: PAGE_GAP_PX, paddingInline: GUTTER_PX / 2 }}

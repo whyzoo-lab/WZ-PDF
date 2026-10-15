@@ -59,7 +59,7 @@ export interface TtsBarProps {
   onApply: () => void
 }
 
-const shell = 'no-print fixed bottom-3 left-1/2 -translate-x-1/2 z-40 '
+const shell = 'no-print fixed bottom-3 max-[599px]:bottom-[calc(64px+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-40 '
   + 'rounded-xl bg-gray-900/95 text-gray-100 shadow-2xl ring-1 ring-white/10 backdrop-blur'
 
 const ghost = 'rounded-full px-3 py-1.5 text-sm text-gray-200 hover:bg-white/10 '

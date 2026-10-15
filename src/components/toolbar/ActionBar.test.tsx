@@ -69,17 +69,23 @@ const defaultProps = {
   onExportExe: vi.fn(),
 }
 
+// OCR is one rail button with a menu: this page, the whole document, and
+// cancel while a run is under way.
+const openOcr = () => fireEvent.click(screen.getByRole('button', { name: /Recognize text \(OCR\)/i }))
+
 describe('ActionBar OCR control', () => {
-  it('fires onRunOcr for the current page', () => {
+  it('runs the current page from the menu', () => {
     const onRunOcr = vi.fn()
     render(<ActionBar {...baseProps({ onRunOcr })} />)
-    fireEvent.click(screen.getByRole('button', { name: /Recognize text — this page|글자 인식 — 이 페이지/i }))
+    openOcr()
+    fireEvent.click(screen.getByRole('menuitem', { name: /Recognize this page/i }))
     expect(onRunOcr).toHaveBeenCalledTimes(1)
   })
 
-  it('disables the OCR control while running', () => {
+  it('cannot start another run while one is running', () => {
     render(<ActionBar {...baseProps({ isOcrRunning: true })} />)
-    expect(screen.getByRole('button', { name: /Recognize text — this page|글자 인식 — 이 페이지/i })).toBeDisabled()
+    openOcr()
+    expect(screen.getByRole('menuitem', { name: /Recognize this page/i })).toBeDisabled()
   })
 
   it('offers the range as a menu: this page or the whole document', () => {
@@ -87,16 +93,18 @@ describe('ActionBar OCR control', () => {
     const onRunOcrAll = vi.fn()
     render(<ActionBar {...baseProps({ onRunOcr, onRunOcrAll })} />)
     expect(screen.queryByText('ALL')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /Choose what to recognize|글자 인식 범위 선택/i }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /whole document|전체 문서/i }))
+    openOcr()
+    fireEvent.click(screen.getByRole('menuitem', { name: /whole document/i }))
     expect(onRunOcrAll).toHaveBeenCalledTimes(1)
     expect(onRunOcr).not.toHaveBeenCalled()
   })
 
-  it('shows a cancel button during a whole-doc run and fires onCancelOcr', () => {
+  it('shows progress on the button and cancels from the menu', () => {
     const onCancelOcr = vi.fn()
     render(<ActionBar {...baseProps({ ocrProgress: { done: 2, total: 10 }, isOcrRunning: true, onCancelOcr })} />)
-    fireEvent.click(screen.getByRole('button', { name: /Cancel OCR|OCR 취소/i }))
+    expect(screen.getByRole('button', { name: /Recognize text \(OCR\)/i })).toHaveTextContent('2/10')
+    openOcr()
+    fireEvent.click(screen.getByRole('menuitem', { name: /Cancel OCR/i }))
     expect(onCancelOcr).toHaveBeenCalledTimes(1)
   })
 })
@@ -104,36 +112,64 @@ describe('ActionBar OCR control', () => {
 describe('ActionBar', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
-  it('shows view mode buttons when hasPdf is true', () => {
+  // The page layouts are one rail button with a menu; fullscreen is its own.
+  const openLayout = () => fireEvent.click(screen.getByRole('button', { name: /page layout/i }))
+
+  it('offers the page layouts and fullscreen when a page document is open', () => {
     render(<ActionBar {...defaultProps} />)
-    expect(screen.getByRole('button', { name: /single page/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /spread/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /grid/i })).toBeInTheDocument()
+    openLayout()
+    expect(screen.getByRole('menuitemradio', { name: /single page/i })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: /spread/i })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: /grid/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument()
   })
 
-  it('hides view mode buttons when hasPdf is false', () => {
+  it('hides the page layouts when nothing is open', () => {
     render(<ActionBar {...defaultProps} hasPdf={false} />)
-    expect(screen.queryByRole('button', { name: /single page/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /page layout/i })).not.toBeInTheDocument()
   })
 
-  it('highlights the active view mode button', () => {
+  it('marks the current layout in the menu', () => {
     render(<ActionBar {...defaultProps} viewMode="spread" />)
-    const spreadBtn = screen.getByRole('button', { name: /spread/i })
-    // Active = soft tint (BTN_ACTIVE), not a saturated filled square.
-    expect(spreadBtn.className).toContain('bg-white/15')
+    openLayout()
+    expect(screen.getByRole('menuitemradio', { name: /spread/i })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('menuitemradio', { name: /single page/i })).toHaveAttribute('aria-checked', 'false')
   })
 
-  it('does not highlight inactive view mode buttons', () => {
-    render(<ActionBar {...defaultProps} viewMode="spread" />)
-    const singleBtn = screen.getByRole('button', { name: /single page/i })
-    expect(singleBtn.className).not.toContain('bg-blue-600')
-  })
-
-  it('calls onViewModeChange with correct mode when view button clicked', () => {
+  it('changes the layout and closes the menu', () => {
     render(<ActionBar {...defaultProps} />)
-    fireEvent.click(screen.getByRole('button', { name: /spread/i }))
+    openLayout()
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /spread/i }))
     expect(defaultProps.onViewModeChange).toHaveBeenCalledWith('spread')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('closes a menu on Escape and on a click outside it', () => {
+    render(<ActionBar {...defaultProps} />)
+    openLayout()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    openLayout()
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('shows the file name and the page counter in the title bar', () => {
+    render(<ActionBar {...defaultProps} fileName="report.pdf" numPages={12} currentPage={3} />)
+    expect(screen.getByText('report.pdf')).toBeInTheDocument()
+    expect(screen.getByLabelText('Page 3 of 12')).toHaveTextContent('3 / 12')
+  })
+
+  it('opens the find bar from the rail', () => {
+    const onFind = vi.fn()
+    render(<ActionBar {...defaultProps} onFind={onFind} />)
+    fireEvent.click(screen.getByRole('button', { name: /^find$/i }))
+    expect(onFind).toHaveBeenCalled()
+  })
+
+  it('lays the document out inside the chrome', () => {
+    render(<ActionBar {...defaultProps}><p>the document</p></ActionBar>)
+    expect(screen.getByText('the document')).toBeInTheDocument()
   })
 
   // Editing is a single on/off lock (role="switch"), not two destinations:
@@ -157,7 +193,7 @@ describe('ActionBar', () => {
     expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
   })
 
-  it('shows Upload PDF button always', () => {
+  it('shows the open button even with nothing open', () => {
     render(<ActionBar {...defaultProps} hasPdf={false} />)
     expect(screen.getByRole('button', { name: /open/i })).toBeInTheDocument()
   })
@@ -243,52 +279,54 @@ describe('ActionBar', () => {
     expect(onZoomSet).toHaveBeenCalledWith(1.75)
   })
 
-  // ── Export dropdown ─────────────────────────────────────────────────────
+  // ── Save menu ───────────────────────────────────────────────────────────
+  // One rail button; Save as PDF is first, then the other formats.
+  const openSave = () => fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
-  it('shows Export button when hasPdf is true', () => {
+  it('shows the save button when a document is open', () => {
     render(<ActionBar {...defaultProps} hasPdf={true} />)
-    expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument()
   })
 
-  it('hides Export button when hasPdf is false', () => {
+  it('hides the save button when nothing is open', () => {
     render(<ActionBar {...defaultProps} hasPdf={false} />)
-    expect(screen.queryByRole('button', { name: /export/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^save$/i })).not.toBeInTheDocument()
   })
 
-  it('opens Export menu on click and shows PDF/HTML/Images options', () => {
+  it('opens the save menu with PDF first, then HTML and images', () => {
     render(<ActionBar {...defaultProps} />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
-    expect(screen.getByText('Save as PDF')).toBeInTheDocument()
+    openSave()
+    expect(screen.getAllByRole('menuitem')[0]).toHaveTextContent('Save as PDF')
     expect(screen.getByText('Save HTML')).toBeInTheDocument()
     expect(screen.getByText('Save Images')).toBeInTheDocument()
   })
 
   it('shows EXE Viewer option when onExportExe is provided', () => {
     render(<ActionBar {...defaultProps} onExportExe={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     expect(screen.getByText('Export as EXE')).toBeInTheDocument()
   })
 
-  it('offers the file itself, named by its extension, before the PDF', () => {
+  it('offers the file itself, named by its extension', () => {
     const onSaveOriginal = vi.fn()
     render(<ActionBar {...defaultProps} onSaveOriginal={onSaveOriginal} originalExt=".pptx" />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     expect(screen.getByText('.pptx')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Save original file'))
     expect(onSaveOriginal).toHaveBeenCalled()
   })
 
-  it('leaves "Save as PDF" out of the menu beside the save button when the document is a PDF', () => {
+  it('keeps "Save as PDF" in the menu for a PDF, since there is no separate save button now', () => {
     render(<ActionBar {...defaultProps} onSaveOriginal={vi.fn()} originalExt=".pdf" pdfIsOriginal />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     expect(screen.getByText('Save original file')).toBeInTheDocument()
-    expect(screen.queryByText('Save as PDF')).not.toBeInTheDocument()
+    expect(screen.getByText('Save as PDF')).toBeInTheDocument()
   })
 
   it('gives a reflowing document the same save menu, without the page-only formats', () => {
     render(<ActionBar {...defaultProps} hasPdf={false} flowDoc onExportHtml={undefined} onExportImages={undefined}
       onSaveOriginal={vi.fn()} onExportExe={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     expect(screen.getByText('Save original file')).toBeInTheDocument()
     expect(screen.getByText('Save as PDF')).toBeInTheDocument()
     expect(screen.getByText('Export as EXE')).toBeInTheDocument()
@@ -297,23 +335,23 @@ describe('ActionBar', () => {
 
   it('hides EXE Viewer option when onExportExe is not provided', () => {
     render(<ActionBar {...defaultProps} onExportExe={undefined} />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     expect(screen.queryByText('Export as EXE')).not.toBeInTheDocument()
   })
 
   it('calls onExportPdf and closes menu when PDF option clicked', () => {
     const onExportPdf = vi.fn()
     render(<ActionBar {...defaultProps} onExportPdf={onExportPdf} />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     fireEvent.click(screen.getByText('Save as PDF'))
     expect(onExportPdf).toHaveBeenCalled()
     expect(screen.queryByText('Save HTML')).not.toBeInTheDocument()
   })
 
-  it('calls onExportHtml and closes menu when HTML option clicked', () => {
+  it('calls onExportHtml when HTML option clicked', () => {
     const onExportHtml = vi.fn()
     render(<ActionBar {...defaultProps} onExportHtml={onExportHtml} />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     fireEvent.click(screen.getByText('Save HTML'))
     expect(onExportHtml).toHaveBeenCalled()
   })
@@ -321,28 +359,28 @@ describe('ActionBar', () => {
   it('offers "save as booklet" in the save menu when given a handler', () => {
     const onExportSpreads = vi.fn()
     render(<ActionBar {...defaultProps} onExportSpreads={onExportSpreads} />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     fireEvent.click(screen.getByText('Save as booklet'))
     expect(onExportSpreads).toHaveBeenCalled()
   })
 
   it('leaves "save as booklet" out without a handler', () => {
     render(<ActionBar {...defaultProps} />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     expect(screen.queryByText('Save as booklet')).not.toBeInTheDocument()
   })
 
-  it('calls onExportImages and closes menu when Images option clicked', () => {
+  it('calls onExportImages when Images option clicked', () => {
     const onExportImages = vi.fn()
     render(<ActionBar {...defaultProps} onExportImages={onExportImages} />)
-    fireEvent.click(screen.getByRole('button', { name: /export/i }))
+    openSave()
     fireEvent.click(screen.getByText('Save Images'))
     expect(onExportImages).toHaveBeenCalled()
   })
 
-  it('disables Export button while exporting', () => {
+  it('disables the save button while exporting', () => {
     render(<ActionBar {...defaultProps} isExporting={true} />)
-    expect(screen.getByRole('button', { name: /export/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled()
   })
 
   it('shows the eraser only when markups exist', () => {

@@ -30,6 +30,7 @@ import type { AppMode, ViewMode } from './types/viewModes'
 import { isFlowKind, isOfficeKind } from './types/viewerDoc'
 import type { OfficePageInfo, OfficeViewHandle } from './components/office/officeView'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, PAGE_ATTR } from './utils/constants'
+import { captureZoomAnchor, restoreZoomAnchor, type ZoomAnchor } from './utils/zoomAnchor'
 import { classifyDocFile, DOCUMENT_ACCEPT } from './utils/detectDocType'
 import { pickSaveTarget, saveBlobTo, stripDocExt } from './utils/download'
 import { documentFileName, openableExt } from './utils/docFileName'
@@ -438,10 +439,21 @@ export default function App() {
   }, [file, unsaved, displayName])
 
   // ── Ctrl+scroll → zoom ────────────────────────────────────────────────────
+  // Around the pointer (utils/zoomAnchor.ts). The anchor is used by the zoom
+  // change it was taken for, or not at all: a notch at the zoom limit changes
+  // nothing, and its anchor must not move the view on a later button press.
+  const zoomAnchorRef = useRef<{ anchor: ZoomAnchor; at: number } | null>(null)
+  useLayoutEffect(() => {
+    const a = zoomAnchorRef.current
+    zoomAnchorRef.current = null
+    if (a && performance.now() - a.at < 500) restoreZoomAnchor(a.anchor)
+  }, [zoom])
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey || !(pdfDoc || flowDoc) || viewMode === 'fullscreen' || viewMode === 'grid') return
       e.preventDefault()
+      const anchor = pdfDoc ? captureZoomAnchor(e.clientX, e.clientY) : null
+      zoomAnchorRef.current = anchor && { anchor, at: performance.now() }
       const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP
       setZoom(z => +(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z + delta)).toFixed(2)))
     }
@@ -577,12 +589,16 @@ export default function App() {
   }, [pdfDoc])
 
   // A picture opened from its folder opens at itself, not at the folder's
-  // first picture.
+  // first picture — by a jump, not a smooth scroll: gliding down mounted every
+  // page on the way, and each started reading its file (a 40th photo on a
+  // network drive showed after 20 s, behind the 39 above it).
+  const instantScrollRef = useRef(false)
   useEffect(() => {
     if (!pdfDoc || startPage <= 1) return
     // After the fit zoom has settled (debounced in useFitZoom): scrolling first
     // and resizing every page after it lands somewhere else.
     const timer = setTimeout(() => {
+      instantScrollRef.current = true
       setCurrentPage(startPage)
       setScrollToPage(startPage)
     }, 300)
@@ -755,8 +771,9 @@ export default function App() {
         // container alone keeps the rest of the layout pinned.
         if (el && container) {
           const delta = el.getBoundingClientRect().top - container.getBoundingClientRect().top
-          container.scrollBy({ top: delta, behavior: 'smooth' })
+          container.scrollBy({ top: delta, behavior: instantScrollRef.current ? 'instant' : 'smooth' })
         }
+        instantScrollRef.current = false
         setScrollToPage(null)
       }
       timer = setTimeout(attempt, 50)
@@ -1524,6 +1541,7 @@ export default function App() {
     canUndo: history.canUndo,
     canRedo: history.canRedo,
     onPrint: canPrint ? handlePrintAny : undefined,
+    onFind: () => setShowSearch(true),
     onAppModeChange: handleAppModeChange,
     onViewModeChange: handleViewModeChange,
     onZoomIn: handleZoomIn,
@@ -1587,8 +1605,6 @@ export default function App() {
         onApply={tts.applySettings}
       />
 
-      <ActionBar {...actionBarProps} />
-
       {askEncryptPassword && (
         <PasswordSetPrompt
           onSubmit={password => {
@@ -1649,7 +1665,8 @@ export default function App() {
         }}
       />}
 
-      <div className="flex flex-1 overflow-hidden relative">
+      <ActionBar {...actionBarProps}>
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
         {/* Mobile backdrop — taps close the drawer; hidden on md+ where panel is inline. */}
         {panelVisible && (
           <div
@@ -1698,7 +1715,7 @@ export default function App() {
         <main
           ref={mainRef}
           aria-label={t('a11y.document')}
-          className="flex-1 overflow-hidden"
+          className="flex-1 overflow-hidden bg-[var(--wz-canvas)]"
           onDragOver={e => e.preventDefault()}
           onDrop={e => {
             e.preventDefault()
@@ -1718,19 +1735,19 @@ export default function App() {
             </h1>
           )}
           {error && (
-            <div className="flex items-center justify-center h-full text-red-400 p-4">
+            <div className="flex items-center justify-center h-full text-red-600 p-4">
               {t('error.loadFailed', { error })}
             </div>
           )}
           {isLoading && (
-            <div className="flex items-center justify-center h-full text-gray-400">
+            <div className="flex items-center justify-center h-full text-gray-500">
               {t('doc.loading')}
             </div>
           )}
           {/* Drag/Open prompt — hidden in embed mode (can't drop into an iframe;
               the PDF auto-loads from ?url). */}
           {nothingOpen && openingAtLaunch && (
-            <div className="flex items-center justify-center h-full text-gray-400">
+            <div className="flex items-center justify-center h-full text-gray-500">
               {t('doc.loading')}
             </div>
           )}
@@ -1743,12 +1760,12 @@ export default function App() {
               of them in embed mode. */}
           {chromeless && !file && !isLoading && !error && (
             (locked ? privateMessage : urlError) ? (
-              <div className="flex h-full items-center justify-center px-6 text-center text-sm text-red-300 select-none">
+              <div className="flex h-full items-center justify-center px-6 text-center text-sm text-red-600 select-none">
                 {locked ? privateMessage : urlError}
               </div>
             ) : (
-              <div className="flex h-full items-center justify-center gap-2 text-gray-400 text-sm select-none">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent" />
+              <div className="flex h-full items-center justify-center gap-2 text-gray-500 text-sm select-none">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
                 {t('url.loading')}
               </div>
             )
@@ -1812,8 +1829,8 @@ export default function App() {
           {pdfDoc && (
             <ErrorBoundary>
               <Suspense fallback={
-                <div className="flex h-full items-center justify-center gap-2 text-gray-400 text-sm select-none">
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent" />
+                <div className="flex h-full items-center justify-center gap-2 text-gray-500 text-sm select-none">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
                   {t('url.loading')}
                 </div>
               }>
@@ -1850,6 +1867,7 @@ export default function App() {
           )}
         </main>
       </div>
+      </ActionBar>
 
       {/* Find bar (Ctrl+F) */}
       {showSearch && (pdfDoc || flowDoc) && (

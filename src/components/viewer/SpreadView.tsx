@@ -75,7 +75,7 @@ export function SpreadView({
   }
 
   return (
-    <div className="flex flex-col items-center gap-2 py-4 px-2 overflow-auto h-full bg-gray-300">
+    <div className="flex flex-col items-center gap-2 py-4 px-2 overflow-auto h-full bg-[var(--wz-canvas)]">
       {pairs.map(pair => (
         // Keyed by the first page: rows are re-cut once page sizes arrive, and
         // an index key would hand one row's mounted pages to another.

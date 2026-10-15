@@ -23,7 +23,7 @@ export function UpdateToast({ version, onInstall }: UpdateToastProps) {
     <div
       role="status"
       aria-live="polite"
-      className="fixed top-14 right-4 z-[60] flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-lg border border-sky-700/60 bg-gray-800/95 px-3 py-2 shadow-xl backdrop-blur wz-update-toast"
+      className="fixed top-10 right-4 z-[60] flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-lg border border-sky-700/60 bg-gray-800/95 px-3 py-2 shadow-xl backdrop-blur wz-update-toast"
     >
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-sky-300" aria-hidden="true">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

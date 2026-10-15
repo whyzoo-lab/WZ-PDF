@@ -37,7 +37,9 @@ export function useFitZoom({ pdfDoc, viewMode, rotation, setZoom, viewportRef }:
    * padding and rotation handling — the part that is easy to get subtly wrong.
    */
   const measure = useCallback(async (doc: ViewerDoc, mode: ViewMode, rot: number) => {
-    const page = await doc.getPage(1)
+    // The page it opens at: a picture opened from its folder is fitted, not
+    // the folder's first picture, which may be the other way round.
+    const page = await doc.getPage(doc.startPage ?? 1)
     const vp = page.getViewport({ scale: PDF_RENDER_SCALE })
     const isRotated90 = rot === 90 || rot === 270
     const pageW = isRotated90 ? vp.height : vp.width

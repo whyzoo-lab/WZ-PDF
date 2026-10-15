@@ -47,7 +47,7 @@ export function GridView({ pdfDoc, kind, numPages, rotation, annotations, onPage
   }
 
   return (
-    <div className="grid content-start justify-center p-4 overflow-auto h-full bg-gray-400" style={gridStyle}>
+    <div className="grid content-start justify-center p-4 overflow-auto h-full bg-[var(--wz-canvas)]" style={gridStyle}>
       {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => {
         const span = spanOf(pageNum)
         return (

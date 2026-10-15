@@ -181,7 +181,8 @@ same shortcuts as a PDF. What is new since 1.25 is that the document is a
 
 - **One picture opened from disk brings its folder** (`collectionForImage`):
   every picture beside it, in Explorer's natural order, opened at itself
-  (`startPage`; App scrolls there once the fit zoom has settled). The folder
+  (`startPage`; App **jumps** there once the fit zoom has settled — a smooth
+  scroll mounted every page on the way and each began reading its file). The folder
   comes from `list-folder-images` (main), which takes only the folder of a
   picture `read-file` would accept, returns names and sizes only (each file is
   still read through `read-file`), caps at 2,000 around the opened one, and
@@ -197,12 +198,25 @@ same shortcuts as a PDF. What is new since 1.25 is that the document is a
   (delete, reorder, insert blank, "add images" — `services/imageSetOps.ts`)
   produce a new manifest and go through `setFile`, exactly as a PDF page edit
   replaces its bytes, so undo/redo and annotation remapping work unchanged.
-- **Nothing is decoded up front.** Page sizes come from file headers
-  (`services/imageInfo.ts`: PNG/JPEG incl. EXIF orientation/GIF/BMP/WebP/TIFF),
-  a picture is decoded when its page is drawn and dropped once painted. A
-  thumbnail decodes at thumbnail size (unrotated pictures only — whether
-  `createImageBitmap`'s resize box is before or after EXIF rotation is not
-  something to bet on).
+- **Nothing is read up front but the folder listing.** A collection
+  is built from names; only TIFFs are read, to count their pages. A page reads
+  its file's header (`services/imageInfo.ts`: PNG/JPEG incl. EXIF
+  orientation/GIF/BMP/WebP/TIFF) when it is first asked for (`getPage`), and
+  until then `pageSizeHint` guesses the opened picture's size, which
+  `utils/pagePlaceholder.ts` uses for unmounted and still-loading pages. A file
+  that turns out not to be a picture is a grey page saying so, not a gap.
+  Measured on 52 camera JPEGs (8 MB each) on an SMB share, opening the 40th:
+  **20 s → 1.2-1.8 s** to its page on screen. Before, every header was read
+  first (2.3 s cold), then the smooth scroll to it started 40 whole-file reads
+  ahead of it.
+- **Reads** (`services/imageSources.ts`) go through one queue, **newest
+  first**, three at a time, so the page on screen is served before pages
+  scrolled past; and whole files stay in a 192 MB LRU, so a zoom re-render or
+  a thumbnail does not read the same 8 MB again.
+- A picture is decoded when its page is drawn, at the size it is drawn when
+  that is much smaller, and dropped once painted. The resize box is in the
+  EXIF-turned size: checked in the app's Chromium (orientation 6, 4032x3024),
+  the resized decode matched a full decode drawn small.
 - **Page size**: pixels, but the longest side capped at `PAGE_MAX` (1600 pt),
   or a 9000-px photo was eleven times the screenshot beside it and a 9000-pt
   PDF page. The raster is capped too (`clampRaster`: 16,384 px a side, 64 M px):
@@ -675,15 +689,10 @@ All state lives in `App.tsx` (no external store). Key state:
 
 ```
 App
-├── ActionBar          ← Top bar: view/zoom controls, editor tools, Reset markup button, upload/export
-│                        Chrome-style flat chrome: every control is a rounded-full
-│                        ghost button (no idle background), groups are separated by
-│                        whitespace rather than 1px rules, and editing is one pencil
-│                        `role="switch"` instead of a segmented viewer/editor
-│                        control. A padlock in this bar means a password, never
-│                        a mode — see "Encrypted documents". BTN_ACTIVE is a soft wash for "which
-│                        view am I in"; BTN_ARMED keeps the saturated accent for a
-│                        drawing tool, because that changes what the next click does.
+├── ActionBar          ← The chrome: tool rail (+ edit rail while editing) on the left,
+│                        thin title bar on top, the document area as its children —
+│                        see "Toolbar layout". A padlock means a password, never a mode
+│                        (see "Encrypted documents"); editing is the pencil switch.
 ├── PagePanel          ← Left sidebar: thumbnail strip, multi-select, drag-reorder, add/delete pages
 │                        readOnly={appMode === 'viewer'} — visible in both viewer and editor modes
 ├── Toast              ← Fixed bottom-center auto-dismissing notification (2500ms)
@@ -722,7 +731,7 @@ spans as many columns as it needs. Sizes come from the same `usePageSizes`.
 
 - `PdfPage` and `AnnotationLayer` are wrapped in `React.memo`.
 - `pageAnnotations` inside `PdfPage` is memoized with `useMemo` — gives `AnnotationLayer` a stable reference.
-- Ctrl+scroll zoom is handled via a passive-false wheel listener on `<main>` in App.tsx (disabled in `fullscreen` and `grid` modes).
+- Ctrl+scroll zoom is handled via a passive-false wheel listener on `<main>` in App.tsx (disabled in `fullscreen` and `grid` modes). It zooms **around the pointer** (`utils/zoomAnchor.ts`): the page under it and the point on it as fractions, restored in a layout effect on `zoom` — not the scroll offset times the zoom ratio, which drifts by the unscaled gaps between pages.
 - `PdfViewer` is `React.memo`: every prop App passes is stable, so the page list is not rebuilt when the page in view changes, read-aloud ticks, or a toast shows.
 - **Zoom does not rebuild text layers.** `PdfTextLayer` renders once per page (and rotation); a zoom calls pdfjs `TextLayer.update`, since position and font size already follow `--total-scale-factor` in CSS. Rebuilding meant a fresh `getTextContent` from the worker for every mounted page on every zoom step, the page on screen queued behind the rest, and the reader's selection lost.
 - **Find re-renders only what it touches.** Match → item mapping is one forward pass per page (it was matches × items), and moving to the next match swaps the highlight array of two pages only (`PdfViewer` keeps every other page's array identical, so memoised pages skip).
@@ -824,49 +833,40 @@ Page CRUD operations are handled by pure functions in `src/services/pdfPageServi
 - `readOnly` prop: hides toolbar, disables drag, disables Delete key listener — used in Viewer mode
 - Delete key shortcut: fires `handleDelete` when `!readOnly && selected.size > 0` and focus is not in an input/textarea
 
-### Toolbar layout
+### Toolbar layout: a side rail and a thin title bar
 
-Two rows, not one. The top bar navigates the document; the second appears only
-in editor mode and changes it. Folding the editing tools into the top bar was
-also what pushed it into its collapsed (hamburger) layout the moment editing
-was switched on.
+Modelled on KakaoTalk's PC window at the reader's request. What used to be one
+48 px bar with twenty controls, folded into two hamburger menus whenever the
+window narrowed, is now:
 
-**The file name is centred with `position: absolute`, and that has two
-consequences.**
+- **Tool rail** (`ToolRail`, dark, 52 px, full height): the logo (the window's
+  drag handle), then file (open, save, print, video) · view (page list,
+  layout menu, rotate menu, fullscreen, notes) · tools (find, OCR menu,
+  read aloud, eraser), with the edit switch and the padlock pinned at the end.
+- **Edit rail** beside it while editing a page document: undo, redo, select,
+  stamp, signature, watermark, delete — each with a caption, since those
+  glyphs are not self-explanatory.
+- **Title bar** (`TitleBar`, 32 px, `--wz-canvas`, the page background's
+  colour): the name centred, page counter and zoom on the right, then the OS
+  window buttons (`titleBarOverlay`, height 32, same colour, dark symbols).
+  `.wz-titlebar` / `.wz-drag` are the drag regions; a class rather than
+  `header`, since Markdown and mail have headers of their own.
+- **Phones** (< 600 px, `useWide` in `ActionBar`; a desktop window snapped to half a small screen keeps the side rail): the same rails become
+  bars along the bottom; the title bar stays.
 
-`useToolbarCollapse` decides whether to fold the bar by summing its children's
-widths — and an `absolute inset-0` child reports the width of the *whole bar*,
-so counting it guaranteed the sum always exceeded the available space and left
-the toolbar permanently collapsed at every window size. The measurement now
-skips absolutely-positioned children. Anything else added as an overlay must
-stay out of that sum too.
+Every control is one `RailItem` (`toolbar/rail.tsx`): label, icon, action or
+`menu`, state. The rail, the phone's bottom bar and the "..." overflow all
+draw that one list, so they cannot drift apart the way the expanded and
+collapsed copies of the old bar did. Menus open as a `RailFlyout` (portalled
+beside the button, kept on screen, closed by Escape or a click outside). When
+the rail is too short, `itemsThatFit` (`railLayout.ts`) keeps what fits plus a
+"..." button, and the rest go into its menu — the end of the list first,
+which is what is reached for least. Save is a menu now (PDF first, Ctrl+S
+still saves directly), so "Save as PDF" is in it for a PDF as well.
 
-And because it is centred on the *bar* rather than on the space left over, it
-can print straight through the controls at in-between widths. No breakpoint can
-fix that: the clusters' widths depend on the format, the mode and whether
-anything is selected, so the same window width leaves a different amount of room
-from one document to the next. `ActionBar` measures instead — a centred box only
-clears both clusters if it is narrower than `barWidth - 2 x widerCluster`, and
-below `TITLE_MIN_WIDTH` of room the name is hidden rather than crowded. The
-measurement is applied to the node directly, not through state, because it runs
-on every resize. It listens to **both** a ResizeObserver and `window.resize`:
-the observer catches the bar changing width on its own (a panel opening), and
-the window event covers the case where Chromium defers the observer because the
-window is not on screen.
-
-In the collapsed layout the name shares the middle with the page counter, since
-that is the only place a narrow bar has room for it; `flex-1 min-w-0` is what
-actually centres that block between two clusters of unequal width.
-
-**Words for a desktop app, not a web service.** Open is a folder icon and
-"파일 열기" (it opens every format, not just PDF); saving is a disk icon and
-"PDF로 저장 (Ctrl+S)" — the old upload/download arrows and "PDF 다운로드" read
-as a website's verbs. Ctrl+S is real: the document's own save (PDF for pages,
-the source while editing Markdown), and it works from inside the Markdown
-textarea. OCR is one button (this page) plus a chevron menu for the range; the
-second button labelled `ALL` meant nothing until hovered. The editing row
-labels its tools (선택 · 도장 · 서명 · 워터마크) from `md` up, since their glyphs
-are not self-explanatory, and starts with undo / redo.
+`ActionBar` keeps its props and lays the chrome out around the document area
+App gives it as `children`; floating bars moved with it (find and update
+below the title bar, read-aloud and toasts above a phone's bottom bar).
 
 Keyboard: `R` recognizes the page, `RR` the whole document, `S` reads aloud.
 The single-press action is deliberately deferred by 350 ms so a second press can
@@ -1502,7 +1502,7 @@ it when the guide changes.
 `public/screenshots/` holds the README's and the landing page's screenshots
 (one copy for both; `docs/` is not deployed to Pages). They are website-only,
 so `electron-builder.json5` leaves them out of the app (`!dist/screenshots/**`).
-They were taken from a packaged build over CDP with made-up sample documents —
+They were taken from a packaged build driven over CDP and captured as the whole window (PrintWindow, so the window buttons at the end of the title bar show), with made-up sample documents —
 never a user's own files, since they are public.
 
 ### Distribution (Windows)

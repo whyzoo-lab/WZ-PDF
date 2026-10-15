@@ -61,7 +61,7 @@ export function SearchBar({
   const counter = !hasQuery ? '' : isSearching ? '…' : total === 0 ? t('search.noResults') : `${activeIndex + 1} / ${total}`
 
   return (
-    <div className="fixed top-16 right-4 z-50 flex items-center gap-1 rounded-lg border border-gray-600 bg-gray-800 px-2 py-1.5 shadow-2xl no-print">
+    <div className="fixed top-10 right-4 z-50 flex items-center gap-1 rounded-lg border border-gray-600 bg-gray-800 px-2 py-1.5 shadow-2xl no-print">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 text-gray-400 shrink-0">
         <circle cx="9" cy="9" r="6" />
         <path d="M14 14l4 4" strokeLinecap="round" />

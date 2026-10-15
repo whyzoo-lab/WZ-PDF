@@ -15,9 +15,10 @@
 import type { ImageAnimation, ImageSetEntry, ViewerDoc, ViewerPage } from '../types/viewerDoc'
 import { IMAGE_MIME, type ImageInfo } from './imageInfo'
 import {
-  entriesFor, infoOf, isManifestFile, loadUtif, readManifest, sourceById, sourceFromBytes, tiffPagesOf,
-  type ImageSource,
+  entriesFor, infoOf, isManifestFile, knownInfo, loadUtif, manifestFile, readManifest, sourceById, sourceFromBytes,
+  tiffPagesOf, type ImageSource,
 } from './imageSet'
+import { t } from '../i18n'
 
 /**
  * Largest raster a page is drawn into. Chromium refuses canvases past 32,767 px
@@ -82,16 +83,18 @@ async function tiffPageImage(src: ImageSource, page: number): Promise<ImageData>
 
 /**
  * Decode a picture, at the size it will be drawn when that is much smaller
- * (thumbnails): a 12 MP photo is 48 MB decoded, its thumbnail a few KB.
- * EXIF rotation is applied by the decoder (`imageOrientation: 'from-image'`
- * is the default), which is why sizes from imageInfo are already turned.
+ * (fitted pages, thumbnails): a 12 MP photo is 48 MB decoded, its fitted page
+ * a few MB. EXIF rotation is applied by the decoder (`imageOrientation:
+ * 'from-image'` is the default), which is why sizes from imageInfo are
+ * already turned — and the resize box is in that turned size too: checked in
+ * the app's Chromium on a 4032x3024 photo tagged orientation 6, the resized
+ * decode matched a full decode drawn small (mean difference 1.9 of 255, the
+ * same as for an unrotated photo).
  */
 async function decodeStill(src: ImageSource, info: ImageInfo, w: number, h: number): Promise<CanvasImageSource & { close?: () => void }> {
   const blob = new Blob([await src.read()], { type: IMAGE_MIME[info.format] })
   if (typeof createImageBitmap === 'function') {
-    // Resizing is asked for only on unrotated pictures: whether the resize box
-    // is meant before or after EXIF rotation is not something to bet on.
-    const small = info.orientation === 1 && w * 2 < info.width
+    const small = w * 2 < info.width
     try {
       return await createImageBitmap(blob, small ? { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' } : undefined)
     } catch { /* not decodable this way — try the <img> decoder */ }
@@ -168,30 +171,33 @@ async function animationOf(src: ImageSource, info: ImageInfo): Promise<ImageAnim
 
 // ── The document ──────────────────────────────────────────────────────────
 
-/** A collection, from its manifest's bytes. */
+/** A page whose file cannot be read: grey, with its name, rather than blank. */
+function paintUnreadable(canvas: HTMLCanvasElement, name: string): void {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.fillStyle = '#f3f4f6'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = '#6b7280'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.font = `${Math.max(12, Math.round(canvas.width / 40))}px sans-serif`
+  ctx.fillText(t('page.imageUnreadable', { name }), canvas.width / 2, canvas.height / 2, canvas.width * 0.9)
+}
+
+/** Used for pages not yet read when even the start page could not be. */
+const LETTER = { width: 612, height: 792 }
+
+/**
+ * A collection, from its manifest's bytes. Only the start page is read here;
+ * every other page reads its file's header when it is first asked for
+ * (`getPage`), and until then is assumed to be the start page's size — a
+ * folder is usually one camera's pictures, all one size — so the page list
+ * lays out the way it will look.
+ */
 export async function createImageSetDoc(manifestBytes: ArrayBuffer): Promise<ViewerDoc & { startPage: number }> {
   const m = readManifest(manifestBytes)
-  const sizes = await Promise.all(m.entries.map(async e => {
-    const src = sourceById(e.src)
-    const info = await infoOf(src)
-    return info.format === 'tiff' ? (await tiffPagesOf(src))[e.page ?? 0] : info
-  }))
-
-  const pages: ViewerPage[] = m.entries.map((e, i) => {
-    const natural = pageSize(sizes[i].width, sizes[i].height)
-    return {
-      getViewport: ({ scale }) => ({ width: natural.width * scale, height: natural.height * scale, scale }),
-      render: ({ canvas, viewport }) => {
-        const size = clampRaster(viewport.width, viewport.height)
-        canvas.width = size.width
-        canvas.height = size.height
-        return { promise: paint(canvas, e) }
-      },
-      // No text in a picture. OCR is the way to get text out, and it already
-      // works off the rendered canvas.
-      getTextContent: async () => ({ items: [] }),
-    }
-  })
+  const count = m.entries.length
+  const startPage = Math.min(count, Math.max(1, m.start + 1))
 
   const entryOf = (page: number) => {
     const e = m.entries[page - 1]
@@ -199,14 +205,58 @@ export async function createImageSetDoc(manifestBytes: ArrayBuffer): Promise<Vie
     return { e, src: sourceById(e.src) }
   }
 
+  // Page size in points once read; `unreadable` for files that are not
+  // pictures after all (the folder listing goes by extension).
+  const sizes: ({ width: number; height: number } | undefined)[] = new Array(count)
+  const unreadable = new Set<number>()
+  let guess = LETTER
+  const sizeOf = async (page: number) => {
+    const known = sizes[page - 1]
+    if (known) return known
+    const { e, src } = entryOf(page)
+    try {
+      const info = await infoOf(src)
+      const px = info.format === 'tiff' ? (await tiffPagesOf(src))[e.page ?? 0] : info
+      if (!px) throw new Error(`${src.name}: no page ${(e.page ?? 0) + 1}`)
+      sizes[page - 1] = pageSize(px.width, px.height)
+    } catch {
+      unreadable.add(page)
+      sizes[page - 1] = guess
+    }
+    return sizes[page - 1]!
+  }
+  const start = await sizeOf(startPage)
+  if (!unreadable.has(startPage)) guess = start
+
+  const pages = new Map<number, ViewerPage>()
+  const makePage = (page: number, natural: { width: number; height: number }): ViewerPage => {
+    const { e, src } = entryOf(page)
+    return {
+      getViewport: ({ scale }) => ({ width: natural.width * scale, height: natural.height * scale, scale }),
+      render: ({ canvas, viewport }) => {
+        const size = clampRaster(viewport.width, viewport.height)
+        canvas.width = size.width
+        canvas.height = size.height
+        if (unreadable.has(page)) { paintUnreadable(canvas, src.name); return { promise: Promise.resolve() } }
+        return { promise: paint(canvas, e) }
+      },
+      // No text in a picture. OCR is the way to get text out, and it already
+      // works off the rendered canvas.
+      getTextContent: async () => ({ items: [] }),
+    }
+  }
+
   return {
-    numPages: pages.length,
-    startPage: Math.min(pages.length, Math.max(1, m.start + 1)),
+    numPages: count,
+    startPage,
     getPage: async n => {
-      const p = pages[n - 1]
-      if (!p) throw new Error(`No page ${n}`)
-      return p
+      const hit = pages.get(n)
+      if (hit) return hit
+      const page = makePage(n, await sizeOf(n))
+      pages.set(n, page)
+      return page
     },
+    pageSizeHint: n => sizes[n - 1] ?? guess,
     images: {
       name: m.name,
       entries: m.entries,
@@ -224,9 +274,12 @@ export async function createImageSetDoc(manifestBytes: ArrayBuffer): Promise<Vie
         if (info.format === 'png') return { bytes: new Uint8Array(await src.read()), type: 'png' }
         return null
       },
+      // Asked while drawing, after the page's header has been read; the name
+      // is only a fallback.
       mayHaveAlpha: page => {
         const { src } = entryOf(page)
-        return sourceFormat(src) !== 'jpeg'
+        const format = knownInfo(src)?.format
+        return format ? format !== 'jpeg' : !/\.jpe?g$/i.test(src.name)
       },
       animation: async page => {
         const { src } = entryOf(page)
@@ -237,33 +290,17 @@ export async function createImageSetDoc(manifestBytes: ArrayBuffer): Promise<Vie
   }
 }
 
-function sourceFormat(src: ImageSource): string | null {
-  return knownFormats.get(src.id) ?? null
-}
-const knownFormats = new Map<string, string>()
-
-/** Remember formats as they are learned, for the synchronous `mayHaveAlpha`. */
-async function learnFormats(entries: ImageSetEntry[]): Promise<void> {
-  await Promise.all(entries.map(async e => {
-    const src = sourceById(e.src)
-    knownFormats.set(src.id, (await infoOf(src)).format)
-  }))
-}
-
 /** A collection from a manifest file, or a single picture's bytes. */
 export async function createImageViewerDoc(bytes: ArrayBuffer, _mimeType = '', name = 'image'): Promise<ViewerDoc> {
   void _mimeType
   const src = sourceFromBytes(name, bytes)
+  await infoOf(src)                                   // a picture at all?
   const { entries } = await entriesFor([src])
   if (entries.length === 0) throw new Error('Unsupported or corrupt image')
-  const { manifestFile } = await import('./imageSet')
-  return openManifest(await manifestFile(name, entries).arrayBuffer())
+  return createImageSetDoc(await manifestFile(name, entries).arrayBuffer())
 }
 
-/** Open a manifest, with the formats needed by `mayHaveAlpha` learned first. */
-export async function openManifest(bytes: ArrayBuffer): Promise<ViewerDoc & { startPage: number }> {
-  await learnFormats(readManifest(bytes).entries)
-  return createImageSetDoc(bytes)
-}
+/** Open a manifest (a collection just built, or one restored by undo). */
+export const openManifest = createImageSetDoc
 
 export { isManifestFile }

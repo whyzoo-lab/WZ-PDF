@@ -202,13 +202,7 @@ export const IconLockOpen = () => (
   </Icon>
 )
 
-export const IconChevron = () => (
-  <Icon className="w-3 h-3"><path d="M6 9l6 6 6-6" /></Icon>
-)
 /** Hamburger — collapsed left cluster. */
-export const IconMenu = () => (
-  <Icon className="w-5 h-5"><path d="M4 6h16M4 12h16M4 18h16" /></Icon>
-)
 /** Vertical dots — collapsed right (actions) cluster. */
 export const IconMore = () => (
   <Icon className="w-5 h-5">
@@ -331,4 +325,18 @@ export const IconSave = () => (
     <path d="M8 3.5v5h7v-5" />
     <rect x="7.5" y="13" width="9" height="7" rx="0.5" />
   </Icon>
+)
+
+// ── Rail ────────────────────────────────────────────────────────────────────
+/** A magnifier: find in the document (Ctrl+F). */
+export const IconSearch = () => (
+  <Icon><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></Icon>
+)
+/** A page beside lines: the page list. */
+export const IconPages = () => (
+  <Icon><rect x="3.5" y="4" width="8" height="16" rx="1.2" /><path d="M15 7.5h5.5M15 12h5.5M15 16.5h5.5" /></Icon>
+)
+/** A slide over lines of script: the speaker notes. */
+export const IconNotes = () => (
+  <Icon><rect x="3.5" y="3.5" width="17" height="9.5" rx="1.2" /><path d="M5 16.5h14M5 20h9" /></Icon>
 )

@@ -214,7 +214,7 @@ function PdfViewerImpl({
 
   // Default: single mode (vertically stacked pages, lazy-loaded by viewport)
   return (
-    <div ref={singleScrollRef} className="flex flex-col items-center gap-4 py-6 px-4 overflow-auto h-full bg-gray-300" id="pdf-single-container">
+    <div ref={singleScrollRef} className="flex flex-col items-center gap-4 py-6 px-4 overflow-auto h-full bg-[var(--wz-canvas)]" id="pdf-single-container">
       {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
         <div key={pageNum} id={`pdf-page-${pageNum}`} data-page-num={pageNum} className="shadow-xl">
           <LazyPdfPage

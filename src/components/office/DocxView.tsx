@@ -207,7 +207,7 @@ export function DocxView({
           onPick={goTo}
         />
       )}
-      <div ref={scrollRef} onScroll={onScrollPages} className="h-full min-w-0 flex-1 overflow-auto bg-gray-300">
+      <div ref={scrollRef} onScroll={onScrollPages} className="h-full min-w-0 flex-1 overflow-auto bg-[var(--wz-canvas)]">
         {/* CSS zoom rather than a transform: it changes layout size too, so the
             scrollbars match what is on screen. On a wrapper, not the marked
             element, so printing (which clones that element) is not zoomed. */}

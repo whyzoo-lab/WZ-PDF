@@ -16,6 +16,7 @@ import { annotationsForPage } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
 import { toStoredCoords } from '../../utils/coordinates'
 import { PAGE_ATTR, PDF_RENDER_SCALE } from '../../utils/constants'
+import { pagePlaceholder } from '../../utils/pagePlaceholder'
 import { sampleBackgroundColor } from '../../utils/sampleBgColor'
 
 // Visual constants for volatile markups
@@ -264,12 +265,10 @@ function PdfPageInner({
   const isRotated90 = rotation === 90 || rotation === 270
 
   if (isLoading || !pageData) {
-    // Swap placeholder w/h when rotated 90/270
-    const pw = isRotated90 ? 800 * zoom : 600 * zoom
-    const ph = isRotated90 ? 600 * zoom : 800 * zoom
+    const box = pagePlaceholder(pdfDoc, pageNumber, zoom, rotation)
     return (
       <div
-        style={{ width: pw, height: ph }}
+        style={{ width: box.width, height: box.height }}
         className="bg-gray-100 animate-pulse flex items-center justify-center"
       >
         <span className="text-gray-400 text-sm">{t('page.loading', { n: pageNumber })}</span>
@@ -527,6 +526,12 @@ function PdfPageInner({
               y={0}
               width={renderedW}
               height={renderedH}
+              // Konva calls preventDefault() on a touchstart that lands on a
+              // shape with this on (every shape's default), and the picture
+              // covers the whole page: on a phone a swipe on the page never
+              // scrolled, only one in the grey margin did. The pen and the
+              // rectangle still hold the page so a stroke does not scroll it.
+              preventDefault={isDrawing}
             />
           </Layer>
           {/* Only on pages that have annotations. Every Konva layer allocates a

@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useRef, useState, memo } from 'react'
 import { PdfPage } from './PdfPage'
 import { useInViewport } from '../../hooks/useInViewport'
-import { PDF_RENDER_SCALE } from '../../utils/constants'
+import { pagePlaceholder } from '../../utils/pagePlaceholder'
 import type { ViewerDoc, DocKind } from '../../types/viewerDoc'
 import type { Annotation, ActiveMode, OmitId, PendingStamp } from '../../types/annotation'
 import type { AppMode } from '../../types/viewModes'
-
-// US Letter dimensions in PDF points × render scale — used as a placeholder
-// size before the real page viewport is known.
-const PLACEHOLDER_W = 612 * PDF_RENDER_SCALE
-const PLACEHOLDER_H = 792 * PDF_RENDER_SCALE
 
 interface LazyPdfPageProps {
   pdfDoc: ViewerDoc
@@ -55,11 +50,9 @@ export const LazyPdfPage = memo(function LazyPdfPage(props: LazyPdfPageProps) {
     if (el) setHeld({ w: el.offsetWidth, h: el.offsetHeight, zoom: zoomRef.current, rotation: props.rotation })
   }, [props.rotation])
   const inView = useInViewport(ref, { onLeave })
-  const isRotated90 = props.rotation === 90 || props.rotation === 270
-
-  // Swap placeholder dimensions when rotated 90/270
-  let pw = isRotated90 ? PLACEHOLDER_H * props.zoom : PLACEHOLDER_W * props.zoom
-  let ph = isRotated90 ? PLACEHOLDER_W * props.zoom : PLACEHOLDER_H * props.zoom
+  const guess = pagePlaceholder(props.pdfDoc, props.pageNumber, props.zoom, props.rotation)
+  let pw = guess.width
+  let ph = guess.height
   if (held && held.rotation === props.rotation && held.w > 0 && held.h > 0) {
     const k = props.zoom / held.zoom
     pw = held.w * k
