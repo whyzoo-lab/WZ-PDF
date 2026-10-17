@@ -54,6 +54,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeRecentFile: (filePath: string): Promise<{ path: string; openedAt: number }[]> => ipcRenderer.invoke('recent:remove', filePath),
   clearRecentFiles: (): Promise<{ path: string; openedAt: number }[]> => ipcRenderer.invoke('recent:clear'),
 
+  /** Theme and reading colours (electron/appearance.ts). */
+  appearanceGet: (): Promise<unknown> => ipcRenderer.invoke('appearance:get'),
+  appearanceSet: (value: unknown): Promise<unknown> => ipcRenderer.invoke('appearance:set', value),
+  setTitleBarTheme: (dark: boolean): void => ipcRenderer.send('appearance:titlebar', dark),
+
+  /** The name written on comments (electron/commentAuthor.ts). */
+  commentAuthorGet: (): Promise<string> => ipcRenderer.invoke('comment-author:get'),
+  commentAuthorSet: (name: string): Promise<string> => ipcRenderer.invoke('comment-author:set', name),
+
+  /** Autosave and crash recovery (electron/recovery.ts). */
+  recoverySave: (record: unknown, body: ArrayBuffer | null): Promise<void> => ipcRenderer.invoke('recovery:save', record, body),
+  recoveryRemove: (key: string): Promise<void> => ipcRenderer.invoke('recovery:remove', key),
+  recoveryList: (): Promise<{ key: string; name: string; path?: string; savedAt: number }[]> => ipcRenderer.invoke('recovery:list'),
+  recoveryRead: (key: string): Promise<{ entry: { key: string; name: string; path?: string; modified: boolean; annotations: unknown[]; markdownText?: string; savedAt: number }; body: ArrayBuffer | null } | null> =>
+    ipcRenderer.invoke('recovery:read', key),
+  recoveryDiscard: (): Promise<void> => ipcRenderer.invoke('recovery:discard'),
+
   /** Download a PDF from an http(s) URL via the main process (bypasses CORS). */
   fetchUrl: (url: string): Promise<ArrayBuffer> =>
     ipcRenderer.invoke('fetch-url', url),

@@ -109,6 +109,57 @@ Full license: `node_modules/mediabunny/LICENSE`
 
 ---
 
+## PdfCraft — Apache License 2.0 / MIT (designs and algorithms adapted)
+
+> Copyright the PdfCraft contributors. Source: <https://github.com/storytold/pdfcraft>,
+> dual-licensed Apache-2.0 / MIT. No PdfCraft code ships with this app; these
+> parts were rewritten in TypeScript after its designs and algorithms:
+> the command-palette ranking (`palette.rs` → `src/components/toolbar/commandSearch.ts`),
+> the autosave / crash-recovery store (`recovery.rs` → `electron/recovery.ts`),
+> find-as-you-type behaviour (`canvas.rs`, `text/search.rs` → `src/hooks/useSearch.ts`,
+> `src/services/textSearch.ts`), the outline filter that keeps parents visible,
+> the theme / reading-colours settings, and the comments: text markup and
+> notes saved as PDF annotations with appearance streams (`crates/annot` →
+> `src/services/pdfComments.ts`), read back from a file
+> (`src/services/pdfCommentImport.ts`), and the comments panel
+> (`comments_panel.rs` → `src/components/comments/`); form filling
+> (`crates/forms` → `src/services/pdfForms.ts`) and Fill & Sign
+> (`fill_sign.rs` → `src/components/fill/`); the page-import and pruning
+> rules that keep links, bookmarks and fields working (`crates/organize`
+> → `src/services/pdfStructure.ts`); and the word comparison
+> (`crates/compare` → `src/services/textCompare.ts`).
+
+---
+
+## PKI.js (pkijs) and ASN1.js (asn1js) — BSD 3-Clause License
+
+> PKI.js: Copyright (c) 2014, GlobalSign; Copyright (c) 2015-2019, Peculiar Ventures.
+> ASN1.js: Copyright (c) 2014, GMO GlobalSign; Copyright (c) 2015-2022, Peculiar Ventures.
+> Author 2014-2019, Yury Strozhevsky. <https://github.com/PeculiarVentures/PKI.js>,
+> <https://github.com/PeculiarVentures/ASN1.js>. Used to read, check and create
+> CMS (PKCS #7) signatures and to open PKCS #12 certificate files.
+>
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are met:
+> 1. Redistributions of source code must retain the above copyright notice, this
+>    list of conditions and the following disclaimer.
+> 2. Redistributions in binary form must reproduce the above copyright notice,
+>    this list of conditions and the following disclaimer in the documentation
+>    and/or other materials provided with the distribution.
+> 3. Neither the name of the copyright holder nor the names of its contributors
+>    may be used to endorse or promote products derived from this software
+>    without specific prior written permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+> ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+> WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+> DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+> FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+> DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+> THE POSSIBILITY OF SUCH DAMAGE.
+
+---
+
 ## hucre — MIT License
 
 > Copyright (c) 2026 productdevbook. Licensed under the MIT License.

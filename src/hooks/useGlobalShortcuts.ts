@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
-import { LANG } from '../i18n'
+import { openHelp } from '../utils/openHelp'
 import type { ViewMode, AppMode } from '../types/viewModes'
 import type { ViewerDoc } from '../types/viewerDoc'
-import { isVolatile, type Annotation, type ActiveMode } from '../types/annotation'
+import { isVolatile, type Annotation, type ActiveMode, isMarkupMode } from '../types/annotation'
 
 interface GlobalShortcutsDeps {
   pdfDoc: ViewerDoc | null
@@ -138,12 +138,7 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
         // web fallback opens a new tab pointing at the same static asset).
         // Korean locale → help.html, everything else → help.en.html.
         e.preventDefault()
-        const helpFile = LANG === 'ko' ? 'help.html' : 'help.en.html'
-        if (window.electronAPI?.openHelp) {
-          window.electronAPI.openHelp(LANG)
-        } else {
-          window.open(`./${helpFile}`, '_blank', 'noopener,noreferrer')
-        }
+        openHelp()
         return
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
@@ -272,7 +267,9 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
       // auto-exiting fullscreen on ESC, giving this handler first crack.
       // Esc puts the stamp down: the stamp tool stays armed after each stamp
       // (so pages can be stamped one after another), and this is how it ends.
-      if (e.key === 'Escape' && !inPresentation && activeMode === 'stamp') {
+      const armedTool = activeMode === 'stamp' || activeMode === 'note' || activeMode === 'fill'
+        || activeMode === 'redact' || activeMode === 'redactArea' || activeMode === 'signArea' || isMarkupMode(activeMode)
+      if (e.key === 'Escape' && !inPresentation && armedTool) {
         e.preventDefault()
         e.stopImmediatePropagation()
         setActiveMode('select')

@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react'
+import { memo, useContext, useMemo, useRef, useState, useEffect, useCallback } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Stage, Layer, Image as KonvaImage, Line, Rect } from 'react-konva'
 import type Konva from 'konva'
@@ -11,8 +11,22 @@ import type { TextLayerHighlight, TextEditCommit } from './PdfTextLayer'
 import { OcrTextLayer } from './OcrTextLayer'
 import type { OcrPageResult, OcrWord } from '../../types/ocr'
 import { t } from '../../i18n'
-import type { Annotation, ActiveMode, OmitId, PendingStamp } from '../../types/annotation'
-import { annotationsForPage } from '../../types/annotation'
+import type { Annotation, ActiveMode, OmitId, PendingStamp, TextMarkupAnnotation } from '../../types/annotation'
+import { annotationsForPage, isComment, isMarkupMode, isTextMarkup, MARKUP_COLORS, NOTE_SIZE } from '../../types/annotation'
+import { CommentMarks } from '../comments/CommentMarks'
+import { PageComments } from '../comments/PageComments'
+import { CommentContext } from '../comments/commentContext'
+import { FormLayer } from '../forms/FormLayer'
+import { FillLayer } from '../fill/FillLayer'
+import { FillContext } from '../fill/fillContext'
+import { CompareContext } from '../compare/compareContext'
+import { CompareMarks } from '../compare/CompareMarks'
+import { FILL_MARK_SIZE, FILL_TEXT_SIZE, textBox, todayText } from '../../services/fillMarks'
+import type { FillAnnotation, RedactAnnotation } from '../../types/annotation'
+import { RedactMarks } from '../redact/RedactMarks'
+import { SignAreaContext } from '../sign/signContext'
+import { formValuesOf } from '../../services/pdfForms'
+import { boundsOf, commentAt, fromDisplayed, rangeText, selectionToRects } from '../../utils/pageGeometry'
 import type { AppMode } from '../../types/viewModes'
 import { toStoredCoords } from '../../utils/coordinates'
 import { PAGE_ATTR, PDF_RENDER_SCALE } from '../../utils/constants'
@@ -25,6 +39,8 @@ const PEN_STROKE_WIDTH = 14   // PDF points → renders ~21px at zoom=1
 const PEN_OPACITY      = 0.4
 const RECT_COLOR        = '#FF0000'
 const RECT_STROKE_WIDTH = 2   // PDF points
+
+const NO_MARKS: never[] = []
 
 /** Light grey squares behind a transparent picture. */
 const CHECKERBOARD = {
@@ -116,6 +132,10 @@ function PdfPageInner({
   }, [])
 
   const [draft, setDraft] = useState<PenDraw | RectDraw | null>(null)
+  // Read when a drag ends: a box drawn with the redaction tool is a mark.
+  const activeModeRef = useRef(activeMode)
+  const signArea = useContext(SignAreaContext)
+  useEffect(() => { activeModeRef.current = activeMode })
   const draftRef = useRef<PenDraw | RectDraw | null>(null)
 
   // ── Ctrl+drag region → OCR → clipboard (view mode) ───────────────────────────
@@ -230,7 +250,12 @@ function PdfPageInner({
       const ny = d.h < 0 ? d.y + d.h : d.y
       const nw = Math.abs(d.w)
       const nh = Math.abs(d.h)
-      if (nw > 2 && nh > 2) {
+      if (nw > 4 && nh > 4 && activeModeRef.current === 'signArea') {
+        signArea?.(pageNumber, { x: nx, y: ny, width: nw, height: nh })
+      } else if (nw > 2 && nh > 2 && activeModeRef.current === 'redactArea') {
+        const r = { x: nx, y: ny, width: nw, height: nh }
+        onAnnotationAdd({ type: 'redact', page: pageNumber, ...r, rotation: 0, rects: [r], text: '' })
+      } else if (nw > 2 && nh > 2) {
         onAnnotationAdd({
           type: 'rectangle',
           page: pageNumber,
@@ -241,14 +266,14 @@ function PdfPageInner({
         })
       }
     }
-  }, [pageNumber, onAnnotationAdd])
+  }, [pageNumber, onAnnotationAdd, signArea])
 
   // Window-level mouseup safety net: in spread mode the cursor often crosses
   // from one page's Stage to the other (or to gray margin) before release,
   // which means the originating Stage never sees mouseup and the stroke is
   // orphaned. Listening on window guarantees we always commit on release.
   useEffect(() => {
-    const isDrawingNow = activeMode === 'pen' || activeMode === 'rectangle'
+    const isDrawingNow = activeMode === 'pen' || activeMode === 'rectangle' || activeMode === 'redactArea' || activeMode === 'signArea'
     if (!isDrawingNow) return
     const onUp = () => commitDraft()
     window.addEventListener('mouseup', onUp)
@@ -256,11 +281,66 @@ function PdfPageInner({
   }, [activeMode, commitDraft])
 
   // Memoized per-page filter so AnnotationLayer keeps a stable prop reference
-  // when unrelated annotations change.
+  // when unrelated annotations change. Comments are drawn by their own
+  // overlays (CommentMarks, PageComments), not on a Konva layer.
   const pageAnnotations = useMemo(
     () => annotationsForPage(annotations, pageNumber),
     [annotations, pageNumber],
   )
+  const layerAnnotations = useMemo(() => pageAnnotations.filter(a => !isComment(a) && a.type !== 'formValue' && a.type !== 'fill' && a.type !== 'redact'), [pageAnnotations])
+  const redactMarks = useMemo(() => pageAnnotations.filter((a): a is RedactAnnotation => a.type === 'redact'), [pageAnnotations])
+  const fillItems = useMemo(() => pageAnnotations.filter((a): a is FillAnnotation => a.type === 'fill'), [pageAnnotations])
+  const { tool: fillTool } = useContext(FillContext)
+  const compare = useContext(CompareContext)
+  // Form values are kept by field name, not page: a field can have a widget on several pages.
+  const formValues = useMemo(() => formValuesOf(annotations), [annotations])
+  const pageComments = useMemo(() => pageAnnotations.filter(isComment), [pageAnnotations])
+  const pageMarkups = useMemo(() => pageComments.filter(isTextMarkup), [pageComments])
+
+  // ── Highlight / underline / strike-through from a text selection ─────────
+  // With one of those tools armed, letting go of a selection marks it. The
+  // selection can start on another page or end in the margin, so this listens
+  // on the document and takes only the part of it that lies on this page:
+  // a selection across a page break marks both pages.
+  const pageRef = useRef<HTMLDivElement>(null)
+  const { author } = useContext(CommentContext)
+  useEffect(() => {
+    if (!(isMarkupMode(activeMode) || activeMode === 'redact') || !pageData) return
+    const type = activeMode
+    const onUp = () => {
+      const sel = window.getSelection()
+      const el = pageRef.current
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !el) return
+      const range = sel.getRangeAt(0)
+      if (!range.intersectsNode(el)) return
+      const mine = range.cloneRange()
+      if (!el.contains(mine.startContainer)) mine.setStart(el, 0)
+      if (!el.contains(mine.endContainer)) mine.setEnd(el, el.childNodes.length)
+      const z = PDF_RENDER_SCALE * zoom
+      const rects = selectionToRects(mine.getClientRects(), el.getBoundingClientRect(), pageData.width * zoom, pageData.height * zoom, rotation, z)
+      if (rects.length === 0) return
+      const b = boundsOf(rects)
+      if (type === 'redact') {
+        onAnnotationAdd({ type: 'redact', page: pageNumber, ...b, rotation: 0, rects, text: rangeText(mine) })
+        setTimeout(() => window.getSelection()?.removeAllRanges(), 0)
+        return
+      }
+      const markup: OmitId<TextMarkupAnnotation> = {
+        type, page: pageNumber, ...b, rotation: 0, rects,
+        color: MARKUP_COLORS[type], text: rangeText(mine),
+        contents: '', author, createdAt: Date.now(), replies: [],
+      }
+      onAnnotationAdd(markup)
+      // Cleared once every page has had its look at the selection.
+      setTimeout(() => window.getSelection()?.removeAllRanges(), 0)
+    }
+    document.addEventListener('mouseup', onUp)
+    document.addEventListener('touchend', onUp)
+    return () => {
+      document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('touchend', onUp)
+    }
+  }, [activeMode, pageData, zoom, rotation, pageNumber, onAnnotationAdd, author])
 
   const isRotated90 = rotation === 90 || rotation === 270
 
@@ -321,6 +401,32 @@ function PdfPageInner({
       return
     }
 
+    if (pos && activeMode === 'fill') {
+      if (!onPage) return
+      const at = toStoredCoords(pos.x, pos.y, effectiveZoom)
+      if (fillTool === 'text' || fillTool === 'date') {
+        const text = fillTool === 'date' ? todayText() : ''
+        const size = textBox(text, FILL_TEXT_SIZE)
+        // The click is where the line of text starts, at its middle.
+        onAnnotationAdd({ type: 'fill', mark: 'text', text, fontSize: FILL_TEXT_SIZE, color: '#000000', page: pageNumber, x: at.x, y: at.y - size.height / 2, ...size, rotation: 0 })
+      } else {
+        const h = FILL_MARK_SIZE, w = fillTool === 'line' ? h * 3 : h
+        onAnnotationAdd({ type: 'fill', mark: fillTool, text: '', fontSize: 0, color: '#000000', page: pageNumber, x: at.x - w / 2, y: at.y - h / 2, width: w, height: h, rotation: 0 })
+      }
+      return
+    }
+
+    if (pos && activeMode === 'note') {
+      if (!onPage) return
+      const stored = toStoredCoords(pos.x, pos.y, effectiveZoom)
+      onAnnotationAdd({
+        type: 'note', page: pageNumber,
+        x: stored.x, y: stored.y, width: NOTE_SIZE, height: NOTE_SIZE, rotation: 0,
+        color: MARKUP_COLORS.note, contents: '', author, createdAt: Date.now(), replies: [],
+      })
+      return
+    }
+
     if (pos && activeMode === 'signature' && pendingSignature) {
       const stored = toStoredCoords(pos.x, pos.y, effectiveZoom)
       onAnnotationAdd({
@@ -344,8 +450,12 @@ function PdfPageInner({
   const cursor =
     (activeMode === 'stamp' && pendingStamp) ||
     (activeMode === 'signature' && pendingSignature) ||
+    activeMode === 'note' ||
+    activeMode === 'fill' ||
     activeMode === 'pen' ||
-    activeMode === 'rectangle'
+    activeMode === 'rectangle' ||
+    activeMode === 'redactArea' ||
+    activeMode === 'signArea'
       ? 'crosshair'
       : 'default'
 
@@ -368,7 +478,7 @@ function PdfPageInner({
       const next: PenDraw = { kind: 'pen', points: [p.x, p.y] }
       draftRef.current = next
       setDraft(next)
-    } else if (activeMode === 'rectangle') {
+    } else if (activeMode === 'rectangle' || activeMode === 'redactArea' || activeMode === 'signArea') {
       const p = getPointerStored(e)
       if (!p) return
       const next: RectDraw = { kind: 'rect', x: p.x, y: p.y, w: 0, h: 0 }
@@ -395,7 +505,7 @@ function PdfPageInner({
 
   const handleMouseUp = commitDraft
 
-  const isDrawing = activeMode === 'pen' || activeMode === 'rectangle'
+  const isDrawing = activeMode === 'pen' || activeMode === 'rectangle' || activeMode === 'redactArea' || activeMode === 'signArea'
 
   // ── Ctrl+drag region → OCR → clipboard ─────────────────────────────────────
   // Active only in view/select mode (not while a markup tool is selected) and
@@ -476,11 +586,32 @@ function PdfPageInner({
 
   const readableText = hasPdfText || hasHwpText || !!(ocrResult && ocrResult.words.length > 0)
 
+  // A click on a highlight opens its comment; a click elsewhere on the page
+  // closes the one that is open. Found by position, because the text layer
+  // lies over the marks (they must not block selecting text through them).
+  const handlePageClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    handleQuadClick(e)
+    if (!(activeMode === null || activeMode === 'select')) return
+    // A click on the Konva stage is the stage's (handleStageClick). Konva acts
+    // on pointerup, before this click arrives: a note placed by that very
+    // click is selected by then, and would be closed again here.
+    if ((e.target as Element).closest?.('.konvajs-content')) return
+    if (e.detail > 1 || !window.getSelection()?.isCollapsed) return
+    const box = e.currentTarget.getBoundingClientRect()
+    const p = fromDisplayed(e.clientX - box.left, e.clientY - box.top, renderedW, renderedH, rotation)
+    const px = p.x / effectiveZoom, py = p.y / effectiveZoom
+    const mark = redactMarks.find(m => m.rects.some(r => px >= r.x && px <= r.x + r.width && py >= r.y && py <= r.y + r.height))
+    const hit = mark ?? commentAt(pageMarkups, pageNumber, px, py)
+    if (hit) onAnnotationSelect(hit.id)
+    else if (selectedId && (pageComments.some(c => c.id === selectedId) || fillItems.some(f => f.id === selectedId) || redactMarks.some(m => m.id === selectedId))) onAnnotationSelect(null)
+  }
+
   // The outer div holds the layout box (swapped dimensions for 90/270).
   // The inner Stage is rendered at the original orientation and rotated via CSS.
   return (
     <div
-      onClick={handleQuadClick}
+      ref={pageRef}
+      onClick={handlePageClick}
       style={{ width: stageWidth, height: stageHeight, overflow: 'hidden', position: 'relative' }}
       role="group"
       aria-label={t('page.a11yPage', { n: pageNumber })}
@@ -538,9 +669,9 @@ function PdfPageInner({
               scene canvas (page size × dpr) and a hit canvas, whether or not
               anything is drawn on it — ~3.5 MB per A4 page at fit-page and
               ~22 MB at fit-width, for the many pages that have none. */}
-          {pageAnnotations.length > 0 && (
+          {layerAnnotations.length > 0 && (
             <AnnotationLayer
-              annotations={pageAnnotations}
+              annotations={layerAnnotations}
               selectedId={selectedId}
               effectiveZoom={effectiveZoom}
               stageWidth={renderedW}
@@ -570,7 +701,8 @@ function PdfPageInner({
                   height={Math.abs(draft.h) * effectiveZoom}
                   stroke={RECT_COLOR}
                   strokeWidth={RECT_STROKE_WIDTH * effectiveZoom}
-                  fill="transparent"
+                  // A redaction box shows what it will cover.
+                  fill={activeMode === 'redactArea' ? 'rgba(0,0,0,0.35)' : activeMode === 'signArea' ? 'rgba(37,99,235,0.15)' : 'transparent'}
                 />
               )}
             </Layer>
@@ -591,6 +723,9 @@ function PdfPageInner({
             </Layer>
           )}
         </Stage>
+        <CommentMarks markups={pageMarkups} scale={effectiveZoom} selectedId={selectedId} width={renderedW} height={renderedH} />
+        <RedactMarks marks={redactMarks} selectedId={selectedId} scale={effectiveZoom} width={renderedW} height={renderedH} />
+        <CompareMarks marks={compare.marks.get(pageNumber) ?? NO_MARKS} active={compare.active} scale={effectiveZoom} width={renderedW} height={renderedH} />
       </div>
 
       {/* Region OCR busy badge */}
@@ -606,7 +741,7 @@ function PdfPageInner({
           search highlights to render on this page.
           In editor mode, double-clicking a text span opens an edit prompt
           and creates a text-patch annotation. */}
-      {kind === 'pdf' && (activeMode === null || activeMode === 'select' || (searchHighlights && searchHighlights.length > 0)) && (
+      {kind === 'pdf' && (activeMode === null || activeMode === 'select' || isMarkupMode(activeMode) || activeMode === 'redact' || (searchHighlights && searchHighlights.length > 0)) && (
         <PdfTextLayer
           pdfDoc={pdfDoc}
           pageNumber={pageNumber}
@@ -626,6 +761,7 @@ function PdfPageInner({
           scale={effectiveZoom}
           width={stageWidth}
           height={stageHeight}
+          rotation={rotation}
           highlights={searchHighlights}
           reveal={false}
         />
@@ -637,10 +773,22 @@ function PdfPageInner({
           scale={effectiveZoom}
           width={stageWidth}
           height={stageHeight}
+          rotation={rotation}
           highlights={searchHighlights}
           onEditCommit={appMode === 'editor' ? commitTextEdit : undefined}
           reveal={revealOcr}
         />
+      )}
+      <FillLayer items={fillItems} selectedId={selectedId} scale={effectiveZoom} rotation={rotation}
+        width={stageWidth} height={stageHeight} onSelect={onAnnotationSelect} />
+      {kind === 'pdf' && (
+        <FormLayer pdfDoc={pdfDoc} pageNumber={pageNumber} scale={effectiveZoom} rotation={rotation}
+          width={stageWidth} height={stageHeight} values={formValues} />
+      )}
+      {pageComments.length > 0 && (
+        <PageComments comments={pageComments} selectedId={selectedId} scale={effectiveZoom}
+          width={renderedW} height={renderedH} rotation={rotation}
+          onSelect={onAnnotationSelect} onUpdate={onAnnotationUpdate} />
       )}
       {/* Scanning animation while OCR recognizes this page. A double-click
           origin radiates a ripple from the click; otherwise a top→bottom sweep. */}

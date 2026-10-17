@@ -1,10 +1,13 @@
-import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session, protocol } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, dialog, shell, session, protocol, nativeTheme } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import path from 'path'
 import fs from 'fs'
 import { RecentFilesStore, isRecentCandidate } from './recentFiles'
+import { RecoveryStore, isRecoveryKey, isRecoveryRecord } from './recovery'
+import { readAppearance, titleBarColors, writeAppearance } from './appearance'
+import { readCommentAuthor, writeCommentAuthor } from './commentAuthor'
 import { PendingVideoSaves, cleanSuggestedName, validateMp4 } from './videoSave'
 import {
   EMBED_FOOTER_BYTES, acceptEmbedded, buildTrailer, cleanEmbeddedName, isAcceptableDocument, locateEmbedded,
@@ -194,9 +197,10 @@ function createWindow({ opening = false }: { opening?: boolean } = {}) {
     // end of that bar, in its colour and height. On macOS, `hiddenInset`
     // shows the traffic lights inset over the top of the dark tool rail.
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    // The title bar's colour (--wz-canvas) and dark or light symbols, by the
+    // saved theme (useAppearance re-sends it whenever it changes).
     titleBarOverlay: process.platform === 'darwin' ? undefined : {
-      color: '#e6e7ea',         // --wz-canvas: the title bar and page background
-      symbolColor: '#374151',   // gray-700, dark on the light bar
+      ...titleBarColors(startsDark()),
       height: 32,               // the title bar's height (TitleBar, h-8)
     },
     backgroundColor: '#111827', // paints the same gray during the brief load gap
@@ -755,6 +759,79 @@ ipcMain.handle('recent:clear', async event => {
   assertTrustedIpcSender(event)
   return recent().clear()
 })
+
+// ── Appearance: theme and reading colours ──────────────────────────────────
+function startsDark(): boolean {
+  const { theme } = readAppearance(app.getPath('userData'))
+  return theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors)
+}
+ipcMain.handle('appearance:get', async event => {
+  assertTrustedIpcSender(event)
+  return readAppearance(app.getPath('userData'))
+})
+ipcMain.handle('appearance:set', async (event, value: unknown) => {
+  assertTrustedIpcSender(event)
+  return writeAppearance(app.getPath('userData'), value)
+})
+ipcMain.on('appearance:titlebar', (event, dark: unknown) => {
+  try { assertTrustedIpcSender(event as unknown as IpcMainInvokeEvent) } catch { return }
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (!win || process.platform === 'darwin') return
+  try { win.setTitleBarOverlay({ ...titleBarColors(dark === true), height: 32 }) } catch { /* no overlay */ }
+})
+
+// ── The name written on comments ────────────────────────────────────────────
+ipcMain.handle('comment-author:get', async event => {
+  assertTrustedIpcSender(event)
+  return readCommentAuthor(app.getPath('userData'))
+})
+ipcMain.handle('comment-author:set', async (event, value: unknown) => {
+  assertTrustedIpcSender(event)
+  return writeCommentAuthor(app.getPath('userData'), value)
+})
+
+// ── Autosave and crash recovery ─────────────────────────────────────────────
+// The renderer writes the unsaved state of the open document here every so
+// often (electron/recovery.ts); a normal quit removes it, so what is listed at
+// the next start is what a crash left.
+let recoveryStore: RecoveryStore | null = null
+function recovery(): RecoveryStore {
+  recoveryStore ??= new RecoveryStore(path.join(app.getPath('userData'), 'recovery'))
+  return recoveryStore
+}
+ipcMain.handle('recovery:save', async (event, record: unknown, body: unknown) => {
+  assertTrustedIpcSender(event)
+  if (!isRecoveryRecord(record)) throw new Error('Invalid recovery record')
+  const bytes = body instanceof ArrayBuffer ? new Uint8Array(body) : ArrayBuffer.isView(body) ? new Uint8Array(body.buffer, body.byteOffset, body.byteLength) : null
+  await recovery().write(record, bytes)
+})
+ipcMain.handle('recovery:remove', async (event, key: unknown) => {
+  assertTrustedIpcSender(event)
+  if (!isRecoveryKey(key)) throw new Error('Invalid recovery key')
+  await recovery().remove(key)
+})
+ipcMain.handle('recovery:list', async event => {
+  assertTrustedIpcSender(event)
+  return recovery().list()
+})
+ipcMain.handle('recovery:read', async (event, key: unknown) => {
+  assertTrustedIpcSender(event)
+  if (!isRecoveryKey(key)) throw new Error('Invalid recovery key')
+  const got = await recovery().read(key)
+  if (!got) return null
+  const { entry, body } = got
+  return {
+    entry,
+    body: body ? body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) : null,
+  }
+})
+ipcMain.handle('recovery:discard', async event => {
+  assertTrustedIpcSender(event)
+  await recovery().discardLeftovers()
+})
+// A normal quit: whatever was autosaved was either saved or deliberately
+// thrown away by the reader in the "save / don't save" prompt.
+app.on('will-quit', () => { recoveryStore?.removeOwnSync() })
 
 ipcMain.handle('stat-file', async (event, filePath: unknown): Promise<{ size: number }> => {
   assertTrustedIpcSender(event)

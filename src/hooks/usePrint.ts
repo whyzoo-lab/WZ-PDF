@@ -50,10 +50,18 @@ async function renderPageWithAnnotations(
   out.height = viewport.height
   const ctx = out.getContext('2d')
   if (!ctx) throw new Error('2d context unavailable')
-  await page.render({ canvas: out, viewport }).promise
+  // Comments are drawn below with the rest (drawAnnotations), not by pdf.js;
+  // form fields are drawn by pdf.js, from the values the reader filled in.
+  // The print intent is what draws them: on screen they are controls over
+  // the page and hidden from its picture (services/pdfForms).
+  const { commentRenderParams } = await import('../services/pdfCommentImport')
+  const { applyFormStorage } = await import('../services/pdfForms')
+  const extra = await commentRenderParams(pdfDoc, pageNumber)
+  await applyFormStorage(pdfDoc, pageNumber, annotations)
+  await page.render({ canvas: out, viewport, intent: 'print', ...extra } as Parameters<typeof page.render>[0]).promise
   // Annotation coordinates are in PDF points; the canvas is at print scale —
   // or below it, where a very large picture capped its raster.
-  await drawAnnotations(ctx, annotations, pageNumber, PRINT_RENDER_SCALE * (out.width / viewport.width))
+  await drawAnnotations(ctx, annotations, pageNumber, PRINT_RENDER_SCALE * (out.width / viewport.width), { comments: true })
   // Paper is white: a transparent picture's empty pixels would otherwise be
   // encoded black by the JPEG below.
   ctx.globalCompositeOperation = 'destination-over'

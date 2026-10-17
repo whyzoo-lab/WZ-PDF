@@ -142,12 +142,12 @@ export function usePageOperations({ fileBytes, bytesUnavailable, documentPasswor
     )
   }, [fileBytes, blocked, documentPassword, runOp, onError, images, imageDoc, runImages])
 
-  const handleInsertFromPdf = useCallback(async (afterPage: number, srcBytes: ArrayBuffer) => {
+  const handleInsertFromPdf = useCallback(async (afterPage: number, srcBytes: ArrayBuffer, srcName?: string) => {
     if (blocked() || !fileBytes) return
     await runOp(
       async () => {
         const { insertPagesFromPdf } = await import('../services/pdfPageService')
-        return insertPagesFromPdf(fileBytes, srcBytes, afterPage, documentPassword ?? undefined)
+        return insertPagesFromPdf(fileBytes, srcBytes, afterPage, documentPassword ?? undefined, srcName)
       },
       err => {
         console.error('Insert from PDF failed:', err)

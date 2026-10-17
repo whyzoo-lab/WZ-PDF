@@ -34,6 +34,8 @@ interface MarkdownViewProps {
   /** Filled with a getter for the text as it stands, edits included — what a
    *  PDF or a viewer exe of this document is made from. */
   textRef?: { current: (() => string) | null }
+  /** Edits brought back by crash recovery: shown, unsaved, until the reader types or saves. */
+  recoveredText?: string
 }
 
 /** Long documents get a contents rail; short ones would just look cluttered. */
@@ -52,7 +54,7 @@ const BASE_FONT_PX = 15
  */
 export function MarkdownView({
   source, filename, appMode, zoom, fullscreen, onExitFullscreen, onSaved, onError,
-  onDirtyChange, saveRef, textRef,
+  onDirtyChange, saveRef, textRef, recoveredText,
 }: MarkdownViewProps) {
   const editing = appMode === 'editor'
 
@@ -60,7 +62,7 @@ export function MarkdownView({
   // file reseeds it without an effect (and without discarding edits on a
   // re-render). Same trick as `result` below.
   const [draft, setDraft] = useState<{ base: string; text: string } | null>(null)
-  const text = draft && draft.base === source ? draft.text : source
+  const text = draft && draft.base === source ? draft.text : (recoveredText ?? source)
   // What is on disk: the file as opened, or what was last saved. Keyed the same
   // way. A save used to record itself by re-keying the *draft* to the new text,
   // which no longer matched `source` — so the editor fell back to the file as
@@ -315,6 +317,7 @@ export function MarkdownView({
         )}
 
         <article
+          data-wz-reading-surface=""
           className="min-w-0 flex-1 rounded-sm bg-white px-8 py-7 shadow-xl"
           // Zoom has no page to scale here, so it scales the type instead. The
           // body's own sizes are all em-based, so one declaration moves the

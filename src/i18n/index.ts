@@ -103,7 +103,19 @@ if (typeof document !== 'undefined') document.documentElement.lang = LANG
  * visible but never crashes.
  */
 export function t(key: MessageKey, vars?: Record<string, string | number>): string {
-  const dict = DICTS[LANG]
+  return translate(DICTS[LANG], key, vars)
+}
+
+/**
+ * The English text of a key, whatever the UI language — for search that
+ * should also find a Korean command by its English name ("print" → 인쇄).
+ * Undefined when the UI is English already.
+ */
+export function tEnglish(key: MessageKey, vars?: Record<string, string | number>): string | undefined {
+  return LANG === 'en' ? undefined : translate(en, key, vars)
+}
+
+function translate(dict: Record<string, string>, key: MessageKey, vars?: Record<string, string | number>): string {
   let str = dict[key] ?? en[key] ?? String(key)
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {

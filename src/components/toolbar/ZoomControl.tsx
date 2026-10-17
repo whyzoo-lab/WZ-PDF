@@ -35,11 +35,11 @@ export function ZoomControl({
 
   const light = tone === 'light'
   const stepBtn = light
-    ? 'flex items-center justify-center w-7 h-7 rounded-md text-gray-600 transition-all hover:bg-black/10 hover:text-gray-900 disabled:opacity-30 disabled:hover:bg-transparent'
+    ? 'flex items-center justify-center w-7 h-7 rounded-md text-gray-600 dark:text-gray-300 transition-all hover:bg-black/10 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white disabled:opacity-30 disabled:hover:bg-transparent'
     : 'flex items-center justify-center w-8 h-8 rounded text-gray-300 transition-all ' +
       'hover:bg-gray-700 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-300'
   const field = light
-    ? 'flex items-center rounded-md px-1 h-6 hover:bg-black/5 focus-within:bg-white focus-within:ring-1 focus-within:ring-blue-500'
+    ? 'flex items-center rounded-md px-1 h-6 hover:bg-black/5 dark:hover:bg-white/5 focus-within:bg-white dark:focus-within:bg-gray-800 focus-within:ring-1 focus-within:ring-blue-500'
     : 'flex items-center rounded px-1 h-8 hover:bg-gray-700/50 focus-within:bg-gray-700 focus-within:ring-1 focus-within:ring-blue-500'
 
   return (
@@ -61,9 +61,9 @@ export function ZoomControl({
             else if (e.key === 'Escape') { setDraft(null); inputRef.current?.blur() }
           }}
           onDoubleClick={() => { setDraft(null); onZoomReset() }}
-          className={`w-8 bg-transparent text-right text-xs tabular-nums outline-none ${light ? 'text-gray-800' : 'text-gray-100'}`}
+          className={`w-8 bg-transparent text-right text-xs tabular-nums outline-none ${light ? 'text-gray-800 dark:text-gray-100' : 'text-gray-100'}`}
         />
-        <span className={`text-xs select-none pl-0.5 pointer-events-none ${light ? 'text-gray-500' : 'text-gray-400'}`}>%</span>
+        <span className={`text-xs select-none pl-0.5 pointer-events-none ${light ? 'text-gray-500 dark:text-gray-400' : 'text-gray-400'}`}>%</span>
       </div>
       <button onClick={onZoomIn} disabled={zoom >= MAX_ZOOM} className={stepBtn} title={t('tool.zoomIn')} aria-label={t('tool.zoomIn')}><IconZoomIn /></button>
     </div>

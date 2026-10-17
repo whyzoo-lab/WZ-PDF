@@ -67,7 +67,10 @@ type PdfSource =
       disableStream: true
     }
 
-export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn {
+export function usePdfDocument(file: DocumentFile | null, knownPassword?: (file: DocumentFile) => string | undefined): UsePdfDocumentReturn {
+  // A tab coming back: the password that opened it before, so it is not asked again.
+  const knownRef = useRef(knownPassword)
+  useEffect(() => { knownRef.current = knownPassword })
   const [pdfDoc, setPdfDoc] = useState<ViewerDoc | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
@@ -200,8 +203,16 @@ export function usePdfDocument(file: DocumentFile | null): UsePdfDocumentReturn 
       // An encrypted PDF is not a failure, it is a question. Without this
       // handler pdfjs rejects with "No password given" and the viewer showed
       // that as an error, with no way to answer it.
+      let triedKnown = false
       task.onPassword = (updatePassword: (password: string) => void, reason: number) => {
         if (cancelled) return
+        const known = !triedKnown && reason === 1 && file ? knownRef.current?.(file) : undefined
+        if (known) {
+          triedKnown = true
+          accepted = known
+          updatePassword(known)
+          return
+        }
         // 1 = NEED_PASSWORD, 2 = INCORRECT_PASSWORD. Asking a second time means
         // the last answer was wrong, which the prompt should say rather than
         // looking as though the click did nothing.

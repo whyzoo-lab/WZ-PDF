@@ -402,3 +402,40 @@ describe('ActionBar', () => {
     expect(screen.queryByRole('button', { name: /clear markups/i })).not.toBeInTheDocument()
   })
 })
+
+describe('ActionBar command palette', () => {
+  it('opens with Ctrl+K, finds a command by name and runs it with Enter', () => {
+    const onRotate = vi.fn()
+    render(<ActionBar {...baseProps({ onRotate })} />)
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    const box = screen.getByRole('combobox')
+    fireEvent.change(box, { target: { value: 'rotate right' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onRotate).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('moves with the arrow keys and closes on Escape', () => {
+    const onZoomIn = vi.fn(), onZoomOut = vi.fn()
+    render(<ActionBar {...baseProps({ onZoomIn, onZoomOut })} />)
+    fireEvent.click(screen.getByRole('button', { name: /command search/i }))
+    const box = screen.getByRole('combobox')
+    fireEvent.change(box, { target: { value: 'zoom' } })
+    const options = screen.getAllByRole('option').map(o => o.textContent)
+    expect(options[0]).toMatch(/zoom in/i)
+    fireEvent.keyDown(box, { key: 'ArrowDown' })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onZoomOut).toHaveBeenCalledTimes(1)
+    expect(onZoomIn).not.toHaveBeenCalled()
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' })
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('offers only what the open document has', () => {
+    render(<ActionBar {...baseProps({ hasPdf: false })} />)
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'rotate' } })
+    expect(screen.queryAllByRole('option')).toHaveLength(0)
+  })
+})

@@ -130,7 +130,11 @@ async function renderPage(pdfDoc: ViewerDoc, pageNumber: number, renderScale: nu
   canvas.height = raster.height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error(`canvas.getContext('2d') returned null for page ${pageNumber}`)
-  await page.render({ canvas, viewport: raster }).promise
+  // A PDF's comments are drawn by the app, editable, not baked into the
+  // picture (services/pdfCommentImport).
+  const { commentRenderParams } = await import('./pdfCommentImport')
+  const extra = await commentRenderParams(pdfDoc, pageNumber)
+  await page.render({ canvas, viewport: raster, ...extra } as Parameters<typeof page.render>[0]).promise
   // The raster is what we keep. pdfjs also keeps everything it decoded to draw
   // it — every image on the page, as bitmaps — until told otherwise, and
   // across a long document that, not our canvases, was most of the memory.

@@ -12,6 +12,10 @@ export interface EditHistory {
   redo: () => boolean
   /** Forget everything — a different document was opened. */
   reset: () => void
+  /** The stacks as they are — kept by a tab while another is in front. */
+  exportStacks: () => { past: unknown[]; future: unknown[] }
+  /** Put a tab's stacks back. */
+  importStacks: (stacks: { past: unknown[]; future: unknown[] }) => void
   canUndo: boolean
   canRedo: boolean
 }
@@ -72,5 +76,12 @@ export function useEditHistory<S>(current: S, restore: (snapshot: S) => void): E
     sync()
   }, [sync])
 
-  return { record, undo, redo, reset, canUndo: sizes.past > 0, canRedo: sizes.future > 0 }
+  const exportStacks = useCallback(() => ({ past: [...past.current], future: [...future.current] }), [])
+  const importStacks = useCallback((stacks: { past: unknown[]; future: unknown[] }) => {
+    past.current = [...stacks.past] as S[]
+    future.current = [...stacks.future] as S[]
+    sync()
+  }, [sync])
+
+  return { record, undo, redo, reset, exportStacks, importStacks, canUndo: sizes.past > 0, canRedo: sizes.future > 0 }
 }

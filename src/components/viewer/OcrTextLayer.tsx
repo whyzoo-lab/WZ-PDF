@@ -6,8 +6,11 @@ interface OcrTextLayerProps {
   words: OcrWord[]
   /** Effective display scale (PDF_RENDER_SCALE * zoom). */
   scale: number
+  /** The page as shown (turned box), CSS px. */
   width: number
   height: number
+  /** The view's rotation; the words are placed on the unrotated page and turned with it. */
+  rotation?: number
   highlights?: TextLayerHighlight[]
   /** When provided (editor mode), double-clicking a recognized region opens an
    *  inline editor; committing fires this with the new text and the region's
@@ -29,7 +32,7 @@ interface OcrTextLayerProps {
  * swaps it for an inline <input>. Because OCR words already carry PDF-point
  * bounds, the commit passes them straight through (no CSS→PDF conversion).
  */
-export const OcrTextLayer = memo(function OcrTextLayer({ words, scale, width, height, highlights, onEditCommit, reveal = true }: OcrTextLayerProps) {
+export const OcrTextLayer = memo(function OcrTextLayer({ words, scale, width, height, rotation = 0, highlights, onEditCommit, reveal = true }: OcrTextLayerProps) {
   const { hlSet, activeSet } = useMemo(() => {
     const hlSet = new Set<number>()
     const activeSet = new Set<number>()
@@ -78,7 +81,14 @@ export const OcrTextLayer = memo(function OcrTextLayer({ words, scale, width, he
   return (
     <div
       className="pdf-text-layer no-print"
-      style={{ position: 'absolute', top: 0, left: 0, width, height, overflow: 'hidden', pointerEvents: 'none' }}
+      // Turned by the same CSS as the pdf.js layer (index.css): without it the
+      // words stayed upright over a turned page.
+      data-main-rotation={rotation}
+      style={{
+        position: 'absolute', top: 0, left: 0, overflow: 'hidden', pointerEvents: 'none',
+        width: rotation % 180 === 0 ? width : height,
+        height: rotation % 180 === 0 ? height : width,
+      }}
     >
       {words.map((w, i) => {
         const cls = ['wz-ocr-span']

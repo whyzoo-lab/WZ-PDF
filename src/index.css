@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Dark theme: a class on <html> set by useAppearance, not the media query, so
+   "light", "dark" and "follow the system" are all the reader's choice. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Update-available toast: slide in from the right. */
 .wz-update-toast { animation: wz-update-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes wz-update-in {
@@ -46,6 +50,30 @@ body {
    in front of for long. */
 :root {
   --wz-canvas: #e6e7ea;
+}
+/* Dark theme: the page background and title bar darken; pages stay white. */
+.dark {
+  --wz-canvas: #2a2c31;
+  color-scheme: dark;
+}
+
+/* ── Reading colours (useAppearance) ─────────────────────────────────────── */
+/* How pages look on screen only — the document is not changed, and printing
+   and saving are not affected. Only the page raster is filtered (the first
+   canvas of a page's Konva stage); stamps, signatures and markup live on their
+   own layers and keep their colours. Markdown and mail pages are filtered as a
+   whole. Night inverts lightness but turns hues back, so a red stays red-ish. */
+html[data-reading="sepia"] [data-wz-page] .konvajs-content > canvas:first-child,
+html[data-reading="sepia"] [data-wz-reading-surface] {
+  filter: sepia(0.45) saturate(1.15) brightness(0.97);
+}
+html[data-reading="night"] [data-wz-page] .konvajs-content > canvas:first-child,
+html[data-reading="night"] [data-wz-reading-surface] {
+  filter: invert(0.9) hue-rotate(180deg);
+}
+@media print {
+  html[data-reading] [data-wz-page] .konvajs-content > canvas:first-child,
+  html[data-reading] [data-wz-reading-surface] { filter: none; }
 }
 
 /* iPhone notch / home-indicator padding lives on the bars at the edges, not
@@ -136,6 +164,12 @@ select,
 textarea {
   font-size: 16px;
 }
+/* The comment fields are small type in a narrow panel; 16px there is only for
+   iOS, so with a mouse they keep their own size. */
+@media (pointer: fine) {
+  input.wz-compact-input,
+  textarea.wz-compact-input { font-size: 12px !important; }
+}
 
 /* Konva canvas — let touch events through for native scroll on the PDF area;
    the drawing tools (pen/rectangle) opt back in via their own handlers. */
@@ -150,6 +184,22 @@ canvas {
   line-height: 1;
   text-align: initial;
 }
+/* pdfjs lays the spans out on the unrotated page and marks the layer with the
+   view's rotation, leaving the turn to CSS (pdf_viewer.css does the same).
+   Without these the layer stayed upright over a turned page: selecting,
+   find highlights and highlighting text all landed on the wrong words. */
+.pdf-text-layer[data-main-rotation],
+.wz-form-layer[data-main-rotation],
+.wz-fill-layer[data-main-rotation] { transform-origin: 0 0; }
+.pdf-text-layer[data-main-rotation="90"],
+.wz-form-layer[data-main-rotation="90"],
+.wz-fill-layer[data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }
+.pdf-text-layer[data-main-rotation="180"],
+.wz-form-layer[data-main-rotation="180"],
+.wz-fill-layer[data-main-rotation="180"] { transform: rotate(180deg) translate(-100%, -100%); }
+.pdf-text-layer[data-main-rotation="270"],
+.wz-form-layer[data-main-rotation="270"],
+.wz-fill-layer[data-main-rotation="270"] { transform: rotate(270deg) translateX(-100%); }
 .pdf-text-layer > span,
 .pdf-text-layer > br {
   position: absolute;

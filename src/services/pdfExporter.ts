@@ -1,11 +1,14 @@
-import { PDFDocument, PDFFont, PDFPage, rgb, degrees, StandardFonts } from '@cantoo/pdf-lib'
+import { PDFDocument, PDFFont, PDFPage, PDFRef, rgb, degrees, StandardFonts, LineCapStyle } from '@cantoo/pdf-lib'
 import { loadPdfForWriting } from './pdfLoad'
 import { BASELINE_RATIO, type PlacedRun } from './ocrTextLayer'
 import type { OcrWord } from '../types/ocr'
-import type { Annotation } from '../types/annotation'
-import { annotationsForPage, isVolatile } from '../types/annotation'
+import type { Annotation, FillAnnotation, FormValue } from '../types/annotation'
+import { annotationsForPage, isVolatile, isComment } from '../types/annotation'
+import { addCommentAnnotations, pageSpaceOf, viewportToPdf } from './pdfComments'
+import { FILL_BASELINE, MARK_STROKE, markShape } from './fillMarks'
 import { drawAnnotations } from './annotationCanvas'
 import { toPdfLibY, hexToRgb } from '../utils/coordinates'
+import { t } from '../i18n'
 import type { ViewerDoc } from '../types/viewerDoc'
 
 /** Exported for unit testing */
@@ -79,7 +82,7 @@ async function canvasJpeg(canvas: HTMLCanvasElement, quality: number): Promise<U
 }
 
 /** Noto Sans KR, embedded once per document and subsetted to the glyphs used. */
-async function embedTextFont(pdfDoc: PDFDocument): Promise<PDFFont> {
+export async function embedTextFont(pdfDoc: PDFDocument): Promise<PDFFont> {
   const { loadFontkit } = await import('./fontkit')
   pdfDoc.registerFontkit(await loadFontkit())
   // Subset, or the whole CJK face would be embedded once per export.
@@ -94,7 +97,7 @@ async function embedTextFont(pdfDoc: PDFDocument): Promise<PDFFont> {
  * invisible, so vertical distortion never shows, while matching the width keeps
  * selection highlights aligned with the glyphs underneath.
  */
-function drawInvisibleRuns(page: PDFPage, font: PDFFont, runs: PlacedRun[]): void {
+export function drawInvisibleRuns(page: PDFPage, font: PDFFont, runs: PlacedRun[]): void {
   for (const run of runs) {
     // Drop control characters — they have no glyph and abort encoding.
     const text = stripControlChars(run.text).trim()
@@ -141,6 +144,73 @@ export interface PdfSaveOptions {
    * has, save it without one.
    */
   password?: string
+  /**
+   * Annotations of the source (pdf.js ids, "12R") that the app's comments
+   * stand for — read from the file when it opened (services/pdfCommentImport).
+   * They are taken off their pages and the comments written anew, so an
+   * edited comment is not saved twice and a deleted one is gone.
+   */
+  replacedAnnotations?: ReadonlySet<string>
+}
+
+/**
+ * A Fill & Sign item, drawn into the page like a stamp. Its box is in the
+ * page's viewport, so points go through the viewport transform and text is
+ * turned with a /Rotate page (it reads upright where it was typed).
+ */
+function drawFill(page: PDFPage, a: FillAnnotation, fontFor: (text: string) => PDFFont): void {
+  const space = pageSpaceOf(page)
+  const at = (x: number, y: number) => viewportToPdf(space, x, y)
+  const [r, g, b] = hexToRgb(a.color)
+  const color = rgb(r, g, b)
+  if (a.mark === 'text') {
+    if (!a.text.trim()) return
+    const [x, y] = at(a.x, a.y + a.fontSize * FILL_BASELINE)
+    try {
+      page.drawText(stripControlChars(a.text), { x, y, size: a.fontSize, font: fontFor(a.text), color, rotate: degrees(space.rotate) })
+    } catch (err) {
+      console.error('Fill text could not be drawn:', err)
+    }
+    return
+  }
+  const shape = markShape(a.mark)
+  const thickness = MARK_STROKE * a.height
+  const pt = ([u, v]: [number, number]) => { const [x, y] = at(a.x + u * a.width, a.y + v * a.height); return { x, y } }
+  for (const line of shape.lines) {
+    for (let i = 1; i < line.length; i++) {
+      page.drawLine({ start: pt(line[i - 1]), end: pt(line[i]), thickness, color, lineCap: LineCapStyle.Round })
+    }
+  }
+  if (shape.dot) {
+    const c = pt([shape.dot.cx, shape.dot.cy])
+    page.drawCircle({ x: c.x, y: c.y, size: shape.dot.r * a.height, color })
+  }
+}
+
+/** Whether a PDF carries a signature (a /ByteRange), by a scan of its bytes. */
+export function hasSignatures(bytes: ArrayBuffer | Uint8Array): boolean {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  const needle = [0x2f, 0x42, 0x79, 0x74, 0x65, 0x52, 0x61, 0x6e, 0x67, 0x65] // "/ByteRange"
+  outer: for (let i = 0; i <= b.length - needle.length; i++) {
+    if (b[i] !== 0x2f) continue
+    for (let j = 1; j < needle.length; j++) if (b[i + j] !== needle[j]) continue outer
+    return true
+  }
+  return false
+}
+
+/** pdf.js's name for an object: "12R", or "12R3" for a non-zero generation. */
+function pdfjsId(ref: PDFRef): string {
+  return ref.generationNumber === 0 ? `${ref.objectNumber}R` : `${ref.objectNumber}R${ref.generationNumber}`
+}
+
+function dropAnnotations(page: PDFPage, ids: ReadonlySet<string>): void {
+  const annots = page.node.Annots()
+  if (!annots) return
+  for (let i = annots.size() - 1; i >= 0; i--) {
+    const ref = annots.get(i)
+    if (ref instanceof PDFRef && ids.has(pdfjsId(ref))) annots.remove(i)
+  }
 }
 
 export async function exportPdf(
@@ -154,8 +224,17 @@ export async function exportPdf(
    */
   textLayer?: Map<number, PlacedRun[]>,
 ): Promise<Blob> {
-  const { sourcePassword, password } = save
-  const pdfDoc = await loadPdfForWriting(originalBytes, sourcePassword)
+  const { sourcePassword, password, replacedAnnotations } = save
+  // Marks for redaction cover nothing until applied; a file saved with them
+  // pending would still hold every word under them.
+  if (annotations.some(a => a.type === 'redact')) throw new Error(t('redact.pendingSave'))
+  // A signed file is saved as an incremental update: what was signed stays
+  // byte for byte, and the signatures keep covering it. Not when a password is
+  // put on or taken off — that rewrites every object, signatures or not.
+  const incremental = !sourcePassword && !password && hasSignatures(originalBytes)
+  const pdfDoc = incremental
+    ? await PDFDocument.load(originalBytes, { forIncrementalUpdate: true, updateMetadata: false })
+    : await loadPdfForWriting(originalBytes, sourcePassword)
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
 
   // Noto Sans KR, embedded at most once and only when something needs it: a
@@ -165,8 +244,18 @@ export async function exportPdf(
   const koreanFont = async () => (koFont ??= await embedTextFont(pdfDoc))
   const koNeeded = annotations.some(a =>
     (a.type === 'watermark' && needsKoreanFont(a.text)) ||
-    (a.type === 'textEdit' && needsKoreanFont(a.text)),
+    (a.type === 'textEdit' && needsKoreanFont(a.text)) ||
+    (a.type === 'fill' && needsKoreanFont(a.text)),
   )
+  // Form fields first: what the reader filled in, with appearances drawn in
+  // the Korean font when a value needs it (Helvetica has no Hangul).
+  const fields = new Map<string, FormValue>()
+  for (const a of annotations) if (a.type === 'formValue') fields.set(a.fieldName, a.value)
+  if (fields.size > 0) {
+    const { fillForm } = await import('./pdfFormFill')
+    const korean = [...fields.values()].some(v => (Array.isArray(v) ? v : [String(v)]).some(needsKoreanFont))
+    fillForm(pdfDoc, fields, korean ? await koreanFont() : null)
+  }
   if (koNeeded) await koreanFont()
   const fontFor = (text: string): PDFFont =>
     needsKoreanFont(text) && koFont ? koFont : helvetica
@@ -179,6 +268,9 @@ export async function exportPdf(
     const { width: pdfPageWidth, height: pdfPageHeight } = page.getSize()
 
     const pageAnnotations = annotationsForPage(annotations, pageNum)
+    // Comments are annotations of the page, not ink on it.
+    if (replacedAnnotations?.size) dropAnnotations(page, replacedAnnotations)
+    addCommentAnnotations(pdfDoc, page, pageAnnotations.filter(isComment))
 
     for (const annotation of pageAnnotations) {
       if (annotation.type === 'stamp' || annotation.type === 'signature') {
@@ -219,6 +311,8 @@ export async function exportPdf(
           rotate: degrees(wm.rotation),
         })
       }
+
+      if (annotation.type === 'fill') drawFill(page, annotation, fontFor)
 
       if (annotation.type === 'textEdit') {
         // Cover the original text with a filled rectangle, then draw the new
@@ -310,7 +404,9 @@ export async function exportHwpToPdf(
     const scale = canvas.width / pageWidth   // raster pixels per point
     const page = pdfDoc.addPage([pageWidth, pageHeight])
     const full = { x: 0, y: 0, width: pageWidth, height: pageHeight }
-    const marked = annotationsForPage(annotations, pageNum).some(a => !isVolatile(a))
+    const onPage = annotationsForPage(annotations, pageNum)
+    // Comments become annotations of the new page, so only the rest is ink.
+    const marked = onPage.some(a => !isVolatile(a) && !isComment(a))
 
     // A JPEG or PNG picture goes in as the file it is: no second JPEG pass over
     // a photo (smaller and sharper), and a PNG keeps its transparency. Marks go
@@ -357,6 +453,10 @@ export async function exportHwpToPdf(
         : await pdfDoc.embedJpg(await canvasJpeg(compositedCanvas, 0.92))
       page.drawImage(image, full)
     }
+
+    // The page is the viewport itself (origin 0, no /Rotate), so stored
+    // coordinates map straight across.
+    addCommentAnnotations(pdfDoc, page, onPage.filter(isComment))
 
     // ── Selectable text layer ────────────────────────────────────────────────
     // The picture alone would make an image-only PDF: it looks right but no

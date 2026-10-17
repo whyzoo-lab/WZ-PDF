@@ -4,6 +4,24 @@ interface RecentFileEntry {
   openedAt: number
 }
 
+/** An autosaved document's state (electron/recovery.ts). */
+interface RecoveryRecordShape {
+  key: string
+  name: string
+  path?: string
+  modified: boolean
+  annotations: unknown[]
+  markdownText?: string
+}
+
+/** What the start-up recovery prompt lists. */
+interface RecoverySummaryShape {
+  key: string
+  name: string
+  path?: string
+  savedAt: number
+}
+
 interface Window {
   electronAPI?: {
     /** Called when the OS asks the app to open a file (CLI / file association). */
@@ -36,6 +54,22 @@ interface Window {
     addRecentFile?: (filePath: string) => Promise<RecentFileEntry[]>
     removeRecentFile?: (filePath: string) => Promise<RecentFileEntry[]>
     clearRecentFiles?: () => Promise<RecentFileEntry[]>
+
+    /** Theme and reading colours (electron/appearance.ts). */
+    appearanceGet?: () => Promise<unknown>
+    appearanceSet?: (value: unknown) => Promise<unknown>
+    setTitleBarTheme?: (dark: boolean) => void
+
+    /** The name written on comments (electron/commentAuthor.ts). */
+    commentAuthorGet?: () => Promise<string>
+    commentAuthorSet?: (name: string) => Promise<string>
+
+    /** Autosave and crash recovery (electron/recovery.ts). */
+    recoverySave?: (record: RecoveryRecordShape, body: ArrayBuffer | null) => Promise<void>
+    recoveryRemove?: (key: string) => Promise<void>
+    recoveryList?: () => Promise<RecoverySummaryShape[]>
+    recoveryRead?: (key: string) => Promise<{ entry: RecoveryRecordShape & { savedAt: number }; body: ArrayBuffer | null } | null>
+    recoveryDiscard?: () => Promise<void>
 
     /** Download a PDF from an http(s) URL via the main process (bypasses CORS). */
     fetchUrl: (url: string) => Promise<ArrayBuffer>

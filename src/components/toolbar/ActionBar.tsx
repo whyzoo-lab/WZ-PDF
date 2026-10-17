@@ -4,19 +4,28 @@ import type { ActiveMode } from '../../types/annotation'
 import { STAMP_PRESETS, svgToPng } from '../../utils/stampPresets'
 import type { SavedStamp } from '../../services/stampLibrary'
 import { classifyDocFile, DOCUMENT_ACCEPT } from '../../utils/detectDocType'
-import { t } from '../../i18n'
+import { t, tEnglish, type MessageKey } from '../../i18n'
 import {
   IconSingle, IconSpread, IconGrid, IconFullscreen, IconRotate, IconSelect, IconUndo, IconRedo, IconFolderOpen, IconSave,
   IconStamp, IconSignature, IconWatermark, IconDelete, IconLink,
   IconHtml, IconImage, IconPrint, IconOcr, IconReset,
   IconExe, IconLock, IconLockOpen, IconPencil, IconFitWidth,
-  IconSpeak, IconStopSpeak, IconRotateLeft, IconVideo, IconFile, IconSearch, IconPages, IconNotes,
+  IconSpeak, IconStopSpeak, IconRotateLeft, IconVideo, IconFile, IconSearch, IconPages, IconNotes, IconCommand,
+  IconZoomIn, IconZoomOut, IconAppearance,
+  IconHighlight, IconUnderline, IconStrike, IconNote, IconFill, IconCompare, IconRedact, IconCertificate, IconCompress,
 } from './icons'
 import { OcrAnnouncer } from '../OcrAnnouncer'
 import { ZoomControl } from './ZoomControl'
-import { TitleBar } from './TitleBar'
+import { TitleBar, type TitleTab } from './TitleBar'
 import { ToolRail } from './ToolRail'
 import { MENU_ROW, MenuDivider, type RailAxis, type RailItem } from './rail'
+import type { FillTool } from '../fill/fillContext'
+
+const FILL_TOOLS: FillTool[] = ['text', 'check', 'cross', 'dot', 'line', 'date']
+const FILL_GLYPH: Record<FillTool, string> = { text: 'Ab', check: '✓', cross: '✕', dot: '●', line: '─', date: '📅' }
+import { CommandPalette, type PaletteCommand } from './CommandPalette'
+import { openHelp } from '../../utils/openHelp'
+import type { Appearance } from '../../hooks/useAppearance'
 
 export interface ActionBarProps {
   /** A page-based document is open (PDF / HWP / image) — the ViewerDoc pipeline. */
@@ -62,6 +71,20 @@ export interface ActionBarProps {
   onPrint?: () => void
   /** Open the find bar (the same as Ctrl+F). */
   onFind?: () => void
+  /** Compare the open document's text with another file (page documents). */
+  onCompare?: () => void
+  /** Open documents as tabs (two or more show in the title bar). */
+  tabs?: TitleTab[]
+  onTab?: (id: string) => void
+  onCloseTab?: (id: string) => void
+  /** Reduce the PDF's file size (save menu). */
+  onOptimize?: () => void
+  /** Beside the title: the signatures' state (SignatureBadge). */
+  signatureBadge?: ReactNode
+  /** Sign the document with a certificate file. */
+  onSign?: () => void
+  /** Redaction (PDF): arm a tool, find and mark, apply what is marked. */
+  redact?: { pending: number; onArm: (mode: 'redact' | 'redactArea') => void; onFind: () => void; onApply: () => void; onClear: () => void }
   onAppModeChange: (mode: AppMode) => void
   onViewModeChange: (mode: ViewMode) => void
   onZoomIn: () => void
@@ -84,6 +107,9 @@ export interface ActionBarProps {
   onStampUpload?: (file: File) => void
   onSignatureClick: () => void
   onWatermarkClick: () => void
+  /** Fill & Sign: the tool armed, and picking one (arms the 'fill' mode). */
+  fillTool?: FillTool
+  onFillTool?: (tool: FillTool) => void
   onDeleteSelected: () => void
   /** Clears volatile pen / rectangle markups. */
   onResetMarkups: () => void
@@ -131,6 +157,9 @@ export interface ActionBarProps {
   onRedo?: () => void
   canUndo?: boolean
   canRedo?: boolean
+  /** Theme and reading colours (useAppearance). */
+  appearance?: Appearance
+  onAppearanceChange?: (next: Appearance) => void
   /** The document area, laid out between the title bar and the rails. */
   children?: ReactNode
 }
@@ -167,15 +196,15 @@ export function ActionBar(props: ActionBarProps) {
   const {
     hasPdf, flowDoc, canEdit = true, pagedFlow = false, slideNotes, onSaveSlideVideo, embed = false,
     appMode, viewMode, zoom, rotation, activeMode, selectedId, isPanelOpen, onTogglePanel, isExporting,
-    numPages, currentPage, onUpload, onUploadMany, onOpenUrl, onPrint, onFind, onAppModeChange, onViewModeChange,
+    numPages, currentPage, onUpload, onUploadMany, onOpenUrl, onPrint, onFind, onCompare, redact, signatureBadge, onSign, onOptimize, tabs, onTab, onCloseTab, onAppModeChange, onViewModeChange,
     onZoomIn, onZoomOut, onZoomReset, onZoomSet, onFitWidth, onRotate, onRotateLeft, onModeChange,
     onStampSelect, savedStamps = [], onSavedStampSelect, onSavedStampRemove, onStampUpload,
-    onSignatureClick, onWatermarkClick, onDeleteSelected, onResetMarkups, hasMarkups,
+    onSignatureClick, onWatermarkClick, onDeleteSelected, onResetMarkups, hasMarkups, fillTool, onFillTool,
     onRunOcr, onRunOcrAll, onCancelOcr, isOcrRunning, ocrProgress,
     onExportPdf, onSaveOriginal, originalExt, pdfIsOriginal = false, onPassword, saveLocked = false,
     onExportSpreads, onExportHtml, onExportImages, onExportExe,
     onToggleSpeech, isSpeaking = false, fileName, unsaved = false,
-    onUndo, onRedo, canUndo = false, canRedo = false, children,
+    onUndo, onRedo, canUndo = false, canRedo = false, appearance, onAppearanceChange, children,
   } = props
   // The hidden picker, held in state rather than a ref: the menus that click
   // it are built during render.
@@ -185,6 +214,20 @@ export function ActionBar(props: ActionBarProps) {
   const axis: RailAxis = wide ? 'column' : 'row'
   const isFullscreen = viewMode === 'fullscreen'
   const anyDoc = hasPdf || flowDoc
+
+  // Ctrl+K (and Ctrl+Shift+P, the editors' habit) opens the command palette.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase()
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && ((k === 'k' && !e.shiftKey) || (k === 'p' && e.shiftKey))) {
+        e.preventDefault()
+        setPaletteOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -264,6 +307,7 @@ export function ActionBar(props: ActionBarProps) {
         {onExportSpreads && row(<IconSpread />, t('export.spread'), onExportSpreads, done, ext('.pdf'), { title: t('export.spreadTitle') })}
         {onExportHtml && row(<IconHtml />, t('export.html'), onExportHtml, done, ext('.html'))}
         {onExportImages && row(<IconImage />, t('export.images'), onExportImages, done, ext('.zip'))}
+        {onOptimize && row(<IconCompress />, t('optimize.menu'), onOptimize, done, undefined, { title: t('optimize.menuTitle') })}
         {onExportExe && (
           <>
             <MenuDivider />
@@ -300,9 +344,24 @@ export function ActionBar(props: ActionBarProps) {
     ),
   })
   add(anyDoc && { id: 'fullscreen', group: 'view', label: t('tool.fullscreen'), icon: <IconFullscreen />, onClick: () => onViewModeChange('fullscreen'), active: isFullscreen })
+  // Theme (the chrome) and reading colours (how pages look on screen).
+  add(appearance && onAppearanceChange && {
+    id: 'appearance', group: 'view', label: t('appearance.menu'), icon: <IconAppearance />,
+    menu: done => (
+      <>
+        <div className="px-3 pb-0.5 pt-1.5 text-[11px] text-gray-400">{t('appearance.theme')}</div>
+        {(['light', 'dark', 'system'] as const).map(v => row(<span className="w-4" />, t(`appearance.theme.${v}`), () => onAppearanceChange({ ...appearance, theme: v }), done, undefined, { checked: appearance.theme === v }))}
+        <MenuDivider />
+        <div className="px-3 pb-0.5 pt-1.5 text-[11px] text-gray-400">{t('appearance.reading')}</div>
+        {(['normal', 'sepia', 'night'] as const).map(v => row(<span className="w-4" />, t(`appearance.reading.${v}`), () => onAppearanceChange({ ...appearance, reading: v }), done, undefined, { checked: appearance.reading === v }))}
+      </>
+    ),
+  })
   add(slideNotes && !isFullscreen && { id: 'notes', group: 'view', label: t('office.notesToggle'), icon: <IconNotes />, onClick: slideNotes.onToggle, active: slideNotes.on, pressed: slideNotes.on })
 
+  add({ id: 'palette', group: 'tools', label: t('tool.palette'), hint: 'Ctrl+K', icon: <IconCommand />, onClick: () => setPaletteOpen(true) })
   add(anyDoc && onFind && { id: 'find', group: 'tools', label: t('tool.find'), hint: 'Ctrl+F', icon: <IconSearch />, onClick: onFind })
+  add(hasPdf && onCompare && !embed && { id: 'compare', group: 'tools', label: t('compare.tool'), icon: <IconCompare />, onClick: onCompare })
   add(hasPdf && {
     id: 'ocr', group: 'tools', label: t('tool.ocr'), icon: <IconOcr />,
     armed: !!ocrProgress, badge: ocrProgress ? `${ocrProgress.done}/${ocrProgress.total}` : undefined,
@@ -393,13 +452,105 @@ export function ActionBar(props: ActionBarProps) {
       },
       { id: 'signature', group: 'tools', label: t('tool.signature'), caption: t('tool.signature'), icon: <IconSignature />, armed: activeMode === 'signature', onClick: () => { onModeChange('signature'); onSignatureClick() } },
       { id: 'watermark', group: 'tools', label: t('tool.watermark'), caption: t('tool.watermark'), icon: <IconWatermark />, armed: activeMode === 'watermark', onClick: () => { onModeChange('watermark'); onWatermarkClick() } },
+      // Fill & Sign: typed text, ✓ ✕ ● ─ and today's date, placed by a click.
+      ...(onFillTool ? [{
+        id: 'fill', group: 'tools', label: t('fill.menu'), caption: t('fill.short'), icon: <IconFill />, armed: activeMode === 'fill',
+        menu: (done: () => void) => (
+          <>
+            {FILL_TOOLS.map(tool => row(<span className="w-4 text-center" aria-hidden>{FILL_GLYPH[tool]}</span>, t(`fill.tool.${tool}`), () => onFillTool(tool), done, undefined,
+              { checked: activeMode === 'fill' && fillTool === tool }))}
+          </>
+        ),
+      } satisfies RailItem] : []),
+      // A digital signature with a certificate file.
+      ...(onSign ? [{ id: 'sign', group: 'tools', label: t('sign.tool'), caption: t('sign.short'), icon: <IconCertificate />, armed: activeMode === 'signArea', onClick: onSign } satisfies RailItem] : []),
+      // Redaction: mark words or areas, then apply — which removes them.
+      ...(redact ? [{
+        id: 'redact', group: 'tools', label: t('redact.menu'), caption: t('redact.short'), icon: <IconRedact />,
+        armed: activeMode === 'redact' || activeMode === 'redactArea', badge: redact.pending ? String(redact.pending) : undefined,
+        menu: (done: () => void) => (
+          <>
+            {row(<span className="w-4" />, t('redact.markText'), () => redact.onArm('redact'), done, undefined, { checked: activeMode === 'redact' })}
+            {row(<span className="w-4" />, t('redact.markArea'), () => redact.onArm('redactArea'), done, undefined, { checked: activeMode === 'redactArea' })}
+            {row(<span className="w-4" />, t('redact.find'), redact.onFind, done)}
+            <MenuDivider />
+            {row(<span className="w-4" />, t('redact.applyN', { n: redact.pending }), redact.onApply, done, undefined, { disabled: redact.pending === 0, className: redact.pending ? 'text-red-300' : '' })}
+            {row(<span className="w-4" />, t('redact.clear'), redact.onClear, done, undefined, { disabled: redact.pending === 0 })}
+          </>
+        ),
+      } satisfies RailItem] : []),
+      // Comments: the three marks are made by selecting text with the tool
+      // armed; a note by clicking where it goes. A second press puts it down.
+      { id: 'highlight', group: 'comments', label: t('tool.highlightHint'), caption: t('tool.highlight'), icon: <IconHighlight />, armed: activeMode === 'highlight', onClick: () => onModeChange(activeMode === 'highlight' ? 'select' : 'highlight') },
+      { id: 'underline', group: 'comments', label: t('tool.underlineHint'), caption: t('tool.underline'), icon: <IconUnderline />, armed: activeMode === 'underline', onClick: () => onModeChange(activeMode === 'underline' ? 'select' : 'underline') },
+      { id: 'strikeout', group: 'comments', label: t('tool.strikeoutHint'), caption: t('tool.strikeout'), icon: <IconStrike />, armed: activeMode === 'strikeout', onClick: () => onModeChange(activeMode === 'strikeout' ? 'select' : 'strikeout') },
+      { id: 'note', group: 'comments', label: t('tool.noteHint'), caption: t('tool.note'), icon: <IconNote />, armed: activeMode === 'note', onClick: () => onModeChange(activeMode === 'note' ? 'select' : 'note') },
     )
     if (selectedId) editItems.push({ id: 'delete', group: 'delete', label: t('tool.delete'), caption: t('tool.delete'), hint: 'Delete', icon: <IconDelete />, danger: true, onClick: onDeleteSelected })
   }
 
+  // ── The command palette's list ────────────────────────────────────────────
+  // Every action the rail, its menus and the edit rail offer, flat, with the
+  // same conditions — one list, so the palette can never offer what the rail
+  // would hide.
+  const commands: PaletteCommand[] = []
+  const G = { file: t('palette.groupFile'), view: t('palette.groupView'), tools: t('palette.groupTools'), edit: t('palette.groupEdit') }
+  const cmd = (
+    on: unknown, id: string, key: MessageKey, group: string, run: () => void,
+    o: { vars?: Record<string, string | number>; shortcut?: string; icon?: ReactNode; disabled?: boolean; keywords?: string } = {},
+  ) => {
+    if (!on) return
+    commands.push({ id, label: t(key, o.vars), alt: tEnglish(key, o.vars), group, run, shortcut: o.shortcut, icon: o.icon, disabled: o.disabled, keywords: o.keywords })
+  }
+  cmd(!embed, 'open-file', 'tool.openFile', G.file, pickFiles, { shortcut: 'F2', icon: <IconFolderOpen /> })
+  cmd(!embed, 'open-url', 'tool.openUrl', G.file, onOpenUrl, { icon: <IconLink /> })
+  cmd(anyDoc && !embed, 'save-pdf', 'export.pdf', G.file, onExportPdf, { shortcut: 'Ctrl+S', icon: <IconSave />, disabled: isExporting })
+  cmd(anyDoc && !embed && onSaveOriginal, 'save-original', 'export.original', G.file, () => onSaveOriginal?.(), { icon: <IconFile />, disabled: isExporting })
+  cmd(anyDoc && !embed && onExportSpreads, 'save-booklet', 'export.spread', G.file, () => onExportSpreads?.(), { icon: <IconSpread />, disabled: isExporting })
+  cmd(anyDoc && !embed && onExportHtml, 'save-html', 'export.html', G.file, () => onExportHtml?.(), { icon: <IconHtml />, disabled: isExporting })
+  cmd(anyDoc && !embed && onOptimize, 'optimize', 'optimize.menu', G.file, () => onOptimize?.(), { icon: <IconCompress />, keywords: 'optimize compress reduce size 용량 압축 줄이기' })
+  cmd(anyDoc && !embed && onExportImages, 'save-images', 'export.images', G.file, () => onExportImages?.(), { icon: <IconImage />, disabled: isExporting })
+  cmd(anyDoc && !embed && onExportExe, 'save-exe', 'export.exe', G.file, () => onExportExe?.(), { icon: <IconExe />, disabled: isExporting })
+  cmd(onSaveSlideVideo, 'save-video', 'video.save', G.file, () => onSaveSlideVideo?.(), { icon: <IconVideo />, disabled: isExporting })
+  cmd(anyDoc && onPrint, 'print', 'tool.print', G.file, () => onPrint?.(), { shortcut: 'Ctrl+P', icon: <IconPrint /> })
+  cmd(pages && !isFullscreen, 'page-list', 'tool.pages', G.view, onTogglePanel, { icon: <IconPages /> })
+  cmd(pages, 'layout-single', 'tool.single', G.view, () => onViewModeChange('single'), { icon: <IconSingle /> })
+  cmd(pages, 'layout-spread', 'tool.spread', G.view, () => onViewModeChange('spread'), { icon: <IconSpread /> })
+  cmd(pages, 'layout-grid', 'tool.grid', G.view, () => onViewModeChange('grid'), { icon: <IconGrid /> })
+  cmd(anyDoc, 'fullscreen', 'palette.fullscreen', G.view, () => onViewModeChange('fullscreen'), { shortcut: 'F5', icon: <IconFullscreen /> })
+  cmd(anyDoc && !isFullscreen, 'zoom-in', 'tool.zoomIn', G.view, onZoomIn, { shortcut: 'Ctrl++', icon: <IconZoomIn /> })
+  cmd(anyDoc && !isFullscreen, 'zoom-out', 'tool.zoomOut', G.view, onZoomOut, { shortcut: 'Ctrl+-', icon: <IconZoomOut /> })
+  cmd(anyDoc && !isFullscreen, 'zoom-reset', 'palette.zoomReset', G.view, onZoomReset)
+  cmd(anyDoc && !isFullscreen, 'fit-width', 'tool.fitWidth', G.view, onFitWidth, { icon: <IconFitWidth /> })
+  cmd(hasPdf && !isFullscreen, 'rotate-left', 'tool.rotateLeft', G.view, onRotateLeft, { vars: { deg: rotation }, icon: <IconRotateLeft /> })
+  cmd(hasPdf && !isFullscreen, 'rotate-right', 'tool.rotate', G.view, onRotate, { vars: { deg: rotation }, icon: <IconRotate /> })
+  cmd(slideNotes, 'speaker-notes', 'office.notesToggle', G.view, () => slideNotes?.onToggle(), { icon: <IconNotes /> })
+  cmd(anyDoc && onFind, 'find', 'tool.find', G.tools, () => onFind?.(), { shortcut: 'Ctrl+F', icon: <IconSearch /> })
+  cmd(hasPdf && onCompare && !embed, 'compare', 'compare.tool', G.tools, () => onCompare?.(), { icon: <IconCompare />, keywords: 'compare diff 비교 차이 버전' })
+  cmd(hasPdf, 'ocr-page', 'ocr.menuCurrent', G.tools, onRunOcr, { shortcut: 'R', icon: <IconOcr />, disabled: isOcrRunning || numPages === 0, keywords: 'ocr' })
+  cmd(hasPdf, 'ocr-all', 'ocr.menuAll', G.tools, onRunOcrAll, { shortcut: 'R R', icon: <IconOcr />, disabled: isOcrRunning || numPages === 0, keywords: 'ocr' })
+  cmd(ocrProgress, 'ocr-cancel', 'ocr.cancel', G.tools, onCancelOcr)
+  cmd(onToggleSpeech && anyDoc, 'read-aloud', isSpeaking ? 'tts.stop' : 'tts.read', G.tools, () => onToggleSpeech?.(), { icon: isSpeaking ? <IconStopSpeak /> : <IconSpeak />, keywords: 'tts' })
+  cmd(hasMarkups, 'clear-markups', 'tool.reset', G.tools, onResetMarkups, { shortcut: 'Esc', icon: <IconReset /> })
+  cmd(!embed && canEdit && anyDoc, 'toggle-edit', appMode === 'editor' ? 'palette.editOff' : 'palette.editOn', G.edit, () => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor'), { icon: <IconPencil /> })
+  cmd(hasPdf && !embed, 'password', saveLocked ? 'tool.passwordRemove' : 'tool.passwordSet', G.edit, onPassword, { icon: saveLocked ? <IconLock /> : <IconLockOpen />, disabled: isExporting })
+  for (const item of editItems) {
+    if (item.menu) continue
+    commands.push({ id: `edit-${item.id}`, label: item.caption ?? item.label, alt: undefined, group: G.edit, run: () => item.onClick?.(), shortcut: item.hint, icon: item.icon, disabled: item.disabled })
+  }
+  cmd(true, 'help', 'palette.help', G.tools, openHelp, { shortcut: 'F1' })
+  if (appearance && onAppearanceChange) {
+    for (const v of ['light', 'dark', 'system'] as const) {
+      cmd(appearance.theme !== v, `theme-${v}`, `appearance.cmd.theme.${v}`, G.view, () => onAppearanceChange({ ...appearance, theme: v }), { keywords: 'theme dark mode 테마 다크' })
+    }
+    for (const v of ['normal', 'sepia', 'night'] as const) {
+      cmd(appearance.reading !== v, `reading-${v}`, `appearance.cmd.reading.${v}`, G.view, () => onAppearanceChange({ ...appearance, reading: v }), { keywords: 'reading colours 읽기 색' })
+    }
+  }
+
   // ── The title bar's right end: where in the document, and how big ─────────
   const counter = pages && !isFullscreen ? (
-    <span className="px-1 text-xs text-gray-600 tabular-nums whitespace-nowrap" aria-label={t('tool.pageOf', { n: currentPage, total: numPages })}>
+    <span className="px-1 text-xs text-gray-600 dark:text-gray-300 tabular-nums whitespace-nowrap" aria-label={t('tool.pageOf', { n: currentPage, total: numPages })}>
       {currentPage} / {numPages}
     </span>
   ) : null
@@ -407,7 +558,7 @@ export function ActionBar(props: ActionBarProps) {
     <>
       <ZoomControl tone="light" zoom={zoom} onZoomIn={onZoomIn} onZoomOut={onZoomOut} onZoomSet={onZoomSet} onZoomReset={onZoomReset} />
       <button onClick={onFitWidth} title={t('tool.fitWidth')} aria-label={t('tool.fitWidth')}
-        className="flex h-7 w-7 items-center justify-center rounded-md text-gray-600 hover:bg-black/10 hover:text-gray-900">
+        className="flex h-7 w-7 items-center justify-center rounded-md text-gray-600 dark:text-gray-300 hover:bg-black/10 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white">
         <IconFitWidth />
       </button>
     </>
@@ -436,11 +587,13 @@ export function ActionBar(props: ActionBarProps) {
       {wide && toolRail}
       {wide && editRail}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <TitleBar name={fileName} unsaved={unsaved} right={<>{counter}{zoomControls}</>} />
+        <TitleBar name={fileName} unsaved={unsaved} badge={signatureBadge} right={<>{counter}{zoomControls}</>}
+          tabs={tabs} onTab={onTab} onCloseTab={onCloseTab} />
         {children}
         {!wide && editRail}
         {!wide && toolRail}
       </div>
+      {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
       {/* Mounted always: a live region announces only what changes while it exists. */}
       <OcrAnnouncer progress={ocrProgress} />
       {!embed && <input ref={setFileInput} type="file" multiple accept={DOCUMENT_ACCEPT} className="hidden" onChange={handleFileChange} />}

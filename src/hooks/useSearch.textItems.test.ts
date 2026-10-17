@@ -27,7 +27,7 @@ describe('useSearch item indices', () => {
     const { result } = renderHook(() => useSearch(doc, 1))
 
     await act(async () => { await result.current.run('world') })
-    expect(result.current.matches).toEqual([{ page: 1, itemStart: 2, itemEnd: 2 }])
+    expect(result.current.matches.map(({ page, itemStart, itemEnd }) => ({ page, itemStart, itemEnd }))).toEqual([{ page: 1, itemStart: 2, itemEnd: 2 }])
   })
 
   it('maps a match that spans two items to both of their string indices', async () => {
@@ -40,7 +40,7 @@ describe('useSearch item indices', () => {
     const { result } = renderHook(() => useSearch(doc, 1))
 
     await act(async () => { await result.current.run('oob') })
-    expect(result.current.matches).toEqual([{ page: 1, itemStart: 0, itemEnd: 1 }])
+    expect(result.current.matches.map(({ page, itemStart, itemEnd }) => ({ page, itemStart, itemEnd }))).toEqual([{ page: 1, itemStart: 0, itemEnd: 1 }])
   })
 })
 
@@ -73,5 +73,39 @@ describe('useSearch item mapping', () => {
       await act(async () => { await result.current.run(needle) })
       expect(result.current.matches.map(({ itemStart, itemEnd }) => ({ itemStart, itemEnd }))).toEqual(bruteForce(items, needle))
     }
+  })
+})
+
+describe('useSearch behaviour', () => {
+  function docWithPages(pages: { str: string; hasEOL?: boolean }[][]): ViewerDoc {
+    return {
+      getPage: vi.fn(async (n: number) => ({ getTextContent: async () => ({ items: pages[n - 1] }) })),
+    } as unknown as ViewerDoc
+  }
+
+  it('finds a phrase across a line end, with its context', async () => {
+    const doc = docWithPages([[{ str: 'the quick', hasEOL: true }, { str: 'brown fox' }]])
+    const { result } = renderHook(() => useSearch(doc, 1))
+    await act(async () => { await result.current.run('quick brown') })
+    expect(result.current.matches).toHaveLength(1)
+    expect(result.current.matches[0]).toMatchObject({ itemStart: 0, itemEnd: 1, snippet: { hit: 'quick brown' } })
+  })
+
+  it('makes the first match at or after the page in view the current one', async () => {
+    const doc = docWithPages([[{ str: 'apple' }], [{ str: 'pear' }], [{ str: 'apple' }], [{ str: 'apple' }]])
+    const { result } = renderHook(() => useSearch(doc, 4, undefined, 3))
+    await act(async () => { await result.current.run('apple') })
+    expect(result.current.matches.map(m => m.page)).toEqual([1, 3, 4])
+    expect(result.current.active?.page).toBe(3)
+  })
+
+  it('searches again when case sensitivity is switched on', async () => {
+    const doc = docWithPages([[{ str: 'Seoul seoul SEOUL' }]])
+    const { result } = renderHook(() => useSearch(doc, 1))
+    await act(async () => { await result.current.run('seoul') })
+    expect(result.current.matches.map(m => m.snippet?.hit)).toEqual(['Seoul', 'seoul', 'SEOUL'])
+    await act(async () => { result.current.setOptions({ caseSensitive: true, wholeWord: false }) })
+    await act(async () => { await new Promise(r => setTimeout(r, 0)) })
+    expect(result.current.matches.map(m => m.snippet?.hit)).toEqual(['seoul'])
   })
 })

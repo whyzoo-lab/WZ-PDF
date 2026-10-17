@@ -63,4 +63,19 @@ describe('useEditHistory', () => {
     expect(steps).toBe(HISTORY_LIMIT)
     expect(result.current.value).toBe(20)
   })
+
+  it('hands its stacks to a tab and takes them back', () => {
+    const { result } = renderHook(() => useCounter())
+    act(() => result.current.change(1))
+    act(() => result.current.change(2))
+    const kept = result.current.history.exportStacks()
+    // Another document in front: its own (empty) history.
+    act(() => { result.current.history.reset() })
+    expect(result.current.history.canUndo).toBe(false)
+    // Back: undo goes on where it was.
+    act(() => { result.current.history.importStacks(kept) })
+    expect(result.current.history.canUndo).toBe(true)
+    act(() => { result.current.history.undo() })
+    expect(result.current.value).toBe(1)
+  })
 })

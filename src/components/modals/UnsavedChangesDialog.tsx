@@ -5,7 +5,7 @@ export interface UnsavedChangesDialogProps {
   /** The document with the unsaved changes. */
   fileName: string
   /** What is about to happen, when it is not opening another document. */
-  reason?: 'open' | 'update'
+  reason?: 'open' | 'update' | 'close'
   /** Save, then go on. Resolves false when the save did not happen (cancelled or failed). */
   onSave: () => Promise<boolean>
   /** Go on without saving. */
@@ -60,7 +60,7 @@ export function UnsavedChangesDialog({ fileName, reason = 'open', onSave, onDisc
       >
         <h2 id="wz-unsaved-title" className="text-sm font-semibold">{t('unsaved.title')}</h2>
         <p id="wz-unsaved-body" className="mt-1 text-xs text-gray-300 break-words">
-          {t(reason === 'update' ? 'unsaved.bodyUpdate' : 'unsaved.body', { name: fileName })}
+          {t(reason === 'update' ? 'unsaved.bodyUpdate' : reason === 'close' ? 'unsaved.bodyClose' : 'unsaved.body', { name: fileName })}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <button

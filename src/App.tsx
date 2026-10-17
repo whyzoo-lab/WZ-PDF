@@ -27,7 +27,7 @@ import { PasswordPrompt } from './components/modals/PasswordPrompt'
 import { PasswordSetPrompt } from './components/modals/PasswordSetPrompt'
 import type { Annotation, OmitId, PendingStamp } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
-import { isFlowKind, isOfficeKind } from './types/viewerDoc'
+import { isFlowKind, isOfficeKind, type ViewerDoc } from './types/viewerDoc'
 import type { OfficePageInfo, OfficeViewHandle } from './components/office/officeView'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, PAGE_ATTR } from './utils/constants'
 import { captureZoomAnchor, restoreZoomAnchor, type ZoomAnchor } from './utils/zoomAnchor'
@@ -44,10 +44,32 @@ import { useAutoUpdate } from './hooks/useAutoUpdate'
 import { useStampLibrary } from './hooks/useStampLibrary'
 import { customKey, type SavedStamp } from './services/stampLibrary'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { t } from './i18n'
+import { LANG, t } from './i18n'
 import { isVolatile } from './types/annotation'
 import { useEditHistory } from './hooks/useEditHistory'
 import { UnsavedChangesDialog } from './components/modals/UnsavedChangesDialog'
+import { RecoveryDialog, type RecoveryItem } from './components/modals/RecoveryDialog'
+import { useAutosave, newRecoveryKey } from './hooks/useAutosave'
+import { useOutline } from './hooks/useOutline'
+import { useAppearance } from './hooks/useAppearance'
+import { useCommentAuthor } from './hooks/useCommentAuthor'
+import { useCommentImport } from './hooks/useCommentImport'
+import { FormContext, type FormActions } from './components/forms/formContext'
+import { FillContext, type FillActions, type FillTool } from './components/fill/fillContext'
+import { CompareContext, type CompareMark, type CompareView } from './components/compare/compareContext'
+import { RedactApplyDialog, RedactFindDialog } from './components/redact/RedactDialogs'
+import type { Found } from './services/redact'
+import { useSignatures } from './hooks/useSignatures'
+import { SignatureBadge, SignaturePanel, SignDialog } from './components/sign/SignaturePanels'
+import { SignAreaContext } from './components/sign/signContext'
+import { OptimizeDialog, type OptimizePreset } from './components/modals/OptimizeDialog'
+import { formatSize } from './utils/fileSize'
+import type { Comparison } from './services/textCompare'
+import { findFormValue } from './services/pdfForms'
+import type { FormValue } from './types/annotation'
+import { CommentContext, type CommentActions } from './components/comments/commentContext'
+import { CommentsPanel } from './components/comments/CommentsPanel'
+import { isComment, isTextMarkup, type CommentAnnotation } from './types/annotation'
 import { StartScreen } from './components/StartScreen'
 import { errorMessage } from './utils/errors'
 import { loadPrivateMode, pickPrivateDocument, type PrivateMode } from './services/privateMode'
@@ -76,6 +98,7 @@ const MarkdownView = lazy(() => import('./components/markdown/MarkdownView').the
 const DocxView = lazy(() => import('./components/office/DocxView').then(m => ({ default: m.DocxView })))
 const SheetView = lazy(() => import('./components/office/SheetView').then(m => ({ default: m.SheetView })))
 const PptxView = lazy(() => import('./components/office/PptxView').then(m => ({ default: m.PptxView })))
+const ComparePanel = lazy(() => import('./components/compare/ComparePanel').then(m => ({ default: m.ComparePanel })))
 
 /**
  * Pull the viewer chunks in as soon as the shell has painted.
@@ -112,10 +135,25 @@ function queryParam(name: string): string | null {
   try { return new URLSearchParams(window.location.search).get(name) } catch { return null }
 }
 
+/** How many documents can be open at once, in tabs. */
+const MAX_TABS = 20
+
 export default function App() {
   // ── Document state ────────────────────────────────────────────────────────
   const [file, setFile] = useState<DocumentFile | null>(null)
   const [fileBytes, setFileBytes] = useState<ArrayBuffer | null>(null)
+  // Open documents, one tab each (see "Tabs" below); the one in front has no snapshot.
+  type TabSnap = {
+    file: DocumentFile; annotations: Annotation[]; history: { past: unknown[]; future: unknown[] }
+    savedState: { file: DocumentFile | null; annotations: readonly Annotation[] }; markdownDirty: boolean; markdownText: string | null
+    openedDoc: { file: DocumentFile; path?: string } | null; recoveryKey: string
+    zoom: number; rotation: number; viewMode: ViewMode; page: number; appMode: AppMode
+    chosenPassword: { from: string | null; value: string | null }; ocr: Map<number, import('./types/ocr').OcrPageResult>
+    unsaved: boolean
+  }
+  const [tabs, setTabs] = useState<{ id: string; snap: TabSnap | null }[]>([])
+  const tabsRef = useRef(tabs)
+  useLayoutEffect(() => { tabsRef.current = tabs })
 
   // ── View state ────────────────────────────────────────────────────────────
   const [zoom, setZoom] = useState(1)
@@ -178,11 +216,20 @@ export default function App() {
   // The viewer viewport — measured by useFitZoom so auto-fit uses real space.
   const mainRef = useRef<HTMLElement>(null)
 
+  // The password each opened File was unlocked with, so a tab brought back to
+  // the front (its document opened again) does not ask for it a second time.
+  const knownPasswords = useRef(new WeakMap<DocumentFile, string>())
+  const knownPassword = useCallback((f: DocumentFile) => knownPasswords.current.get(f), [])
   const {
     pdfDoc, numPages, isLoading, error, kind, email, markdown, office,
     passwordPrompt, submitPassword, cancelPassword, documentPassword,
     startPage,
-  } = usePdfDocument(file)
+  } = usePdfDocument(file, knownPassword)
+  useEffect(() => { if (file && documentPassword) knownPasswords.current.set(file, documentPassword) }, [file, documentPassword])
+  // The PDF's digital signatures (a page edit, redaction or size reduction
+  // rewrites the whole file, and they stop covering it — said when it happens).
+  const signatures = useSignatures(fileBytes, kind)
+  const signed = signatures.length > 0
   // A reflowing document is loaded and on screen. Guarded on the payload as
   // well as the kind so it is false during the load, when there is nothing to
   // zoom, print or present yet.
@@ -263,6 +310,15 @@ export default function App() {
   // immutable and a page edit replaces `file`, so "changed" is a reference
   // comparison. Pen and rectangle never reach a saved file, so they don't count.
   const [savedState, setSavedState] = useState<{ file: DocumentFile | null; annotations: readonly Annotation[] }>({ file: null, annotations: [] })
+
+  // ── The file's own comments ───────────────────────────────────────────────
+  // Read once it opens and added as they are — not as an edit: the document is
+  // no more unsaved than it was, and there is nothing to undo.
+  const addImportedComments = useCallback((list: CommentAnnotation[]) => {
+    replaceAnnotations([...annotationsRef.current, ...list])
+    setSavedState(s => ({ ...s, annotations: [...s.annotations, ...list] }))
+  }, [replaceAnnotations])
+
   const lastingAnnotations = useMemo(() => annotations.filter(a => !isVolatile(a)), [annotations])
   const [markdownDirty, setMarkdownDirty] = useState(false)
   const unsaved = file !== null && (
@@ -277,6 +333,19 @@ export default function App() {
   const markdownSaveRef = useRef<(() => Promise<boolean>) | null>(null)
   const markdownTextRef = useRef<(() => string) | null>(null)
   const getMarkdownText = useCallback(() => markdownTextRef.current?.() ?? null, [])
+
+  // ── Autosave for crash recovery (desktop) ─────────────────────────────────
+  // The document as opened (a page edit replaces `file`, not this), where it
+  // came from, and the key its recovery entry is written under.
+  const [openedDoc, setOpenedDoc] = useState<{ file: DocumentFile; path?: string } | null>(null)
+  const recoveryKeyRef = useRef(newRecoveryKey())
+  const commentImport = useCommentImport(pdfDoc, kind, numPages, annotations, addImportedComments, openedDoc)
+  // Markdown brought back from a recovery entry, shown as unsaved edits.
+  const [recoveredMarkdown, setRecoveredMarkdown] = useState<{ file: DocumentFile; text: string } | null>(null)
+  useAutosave({
+    file, openedFile: openedDoc?.file ?? null, path: openedDoc?.path, unsaved,
+    encrypted: !!documentPassword, annotations: lastingAnnotations, markdownText: getMarkdownText,
+  }, recoveryKeyRef, key => tabsRef.current.some(t => t.snap?.recoveryKey === key && t.snap.unsaved))
 
   // Why there are no bytes to save from, when that is not just "still reading".
   const bytesUnavailable = file && isLargeDocument(file)
@@ -320,11 +389,218 @@ export default function App() {
   const search = useSearch(pdfDoc, numPages, (page) => {
     const r = ocr.ocrResults.get(page)
     return r && r.status === 'done' ? r.words.map(w => w.text) : undefined
-  })
+  }, currentPage)
   // Find-in-document comes in two flavours because the documents do: pdfjs text
   // items for pages, live DOM for the reflowing formats. `findBar` picks the one
   // that matches what is open, so the SearchBar itself stays format-agnostic.
   const flowSearch = useFlowSearch(flowDoc)
+  const outline = useOutline(pdfDoc)
+  const [appearance, setAppearance] = useAppearance()
+  const [commentAuthor, setCommentAuthor] = useCommentAuthor()
+  const commentActions = useMemo<CommentActions>(
+    () => ({ author: commentAuthor, canEdit: appMode === 'editor' && !chromeless, remove: removeAnnotation }),
+    [commentAuthor, appMode, chromeless, removeAnnotation],
+  )
+  const comments = useMemo(() => annotations.filter(isComment), [annotations])
+
+  // ── Form fields ───────────────────────────────────────────────────────────
+  // One `formValue` annotation per field name, so a fill is undone, saved and
+  // recovered like any edit. Set back to the file's own value, it goes away.
+  const setField = useCallback((name: string, value: FormValue, page: number, original: FormValue) => {
+    const same = (a: FormValue, b: FormValue) => JSON.stringify(a) === JSON.stringify(b)
+    const existing = findFormValue(annotationsRef.current, name)
+    if (existing) {
+      if (same(existing.value, value)) return
+      if (same(value, original)) removeAnnotation(existing.id)
+      else updateAnnotation(existing.id, { value })
+    } else if (!same(value, original)) {
+      addAnnotation({ type: 'formValue', fieldName: name, value, page, x: 0, y: 0, width: 0, height: 0, rotation: 0 })
+    }
+  }, [addAnnotation, updateAnnotation, removeAnnotation])
+  const formActions = useMemo<FormActions>(() => ({ canFill: !chromeless, setField }), [chromeless, setField])
+
+  // ── Fill & Sign ───────────────────────────────────────────────────────────
+  const [fillTool, setFillTool] = useState<FillTool>('text')
+  const fillActions = useMemo<FillActions>(() => ({
+    tool: fillTool, canEdit: appMode === 'editor' && !chromeless, remove: removeAnnotation, update: updateAnnotation,
+  }), [fillTool, appMode, chromeless, removeAnnotation, updateAnnotation])
+  const handleFillTool = useCallback((tool: FillTool) => {
+    setFillTool(tool)
+    setActiveMode('fill')
+  }, [setActiveMode])
+
+  // ── Compare with another file ─────────────────────────────────────────────
+  // The picked file is the earlier version; the open document is the new one,
+  // and its pages carry the marks. Belongs to the document it was made for.
+  const [comparison, setComparison] = useState<{ doc: ViewerDoc; oldName: string; result: Comparison } | null>(null)
+  const [compareActive, setCompareActive] = useState<number | null>(null)
+  const shownComparison = comparison && comparison.doc === pdfDoc ? comparison : null
+  const compareView = useMemo<CompareView>(() => {
+    const marks = new Map<number, CompareMark[]>()
+    shownComparison?.result.changes.forEach((c, index) => {
+      const list = marks.get(c.new.page) ?? []
+      list.push({ index, kind: c.kind, rects: c.new.rects, near: c.new.near })
+      marks.set(c.new.page, list)
+    })
+    return { marks, active: compareActive }
+  }, [shownComparison, compareActive])
+  const handleCompare = useCallback(() => {
+    if (!pdfDoc) return
+    const doc = pdfDoc
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = DOCUMENT_ACCEPT
+    input.onchange = () => {
+      const picked = input.files?.[0]
+      if (!picked) return
+      showToast(t('compare.running'))
+      void (async () => {
+        try {
+          const [{ wordsOfDocument, wordsOfFile }, { compareWords }] = await Promise.all([
+            import('./services/compareWords'), import('./services/textCompare'),
+          ])
+          const [older, current] = await Promise.all([wordsOfFile(picked), wordsOfDocument(doc, kind, numPages, ocr.ocrResults)])
+          if (current.length === 0) { showToast(t('compare.noText')); return }
+          const result = compareWords(older.words, current)
+          setComparison({ doc, oldName: picked.name, result })
+          setCompareActive(null)
+          showToast(result.changes.length ? t('compare.found', { n: result.changes.length }) : t('compare.identical'))
+        } catch (err) {
+          showToast(err instanceof Error && err.message === 'unsupported' ? t('compare.unsupported') : t('compare.failed', { error: errorMessage(err) }))
+        }
+      })()
+    }
+    input.click()
+  }, [pdfDoc, kind, numPages, ocr.ocrResults, showToast])
+  const pickChange = useCallback((index: number) => {
+    setCompareActive(index)
+    const c = shownComparison?.result.changes[index]
+    if (!c) return
+    setScrollToPage(c.new.page)
+    if (viewMode === 'grid') setViewMode('single')
+  }, [shownComparison, viewMode])
+  // ── Reduce file size (PDF) ────────────────────────────────────────────────
+  // Like a page edit: the file is replaced (one undo step) and saved as usual.
+  const [optimizing, setOptimizing] = useState<boolean | null>(null)
+  const runOptimize = useCallback(async (choice: { preset: OptimizePreset; removeHidden: boolean; dropTags: boolean }) => {
+    if (!fileBytes) return
+    setOptimizing(true)
+    try {
+      const [{ optimizePdf, PRESETS }, { canvasCodec }] = await Promise.all([import('./services/pdfOptimize'), import('./services/optimizeRuntime')])
+      let input = fileBytes
+      if (choice.removeHidden) {
+        const [{ loadPdfForWriting }, { removeHiddenInformation }] = await Promise.all([import('./services/pdfLoad'), import('./services/redact')])
+        const doc = await loadPdfForWriting(fileBytes, documentPassword ?? undefined)
+        removeHiddenInformation(doc)
+        const b = await doc.save()
+        input = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer
+      }
+      const { bytes, report } = await optimizePdf(input, { ...PRESETS[choice.preset], dropTags: choice.dropTags }, canvasCodec, choice.removeHidden ? undefined : documentPassword ?? undefined)
+      setOptimizing(null)
+      if (report.after >= report.before && !choice.removeHidden) { showToast(t('optimize.noGain', { size: formatSize(report.before) })); return }
+      recordEdit()
+      setFile(new File([bytes as Uint8Array<ArrayBuffer>], file?.name ?? 'document.pdf', { type: 'application/pdf' }))
+      showToast(t('optimize.done', { before: formatSize(report.before), after: formatSize(report.after), images: report.imagesResampled }))
+      if (signed) setTimeout(() => setToast({ id: Date.now(), message: t('sign.brokenByEdit') }), 2600)
+    } catch (err) {
+      setOptimizing(null)
+      showToast(t('optimize.failed', { error: errorMessage(err) }))
+    }
+  }, [fileBytes, documentPassword, recordEdit, file, showToast, signed])
+
+  // ── Redaction (PDF) ───────────────────────────────────────────────────────
+  const redactMarks = useMemo(() => annotations.filter(a => a.type === 'redact'), [annotations])
+  const [redactDialog, setRedactDialog] = useState<'apply' | 'find' | null>(null)
+  const [redacting, setRedacting] = useState(false)
+  const applyRedaction = useCallback(async (removeHidden: boolean) => {
+    if (!pdfDoc || !fileBytes || redactMarks.length === 0) return
+    setRedacting(true)
+    try {
+      const { redactDocument } = await import('./services/redactRuntime')
+      const byPage = new Map<number, { x: number; y: number; width: number; height: number }[]>()
+      for (const m of redactMarks) if (m.type === 'redact') byPage.set(m.page, [...(byPage.get(m.page) ?? []), ...m.rects])
+      const marks = [...byPage].map(([page, rects]) => ({ page, rects }))
+      const { bytes, report } = await redactDocument(pdfDoc, fileBytes, marks, {
+        password: documentPassword ?? undefined, removeHidden, ocr: ocr.ocrResults,
+      })
+      // One undo step: the marks go, comments over them go, the file is the redacted one.
+      const { intersects } = await import('./services/redact')
+      const touched = (a: Annotation) => (isComment(a) || a.type === 'fill') && (byPage.get(a.page) ?? []).some(r =>
+        (isTextMarkup(a) ? a.rects : [a]).some(b => intersects(b, r)))
+      recordEdit()
+      replaceAnnotations(annotationsRef.current.filter(a => a.type !== 'redact' && !touched(a)))
+      setFile(new File([bytes as Uint8Array<ArrayBuffer>], file?.name ?? 'document.pdf', { type: 'application/pdf' }))
+      setRedactDialog(null)
+      setActiveMode(null)
+      showToast(t('redact.done', { boxes: report.boxes, pages: report.pages, words: report.wordsRemoved }))
+    } catch (err) {
+      showToast(t('redact.failed', { error: errorMessage(err) }))
+    } finally {
+      setRedacting(false)
+    }
+  }, [pdfDoc, fileBytes, redactMarks, documentPassword, ocr.ocrResults, recordEdit, replaceAnnotations, file, setActiveMode, showToast])
+  const findForRedaction = useCallback(async (patterns: string[], text: string): Promise<Found[]> => {
+    if (!pdfDoc) return []
+    const [{ wordsOfPage }, { findInWords, REDACT_PATTERNS, literal }] = await Promise.all([
+      import('./services/compareWords'), import('./services/redact'),
+    ])
+    const chosen = REDACT_PATTERNS.filter(p => patterns.includes(p.id))
+    if (text.trim()) chosen.push({ id: 'text', re: literal(text) })
+    const out: Found[] = []
+    for (let p = 1; p <= numPages; p++) {
+      const words = (await wordsOfPage(pdfDoc, kind, p, ocr.ocrResults)).filter(w => w.rect) as { text: string; rect: { x: number; y: number; width: number; height: number } }[]
+      out.push(...findInWords(p, words, chosen))
+    }
+    return out
+  }, [pdfDoc, kind, numPages, ocr.ocrResults])
+  const markFound = useCallback((found: Found[]) => {
+    if (found.length === 0) { setRedactDialog(null); return }
+    recordEdit()
+    for (const f of found) {
+      const xs = f.rects.map(r => r.x), ys = f.rects.map(r => r.y)
+      const x = Math.min(...xs), y = Math.min(...ys)
+      addAnnotationRaw({
+        type: 'redact', page: f.page, rects: f.rects, text: f.text, rotation: 0, x, y,
+        width: Math.max(...f.rects.map(r => r.x + r.width)) - x, height: Math.max(...f.rects.map(r => r.y + r.height)) - y,
+      })
+    }
+    setRedactDialog(null)
+    showToast(t('redact.marked', { n: found.length }))
+  }, [recordEdit, addAnnotationRaw, showToast])
+  const clearRedactMarks = useCallback(() => {
+    if (redactMarks.length === 0) return
+    recordEdit()
+    replaceAnnotations(annotationsRef.current.filter(a => a.type !== 'redact'))
+  }, [redactMarks, recordEdit, replaceAnnotations])
+  const redactActions = useMemo(() => kind === 'pdf' && !chromeless && fileBytes ? {
+    pending: redactMarks.length,
+    onArm: (mode: 'redact' | 'redactArea') => setActiveMode(mode),
+    onFind: () => setRedactDialog('find'),
+    onApply: () => setRedactDialog('apply'),
+    onClear: clearRedactMarks,
+  } : undefined, [kind, chromeless, fileBytes, redactMarks.length, setActiveMode, clearRedactMarks])
+
+  const saveCompareReport = useCallback(async () => {
+    if (!shownComparison) return
+    const { compareReport } = await import('./services/textCompare')
+    const { pickSaveTarget, saveBlobTo } = await import('./utils/download')
+    const c = shownComparison.result
+    const text = compareReport(c, shownComparison.oldName, file?.name ?? '', {
+      title: t('compare.reportTitle'), old: t('compare.old'), new: t('compare.new'),
+      summary: t('compare.summary', { n: c.changes.length, r: c.changes.filter(x => x.kind === 'replaced').length, i: c.changes.filter(x => x.kind === 'inserted').length, d: c.changes.filter(x => x.kind === 'deleted').length }),
+      identical: t('compare.identical'),
+      kind: { replaced: t('compare.kind.replaced'), inserted: t('compare.kind.inserted'), deleted: t('compare.kind.deleted') },
+      page: (o, n) => t('compare.pages', { o, n }),
+    })
+    const name = `${(file?.name ?? 'document').replace(/\.[^.]+$/, '')}_compare.txt`
+    const target = await pickSaveTarget(name, { description: t('compare.reportType'), accept: { 'text/plain': ['.txt'] } })
+    if (await saveBlobTo(target, new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' }), name)) showToast(t('compare.reportSaved', { name }))
+  }, [shownComparison, file, showToast])
+  const goToComment = useCallback((a: CommentAnnotation) => {
+    setScrollToPage(a.page)
+    if (viewMode === 'grid') setViewMode('single')
+    selectAnnotation(a.id)
+  }, [viewMode, selectAnnotation])
   const { handlePrint, isPrinting, printProgress, previewPages, confirmPrint, cancelPrint } = usePrint({ pdfDoc, numPages, annotations, onError: showToast })
   const {
     isExporting,
@@ -334,7 +610,9 @@ export default function App() {
     handleExportHtml,
     handleExportImages,
     handleExportExe,
+    pdfForSigning,
   } = useExporters({
+    commentImport,
     file, fileBytes, pdfDoc, numPages, annotations, kind, documentPassword, savePassword,
     ocrResults: ocr.ocrResults,
     bytesUnavailable, onSuccess: showToast, onError: showToast, onPdfSaved: markSaved,
@@ -357,13 +635,14 @@ export default function App() {
   // and jump the viewer back to page 1 (the user's edits change the layout
   // so previous scroll position is meaningless).
   const handlePageOpResult = useCallback((newBytes: ArrayBuffer, pageMapping: Map<number, number>) => {
+    if (signed) setToast({ id: Date.now(), message: t('sign.brokenByEdit') })
     recordEdit()
     remapAnnotations(pageMapping)
     const name = file?.name ?? 'document.pdf'
     setFile(new File([newBytes], name, { type: 'application/pdf' }))
     setCurrentPage(1)
     setScrollToPage(1)
-  }, [recordEdit, remapAnnotations, file])
+  }, [recordEdit, remapAnnotations, file, signed])
 
   // An image collection edited: its new list replaces it, as new bytes replace
   // a PDF. The reader stays on the picture they were looking at.
@@ -556,6 +835,8 @@ export default function App() {
     resetHistory()
     setSavedState({ file: f, annotations: [] })
     setMarkdownDirty(false)
+    setOpenedDoc({ file: f, path: filePath })
+    recoveryKeyRef.current = newRecoveryKey()
     setActiveMode(null)
     setPendingStamp(null)
     setPendingSignature(null)
@@ -572,6 +853,74 @@ export default function App() {
     // sentences that are no longer on screen.
     stopTts()
   }, [setActiveMode, clearSearch, clearFlowSearch, stopTts, replaceAnnotations, resetHistory])
+
+  // ── Digital signatures ────────────────────────────────────────────────────
+  const [showSignatures, setShowSignatures] = useState(false)
+  const [signDialog, setSignDialog] = useState<{ busy: boolean; error: string | null } | null>(null)
+  // A certificate opened and waiting for the box a visible signature goes in.
+  const pendingSign = useRef<{ key: import('./services/pdfSignatures').SigningKey; reason: string; location: string } | null>(null)
+  const signAndSave = useCallback(async (
+    sign: { key: import('./services/pdfSignatures').SigningKey; reason: string; location: string },
+    visible?: { page: number; rect: { x: number; y: number; width: number; height: number } },
+  ) => {
+    const { pickSaveTarget, saveBlobTo } = await import('./utils/download')
+    const base = (file?.name ?? 'document').replace(/\.[^.]+$/, '')
+    const name = `${base}_signed.pdf`
+    // Asked first, while the click still counts as the reader's.
+    const target = await pickSaveTarget(name, { description: t('export.originalType', { ext: 'PDF' }), accept: { 'application/pdf': ['.pdf'] } })
+    if (target.kind === 'canceled') return
+    try {
+      const [{ signPdf }, { embedTextFont }] = await Promise.all([import('./services/pdfSignatures'), import('./services/pdfExporter')])
+      const pdf = await pdfForSigning()
+      const now = new Date()
+      const lines = [t('sign.signedBy', { name: sign.key.name }), now.toLocaleString(LANG === 'ko' ? 'ko-KR' : 'en-US'), ...(sign.reason ? [sign.reason] : [])]
+      const signed = await signPdf(pdf, {
+        key: sign.key, reason: sign.reason || undefined, location: sign.location || undefined, now,
+        visible: visible ? { ...visible, lines } : undefined, embedFont: embedTextFont,
+      })
+      if (!(await saveBlobTo(target, new Blob([signed as Uint8Array<ArrayBuffer>], { type: 'application/pdf' }), name))) return
+      // The signed file is now the document: its marks are in it.
+      openDocument(new File([signed as Uint8Array<ArrayBuffer>], name, { type: 'application/pdf' }))
+      setShowSignatures(true)
+      showToast(t('sign.done', { name }))
+    } catch (err) {
+      showToast(t('sign.failed', { error: errorMessage(err) }))
+    }
+  }, [file, pdfForSigning, openDocument, showToast])
+  const startSigning = useCallback(async (input: { file: File; password: string; reason: string; location: string; visible: boolean }) => {
+    if (savePassword) { setSignDialog({ busy: false, error: t('sign.noPassword') }); return }
+    setSignDialog({ busy: true, error: null })
+    try {
+      const { readPfx, CertificateFileError } = await import('./services/pdfSignatures')
+      let key
+      try {
+        key = await readPfx(await input.file.arrayBuffer(), input.password)
+      } catch (err) {
+        const kind = err instanceof CertificateFileError ? err.kind : 'unsupported'
+        setSignDialog({ busy: false, error: t(`sign.error.${kind}`) })
+        return
+      }
+      const sign = { key, reason: input.reason.trim(), location: input.location.trim() }
+      setSignDialog(null)
+      if (input.visible) {
+        pendingSign.current = sign
+        setActiveMode('signArea')
+        showToast(t('sign.dragHint'))
+      } else {
+        await signAndSave(sign)
+      }
+    } catch (err) {
+      setSignDialog({ busy: false, error: errorMessage(err) })
+    }
+  }, [savePassword, setActiveMode, showToast, signAndSave])
+  const onSignArea = useCallback((page: number, rect: { x: number; y: number; width: number; height: number }) => {
+    const sign = pendingSign.current
+    if (!sign) return
+    pendingSign.current = null
+    setActiveMode(null)
+    void signAndSave(sign, { page, rect })
+  }, [setActiveMode, signAndSave])
+
 
   // Opening another document over unsaved changes asks first. Read through a
   // ref so the open-file listeners registered with this callback don't have to
@@ -606,17 +955,156 @@ export default function App() {
   }, [pdfDoc, startPage])
   // What waits on the "save / don't save / cancel" answer: opening another
   // document, or restarting to install an update.
-  const [pendingLeave, setPendingLeave] = useState<{ reason: 'open' | 'update'; proceed: () => void } | null>(null)
+  const [pendingLeave, setPendingLeave] = useState<{ reason: 'open' | 'update' | 'close'; proceed: () => void } | null>(null)
   // Every way of opening a document ends here — a picked or dropped file,
   // `?url=`, a mail attachment — so this is where private mode refuses them.
   // The designated document is opened through `openDocument` directly.
   const lockedRef = useRef(locked)
   useLayoutEffect(() => { lockedRef.current = locked })
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  // After PdfCraft's tabs: each open document keeps its own state. The one in
+  // front lives in App's state as before; the others are snapshots of it —
+  // file, marks, undo stacks, saved state, where the reader was, OCR results,
+  // unsaved Markdown — put back when their tab comes to the front (the
+  // document itself is opened again, without asking for its password).
+  const activeTabId = tabs.find(t => !t.snap)?.id ?? null
+  // Applied once the restored document is open again (after its fit zoom).
+  const pendingRestore = useRef<{ zoom: number; page: number; ocr: TabSnap['ocr'] } | null>(null)
+
+  const snapshotCurrent = (): TabSnap | null => file ? {
+    file, annotations, history: history.exportStacks(), savedState, markdownDirty,
+    markdownText: markdownDirty ? getMarkdownText() : null,
+    openedDoc, recoveryKey: recoveryKeyRef.current,
+    zoom, rotation, viewMode: viewMode === 'fullscreen' ? 'single' : viewMode, page: currentPage, appMode,
+    chosenPassword, ocr: ocr.ocrResults, unsaved,
+  } : null
+
+  const restoreSnap = (s: TabSnap) => {
+    setFile(s.file)
+    replaceAnnotations(s.annotations)
+    history.importStacks(s.history)
+    setSavedState(s.savedState)
+    setMarkdownDirty(s.markdownDirty)
+    setRecoveredMarkdown(s.markdownText !== null ? { file: s.file, text: s.markdownText } : null)
+    setOpenedDoc(s.openedDoc)
+    recoveryKeyRef.current = s.recoveryKey
+    setRotation(s.rotation)
+    setViewMode(s.viewMode)
+    setAppMode(s.appMode)
+    setChosenPassword(s.chosenPassword)
+    setActiveMode(null)
+    setShowSearch(false)
+    clearSearch(); clearFlowSearch(); stopTts()
+    setCurrentPage(s.page)
+    pendingRestore.current = { zoom: s.zoom, page: s.page, ocr: s.ocr }
+  }
+
+  useEffect(() => {
+    const r = pendingRestore.current
+    if (!r || !(pdfDoc || markdown || email || office)) return
+    // After useFitZoom's debounced fit, which a reopened document triggers.
+    const timer = setTimeout(() => {
+      pendingRestore.current = null
+      if (pdfDoc) {
+        setZoom(r.zoom)
+        if (r.ocr.size) ocr.restore(r.ocr)
+        if (r.page > 1) { instantScrollRef.current = true; setScrollToPage(r.page) }
+      }
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [pdfDoc, markdown, email, office, ocr])
+
+  const switchTab = useCallback((id: string) => {
+    const target = tabsRef.current.find(t => t.id === id)
+    if (!target?.snap) return
+    const snap = snapshotCurrent()
+    setTabs(ts => ts.map(t => (t.snap === null ? { ...t, snap } : t.id === id ? { ...t, snap: null } : t)))
+    restoreSnap(target.snap)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the state of this render on purpose
+  }, [file, annotations, savedState, markdownDirty, openedDoc, zoom, rotation, viewMode, currentPage, appMode, chosenPassword, ocr.ocrResults, unsaved])
+
+  /** Nothing open: the start screen. */
+  const closeEverything = useCallback(() => {
+    setFile(null)
+    replaceAnnotations([])
+    resetHistory()
+    setSavedState({ file: null, annotations: [] })
+    setMarkdownDirty(false)
+    setRecoveredMarkdown(null)
+    setOpenedDoc(null)
+    recoveryKeyRef.current = newRecoveryKey()
+    setActiveMode(null)
+    setShowSearch(false)
+    clearSearch(); clearFlowSearch(); stopTts()
+    setTabs([])
+  }, [replaceAnnotations, resetHistory, setActiveMode, clearSearch, clearFlowSearch, stopTts])
+
+  const closeActiveTab = useCallback(() => {
+    const list = tabsRef.current
+    const at = list.findIndex(t => !t.snap)
+    const rest = list.filter((_, i) => i !== at)
+    const next = rest[Math.min(Math.max(at, 0), rest.length - 1)]
+    if (!next?.snap) { closeEverything(); return }
+    const snap = next.snap
+    setTabs(rest.map(t => (t.id === next.id ? { ...t, snap: null } : t)))
+    restoreSnap(snap)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- restoreSnap reads this render's setters only
+  }, [closeEverything])
+
+  const closeTab = useCallback((id: string) => {
+    const tab = tabsRef.current.find(t => t.id === id)
+    if (!tab) return
+    if (tab.snap) {
+      // A tab behind: unsaved work is asked about in front, where it can be saved.
+      if (tab.snap.unsaved) {
+        switchTab(id)
+        setPendingLeave({ reason: 'close', proceed: closeActiveTab })
+        return
+      }
+      setTabs(ts => ts.filter(t => t.id !== id))
+      return
+    }
+    if (unsavedRef.current) setPendingLeave({ reason: 'close', proceed: closeActiveTab })
+    else closeActiveTab()
+  }, [switchTab, closeActiveTab])
+
   const loadPdfFile = useCallback((f: DocumentFile, filePath?: string) => {
     if (lockedRef.current) { showToast(t('private.cannotOpen')); return }
+    // With a document open, another opens beside it, in a tab of its own —
+    // nothing is replaced, so nothing needs saving first.
+    if (file && !embed) {
+      if (tabsRef.current.length >= MAX_TABS) { showToast(t('tabs.tooMany', { n: MAX_TABS })); return }
+      const snap = snapshotCurrent()
+      const id = crypto.randomUUID()
+      setTabs(ts => [...(ts.length ? ts : [{ id: crypto.randomUUID(), snap: null }]).map(t => (t.snap === null ? { ...t, snap } : t)), { id, snap: null }])
+      openDocument(f, filePath)
+      return
+    }
+    if (tabsRef.current.length === 0) setTabs([{ id: crypto.randomUUID(), snap: null }])
     if (unsavedRef.current) setPendingLeave({ reason: 'open', proceed: () => openDocument(f, filePath) })
     else openDocument(f, filePath)
-  }, [openDocument, showToast])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshotCurrent reads this render's state
+  }, [openDocument, showToast, file, embed, annotations, savedState, markdownDirty, openedDoc, zoom, rotation, viewMode, currentPage, appMode, chosenPassword, ocr.ocrResults, unsaved])
+
+  // Ctrl+Tab / Ctrl+Shift+Tab move between tabs, Ctrl+W closes one.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.altKey || e.metaKey) return
+      const list = tabsRef.current
+      if (e.key === 'Tab' && list.length > 1) {
+        e.preventDefault()
+        const at = list.findIndex(t => !t.snap)
+        const next = list[(at + (e.shiftKey ? list.length - 1 : 1)) % list.length]
+        switchTab(next.id)
+      } else if ((e.key === 'w' || e.key === 'W') && !e.shiftKey && list.length > 0) {
+        e.preventDefault()
+        const active = list.find(t => !t.snap)
+        if (active) closeTab(active.id)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [switchTab, closeTab])
 
   // Restart to install a downloaded update. Unsaved work is settled first: the
   // installer is started before the app quits and closes it regardless, so the
@@ -685,6 +1173,55 @@ export default function App() {
       return false
     }
   }, [loadPdfFile, showToast])
+
+  // ── Crash recovery: what the last session left unsaved ────────────────────
+  const [recoveryItems, setRecoveryItems] = useState<RecoveryItem[]>([])
+  useEffect(() => {
+    const api = window.electronAPI
+    if (!api?.recoveryList || queryParam('cli') !== null) return
+    let cancelled = false
+    api.recoveryList().then(items => { if (!cancelled) setRecoveryItems(items) }, () => {})
+    return () => { cancelled = true }
+  }, [])
+
+  /**
+   * Reopen an autosaved document as it was: its bytes (as edited), its stamps
+   * and signatures, the Markdown being written — unsaved, at its old path, and
+   * under its old key, so the next autosave replaces the entry instead of
+   * adding one and a save or a normal quit clears it.
+   */
+  const recoverDocument = useCallback(async (key: string) => {
+    const api = window.electronAPI
+    if (!api?.recoveryRead) return
+    let got: Awaited<ReturnType<NonNullable<typeof api.recoveryRead>>>
+    try { got = await api.recoveryRead(key) } catch { got = null }
+    if (!got) { showToast(t('recovery.failed', { name: key })); return }
+    const { entry, body } = got
+    let bytes = body
+    if (!bytes && entry.path) {
+      try { bytes = await api.readFile(entry.path) } catch { bytes = null }
+    }
+    if (!bytes) { showToast(t('recovery.failed', { name: entry.name })); return }
+    const f = new File([bytes], entry.name)
+    const restore = () => {
+      openDocument(f, entry.path)
+      recoveryKeyRef.current = entry.key
+      replaceAnnotations(entry.annotations as Annotation[])
+      // Edited pages: the bytes are not what is on disk, so it is unsaved even
+      // with no annotations.
+      if (entry.modified) setSavedState(s => ({ ...s, file: null }))
+      setRecoveredMarkdown(entry.markdownText !== undefined ? { file: f, text: entry.markdownText } : null)
+      // Claim the entry for this process now, or a normal quit before the next
+      // autosave would leave it to be offered again.
+      void api.recoverySave?.({
+        key: entry.key, name: entry.name, path: entry.path, modified: entry.modified,
+        annotations: entry.annotations, markdownText: entry.markdownText,
+      }, null).catch(() => {})
+      showToast(t('recovery.restored', { name: entry.name }))
+    }
+    if (unsavedRef.current) setPendingLeave({ reason: 'open', proceed: restore })
+    else restore()
+  }, [openDocument, replaceAnnotations, showToast])
 
   // ── Open from URL (+ embed ?url= auto-open) ───────────────────────────────
   const { showUrlModal, setShowUrlModal, urlLoading, urlError, handleOpenUrl } =
@@ -896,6 +1433,9 @@ export default function App() {
     addAnnotation(annotation)
     // Pen / rectangle are volatile — stay in drawing mode for continuous strokes.
     if (isVolatile(annotation)) return
+    // A highlight keeps its tool armed (addAnnotation does that); a note just
+    // placed stays selected, so its pop-over opens ready to type in.
+    if (isTextMarkup(annotation) || annotation.type === 'note' || annotation.type === 'fill') return
     // A stamp keeps the tool armed, like Adobe's: the next click stamps again,
     // on this page or the next. The stamp just placed is selected (addAnnotation
     // does that), so it can be resized at once — and that size is kept.
@@ -978,12 +1518,19 @@ export default function App() {
 
   // One shape for the find bar, whichever engine is behind it. The DOM search
   // is synchronous, so it has no "searching" state to report.
+  const flowResults = useMemo(() => flowSearch.snippets.map(snippet => ({ snippet })), [flowSearch.snippets])
+  const pageResults = useMemo(() => search.matches.map(m => ({ page: m.page, snippet: m.snippet })), [search.matches])
   const findBar = flowDoc
-    ? { ...flowSearch, isSearching: false }
+    ? { ...flowSearch, isSearching: false, progress: null, results: flowResults }
     : {
         total: search.matches.length,
         activeIndex: search.activeIndex,
         isSearching: search.isSearching,
+        progress: search.progress,
+        options: search.options,
+        setOptions: search.setOptions,
+        results: pageResults,
+        select: search.select,
         run: search.run,
         next: search.next,
         prev: search.prev,
@@ -1297,15 +1844,16 @@ export default function App() {
   // Closing the window (or reloading) with unsaved changes. In a browser this
   // raises its own "leave site?" prompt; in the desktop app the main process
   // turns it into a dialog (see will-prevent-unload in electron/main.ts).
+  const anyUnsaved = unsaved || tabs.some(t => t.snap?.unsaved)
   useEffect(() => {
-    if (!unsaved) return
+    if (!anyUnsaved) return
     const hold = (e: BeforeUnloadEvent) => {
       if (leavingRef.current) return
       e.preventDefault(); e.returnValue = ''
     }
     window.addEventListener('beforeunload', hold)
     return () => window.removeEventListener('beforeunload', hold)
-  }, [unsaved])
+  }, [anyUnsaved])
 
   // Ctrl+S: the document's own save — the source while editing Markdown, a
   // PDF otherwise (what the save button does), for every format.
@@ -1535,6 +2083,14 @@ export default function App() {
     onToggleSpeech: window.electronAPI?.ttsSynthesize ? handleToggleSpeech : undefined,
     isSpeaking: tts.status !== 'idle',
     fileName: file ? displayName : undefined,
+    tabs: tabs.map(tab => ({
+      id: tab.id,
+      label: tab.snap ? tab.snap.file.name : (displayName || file?.name || ''),
+      unsaved: tab.snap ? tab.snap.unsaved : unsaved,
+      active: tab.id === activeTabId,
+    })),
+    onTab: switchTab,
+    onCloseTab: closeTab,
     unsaved,
     onUndo: canEditHistory ? handleUndo : undefined,
     onRedo: canEditHistory ? handleRedo : undefined,
@@ -1542,6 +2098,13 @@ export default function App() {
     canRedo: history.canRedo,
     onPrint: canPrint ? handlePrintAny : undefined,
     onFind: () => setShowSearch(true),
+    onCompare: handleCompare,
+    redact: redactActions,
+    onOptimize: kind === 'pdf' && !chromeless && fileBytes ? () => setOptimizing(false) : undefined,
+    signatureBadge: signatures.length > 0 ? <SignatureBadge list={signatures} onOpen={() => setShowSignatures(v => !v)} /> : undefined,
+    onSign: pdfDoc && !chromeless && !bytesUnavailable ? () => setSignDialog({ busy: false, error: null }) : undefined,
+    appearance,
+    onAppearanceChange: setAppearance,
     onAppModeChange: handleAppModeChange,
     onViewModeChange: handleViewModeChange,
     onZoomIn: handleZoomIn,
@@ -1559,6 +2122,8 @@ export default function App() {
     onStampUpload: (f: File) => { void handleStampUpload(f) },
     onSignatureClick: handleSignatureClick,
     onWatermarkClick: handleWatermarkClick,
+    fillTool,
+    onFillTool: handleFillTool,
     onDeleteSelected: handleDeleteSelected,
     onResetMarkups: handleResetMarkups,
     hasMarkups: annotations.some(isVolatile),
@@ -1613,6 +2178,15 @@ export default function App() {
             showToast(t('password.willApply'))
           }}
           onCancel={() => setAskEncryptPassword(false)}
+        />
+      )}
+
+      {recoveryItems.length > 0 && (
+        <RecoveryDialog
+          items={recoveryItems}
+          onRecover={key => { setRecoveryItems([]); void recoverDocument(key) }}
+          onDiscardAll={() => { setRecoveryItems([]); void window.electronAPI?.recoveryDiscard?.().catch(() => {}) }}
+          onLater={() => setRecoveryItems([])}
         />
       )}
 
@@ -1694,6 +2268,22 @@ export default function App() {
               onSavePages={!chromeless ? handleSavePages : undefined}
               onInsertImages={kind === 'image' && pdfDoc?.images ? (after, files) => { void handleInsertImages(after, files) } : undefined}
               onSelectionChange={handlePanelSelection}
+              outline={outline}
+              // Comments live on pages, so only page documents; in a document
+              // without any, the tab appears once editing is on.
+              comments={comments.length > 0 || commentActions.canEdit ? (
+                <CommentsPanel
+                  comments={comments}
+                  selectedId={selectedId}
+                  canEdit={commentActions.canEdit}
+                  author={commentAuthor}
+                  onAuthorChange={setCommentAuthor}
+                  onGo={goToComment}
+                  onUpdate={updateAnnotation}
+                  onRemove={removeAnnotation}
+                />
+              ) : undefined}
+              commentCount={comments.length}
               onScrollToPage={page => {
                 setScrollToPage(page)
                 if (viewMode === 'grid') setViewMode('single')
@@ -1785,6 +2375,7 @@ export default function App() {
                   onDirtyChange={setMarkdownDirty}
                   saveRef={markdownSaveRef}
                   textRef={markdownTextRef}
+                  recoveredText={recoveredMarkdown && recoveredMarkdown.file === file ? recoveredMarkdown.text : undefined}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -1834,6 +2425,11 @@ export default function App() {
                   {t('url.loading')}
                 </div>
               }>
+              <CommentContext.Provider value={commentActions}>
+              <FormContext.Provider value={formActions}>
+              <FillContext.Provider value={fillActions}>
+              <CompareContext.Provider value={compareView}>
+              <SignAreaContext.Provider value={onSignArea}>
               <PdfViewer
                 pdfDoc={pdfDoc}
                 numPages={numPages}
@@ -1862,10 +2458,39 @@ export default function App() {
                 onOcrRequest={ocr.runPage}
                 onRegionCopy={handleRegionCopy}
               />
+              </SignAreaContext.Provider>
+              </CompareContext.Provider>
+              </FillContext.Provider>
+              </FormContext.Provider>
+              </CommentContext.Provider>
               </Suspense>
             </ErrorBoundary>
           )}
         </main>
+        {optimizing !== null && fileBytes && (
+          <OptimizeDialog size={fileBytes.byteLength} busy={optimizing} onRun={choice => { void runOptimize(choice) }} onCancel={() => setOptimizing(null)} />
+        )}
+        {signDialog && (
+          <SignDialog busy={signDialog.busy} error={signDialog.error}
+            onSign={input => { void startSigning(input) }} onCancel={() => { if (!signDialog.busy) setSignDialog(null) }} />
+        )}
+        {showSignatures && signatures.length > 0 && (
+          <SignaturePanel list={signatures} onClose={() => setShowSignatures(false)}
+            onGo={page => { setScrollToPage(page); if (viewMode === 'grid') setViewMode('single') }} />
+        )}
+        {redactDialog === 'apply' && (
+          <RedactApplyDialog marks={redactMarks.length} pages={new Set(redactMarks.map(m => m.page)).size} busy={redacting}
+            onApply={removeHidden => { void applyRedaction(removeHidden) }} onCancel={() => { if (!redacting) setRedactDialog(null) }} />
+        )}
+        {redactDialog === 'find' && (
+          <RedactFindDialog onSearch={findForRedaction} onMark={markFound} onCancel={() => setRedactDialog(null)} />
+        )}
+        {shownComparison && (
+          <Suspense fallback={null}>
+            <ComparePanel result={shownComparison.result} oldName={shownComparison.oldName} active={compareActive}
+              onPick={pickChange} onClose={() => setComparison(null)} onSaveReport={() => { void saveCompareReport() }} />
+          </Suspense>
+        )}
       </div>
       </ActionBar>
 
@@ -1875,6 +2500,11 @@ export default function App() {
           total={findBar.total}
           activeIndex={findBar.activeIndex}
           isSearching={findBar.isSearching}
+          progress={findBar.progress}
+          options={findBar.options}
+          onOptionsChange={findBar.setOptions}
+          results={findBar.results}
+          onSelect={findBar.select}
           onChange={findBar.run}
           onNext={findBar.next}
           onPrev={findBar.prev}

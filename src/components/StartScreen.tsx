@@ -47,7 +47,7 @@ export function StartScreen({ onOpenFile, onOpenRecent, update }: StartScreenPro
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 px-6 text-center select-none">
       <div className="flex flex-col items-center gap-3">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 sm:h-14 sm:w-14" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 dark:text-gray-500 sm:h-14 sm:w-14" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
         <button
@@ -56,7 +56,7 @@ export function StartScreen({ onOpenFile, onOpenRecent, update }: StartScreenPro
           className="rounded-full bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
         >{t('start.open')}</button>
         {/* keep-all: Korean wraps between words, not mid-word ("버/튼"). */}
-        <p className="max-w-md text-sm text-gray-600 break-keep">
+        <p className="max-w-md text-sm text-gray-600 dark:text-gray-400 break-keep">
           <span className="hidden sm:inline">{t('empty.desktop')}</span>
           <span className="sm:hidden">{t('empty.mobile')}</span>
         </p>
@@ -65,26 +65,26 @@ export function StartScreen({ onOpenFile, onOpenRecent, update }: StartScreenPro
       {recent.length > 0 && (
         <section className="w-full max-w-md text-left" aria-labelledby="wz-recent-title">
           <div className="mb-1.5 flex items-baseline justify-between px-1">
-            <h2 id="wz-recent-title" className="text-xs font-semibold text-gray-700">{t('start.recent')}</h2>
+            <h2 id="wz-recent-title" className="text-xs font-semibold text-gray-700 dark:text-gray-300">{t('start.recent')}</h2>
             <button
               type="button"
               onClick={() => { api?.clearRecentFiles?.().then(setRecent, () => {}) }}
-              className="text-xs text-gray-500 hover:text-gray-800"
+              className="text-xs text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             >{t('start.clearRecent')}</button>
           </div>
-          <ul className="overflow-hidden rounded-lg border border-gray-300 bg-white/70">
+          <ul className="overflow-hidden rounded-lg border border-gray-300 bg-white/70 dark:border-gray-700 dark:bg-gray-800/40">
             {recent.map(r => {
               const { name, folder } = splitPath(r.path)
               return (
-                <li key={r.path} className="border-b border-gray-200 last:border-b-0">
+                <li key={r.path} className="border-b border-gray-200 last:border-b-0 dark:border-gray-700/50">
                   <button
                     type="button"
                     onClick={() => { void open(r.path) }}
                     title={r.path}
-                    className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-black/5 focus-visible:bg-black/10 focus-visible:outline-none"
+                    className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-black/5 focus-visible:bg-black/10 dark:hover:bg-white/5 dark:focus-visible:bg-white/10 focus-visible:outline-none"
                   >
-                    <span className="w-full truncate text-sm text-gray-900">{name}</span>
-                    <span className="w-full truncate text-xs text-gray-500">{folder}</span>
+                    <span className="w-full truncate text-sm text-gray-900 dark:text-gray-100">{name}</span>
+                    <span className="w-full truncate text-xs text-gray-500 dark:text-gray-400">{folder}</span>
                   </button>
                 </li>
               )
@@ -98,7 +98,7 @@ export function StartScreen({ onOpenFile, onOpenRecent, update }: StartScreenPro
           need (the version is already the badge in the toolbar). Absent
           where the app cannot update itself: the portable exe, a viewer exe. */}
       {update?.state?.supported && (
-        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-800">
+        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200">
           <input
             type="checkbox"
             checked={update.state.enabled}

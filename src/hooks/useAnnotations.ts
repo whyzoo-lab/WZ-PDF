@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import type { Annotation, ActiveMode, OmitId } from '../types/annotation'
-import { isVolatile } from '../types/annotation'
+import { isVolatile, isTextMarkup } from '../types/annotation'
 
 interface AnnotationState {
   annotations: Annotation[]
@@ -31,6 +31,10 @@ export function useAnnotations(): UseAnnotationsReturn {
   const addAnnotation = useCallback((annotation: OmitId<Annotation>): string => {
     const id = crypto.randomUUID()
     const volatile = isVolatile(annotation)
+    // A highlight (underline, strike-through) keeps its tool armed and is not
+    // selected — marking passage after passage, with no pop-over in the way.
+    // A form value is not a mark at all: nothing to select, no tool to change.
+    const mark = isTextMarkup(annotation) || annotation.type === 'formValue' || annotation.type === 'redact'
     setState(prev => ({
       ...prev,
       annotations: [...prev.annotations, { ...annotation, id } as Annotation],
@@ -38,8 +42,8 @@ export function useAnnotations(): UseAnnotationsReturn {
       // so the user can keep drawing multiple strokes. A stamp is selected (so
       // its handles show at once) but keeps the stamp tool armed, so the next
       // click stamps again — page after page, like Adobe's stamp tool.
-      selectedId: volatile ? prev.selectedId : id,
-      activeMode: volatile || annotation.type === 'stamp' ? prev.activeMode : 'select',
+      selectedId: volatile || mark ? prev.selectedId : id,
+      activeMode: volatile || mark || annotation.type === 'stamp' || annotation.type === 'fill' ? prev.activeMode : 'select',
     }))
     return id
   }, [])

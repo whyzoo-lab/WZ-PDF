@@ -32,6 +32,8 @@ interface UseExportersArgs {
   onError: (message: string) => void
   /** A PDF save completed: what is on screen is now on disk. */
   onPdfSaved?: () => void
+  /** The file's own comments, read when it opened (hooks/useCommentImport). */
+  commentImport?: { refs: ReadonlySet<string>; total: number }
   /** Markdown as it stands in the editor, which may differ from the file. */
   getMarkdownText?: () => string | null
   /** The page in view — for an image collection, whose picture "save original" saves. */
@@ -72,7 +74,7 @@ export function useExporters({
   savePassword,
   onSuccess,
   onError,
-  onPdfSaved,
+  onPdfSaved, commentImport,
   getMarkdownText,
   currentPage = 1,
 }: UseExportersArgs) {
@@ -130,13 +132,14 @@ export function useExporters({
       }
       return exportPdf(fileBytes, annotations, {
         sourcePassword: documentPassword ?? undefined, password,
+        replacedAnnotations: commentImport?.refs,
       }, textLayer)
     }
     // Non-PDF sources have no PDF to patch — build one from the rendered
     // pages (this is also the HWP→PDF converter).
     const bytes = await renderedPdf(password)
     return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
-  }, [kind, fileBytes, pdfDoc, ocrResults, annotations, documentPassword, renderedPdf])
+  }, [kind, fileBytes, pdfDoc, ocrResults, annotations, documentPassword, renderedPdf, commentImport])
 
   /**
    * The document as it is now, under a name that says what it is: the file's
@@ -171,7 +174,11 @@ export function useExporters({
    */
   const exeDocument = useCallback(async (): Promise<{ bytes: ArrayBuffer; name: string }> => {
     if (kind === 'pdf' || kind === 'hwp' || kind === 'image') {
-      const marked = annotations.some(a => !isVolatile(a))
+      // A comment read from the file and left as it was is already in it; one
+      // edited, added or deleted is not.
+      const { isPristineImport } = await import('../services/pdfCommentImport')
+      const pristine = annotations.filter(isPristineImport).length
+      const marked = annotations.some(a => !isVolatile(a) && !isPristineImport(a)) || pristine < (commentImport?.total ?? 0)
       const recognized = kind !== 'hwp'
         && [...(ocrResults?.values() ?? [])].some(r => r.status === 'done' && r.words.length > 0)
       const passwordChanged = (savePassword ?? null) !== (documentPassword ?? null)
@@ -186,7 +193,7 @@ export function useExporters({
     const doc = currentDocument()
     if (!doc) throw new Error(bytesUnavailable ?? t('doc.notReady'))
     return { name: doc.name, bytes: await doc.bytes() }
-  }, [kind, annotations, ocrResults, savePassword, documentPassword, savedPdf, file, fileBytes, currentDocument, bytesUnavailable, pdfDoc, images, baseName])
+  }, [kind, annotations, ocrResults, savePassword, documentPassword, savedPdf, file, fileBytes, currentDocument, bytesUnavailable, pdfDoc, images, baseName, commentImport])
 
   /** "원본 저장": the file itself, under another name or in another place. */
   const handleSaveOriginal = useCallback(async () => {
@@ -432,8 +439,15 @@ export function useExporters({
     }
   }, [bytesReady, exeDocument, onSuccess, onError])
 
+  /** The PDF "PDF 저장" would write, unlocked — what a signature is put on. */
+  const pdfForSigning = useCallback(async (): Promise<Uint8Array> => {
+    if (bytesUnavailable) throw new Error(bytesUnavailable)
+    return new Uint8Array(await (await savedPdf(undefined)).arrayBuffer())
+  }, [savedPdf, bytesUnavailable])
+
   return {
     isExporting,
+    pdfForSigning,
     handleSaveOriginal,
     handleExportPdf,
     handleExportSpreads,

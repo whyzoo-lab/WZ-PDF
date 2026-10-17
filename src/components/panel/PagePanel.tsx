@@ -1,10 +1,12 @@
 // src/components/panel/PagePanel.tsx
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { ViewerDoc } from '../../types/viewerDoc'
 import { THUMB_PAGE_ATTR, useThumbnails } from '../../hooks/useThumbnails'
 import { t } from '../../i18n'
 import { errorMessage } from '../../utils/errors'
+import { OutlineView } from './OutlineView'
+import type { OutlineNode } from '../../services/pdfOutline'
 
 export interface PagePanelProps {
   /** Where a failure is reported (the toast). */
@@ -22,7 +24,7 @@ export interface PagePanelProps {
   onScrollToPage: (page: number) => void
   onDeletePages: (pageNums: number[]) => void
   onInsertBlankPage: (afterPage: number) => void
-  onInsertFromPdf: (afterPage: number, srcBytes: ArrayBuffer) => void
+  onInsertFromPdf: (afterPage: number, srcBytes: ArrayBuffer, srcName?: string) => void
   /** An image collection: "add images" takes the place of "insert from PDF". */
   onInsertImages?: (afterPage: number, files: File[]) => void
   onReorderPages: (newOrder: number[]) => void
@@ -35,6 +37,14 @@ export interface PagePanelProps {
   onSavePages?: (pageNums: number[]) => void
   /** The reader changed which pages are selected (sorted, 1-based). */
   onSelectionChange?: (pageNums: number[]) => void
+  /** The document's outline (bookmarks); a second tab when there is one. */
+  outline?: OutlineNode[]
+  /** The comments list (CommentsPanel); a tab of its own when given. */
+  comments?: ReactNode
+  /** How many comments, for the tab. */
+  commentCount?: number
+  /** Open on the comments tab, e.g. once a comment is selected on a page. */
+  commentsRequest?: number
 }
 
 export function PagePanel({
@@ -54,7 +64,23 @@ export function PagePanel({
   onReorderPages,
   onSavePages,
   onSelectionChange,
+  outline = [],
+  comments,
+  commentCount = 0,
+  commentsRequest = 0,
 }: PagePanelProps) {
+  // Pages, the outline or the comments. A document with an outline opens on
+  // it, as readers of a long report expect (PdfCraft does the same); keyed to
+  // the outline so the next document chooses again. A request for the
+  // comments (a comment opened on a page) wins until the reader picks a tab.
+  type Tab = 'pages' | 'outline' | 'comments'
+  const [tabFor, setTabFor] = useState<{ outline: OutlineNode[]; request: number; tab: Tab } | null>(null)
+  const chosen = tabFor && tabFor.outline === outline && tabFor.request === commentsRequest ? tabFor.tab : null
+  const tab: Tab = chosen ?? (commentsRequest > 0 && comments ? 'comments' : outline.length ? 'outline' : 'pages')
+  const showOutline = tab === 'outline' && outline.length > 0
+  const showComments = tab === 'comments' && !!comments
+  const tabs: Tab[] = ['pages', ...(outline.length > 0 ? ['outline' as const] : []), ...(comments ? ['comments' as const] : [])]
+  const tabLabel = (k: Tab) => k === 'pages' ? t('panel.title') : k === 'outline' ? t('outline.title') : t('comment.tab', { n: commentCount })
   const [selected, setSelected]         = useState<Set<number>>(new Set())
   // Reported so Ctrl+V can paste onto the pages picked here. Skipped on mount:
   // an empty initial selection is not something the reader did.
@@ -209,7 +235,7 @@ export function PagePanel({
     const f = e.target.files?.[0]
     if (!f) return
     f.arrayBuffer()
-      .then(bytes => onInsertFromPdf(insertAfterPage, bytes))
+      .then(bytes => onInsertFromPdf(insertAfterPage, bytes, f.name))
       .catch(err => onError?.(t('panel.readError', { error: errorMessage(err) })))
     e.target.value = ''
     setAddMenuOpen(false)
@@ -263,13 +289,28 @@ export function PagePanel({
     // whole toolbar to find out what this column is.
     <nav
       aria-label={t('a11y.pageList')}
-      className="relative flex flex-col w-44 md:w-40 shrink-0 h-full bg-gray-900 border-r border-gray-700 overflow-hidden select-none"
+      className={`relative flex flex-col ${showComments ? 'w-72' : showOutline ? 'w-64' : 'w-44 md:w-40'} shrink-0 h-full bg-gray-900 border-r border-gray-700 overflow-hidden ${showComments ? '' : 'select-none'}`}
     >
       {/* 헤더 */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
-        <span className="text-xs font-semibold text-gray-300">{t('panel.title')}</span>
+        {tabs.length > 1 ? (
+          <div role="tablist" className="flex items-center gap-0.5 rounded-md bg-gray-800 p-0.5">
+            {tabs.map(k => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                aria-selected={tab === k}
+                onClick={() => setTabFor({ outline, request: commentsRequest, tab: k })}
+                className={`whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium ${tab === k ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+              >{tabLabel(k)}</button>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs font-semibold text-gray-300">{t('panel.title')}</span>
+        )}
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-gray-400">{t('panel.count', { n: numPages })}</span>
+          {!showComments && <span className="text-[11px] text-gray-400">{t('panel.count', { n: numPages })}</span>}
           {/* Close button — only on mobile (md:hidden). Desktop uses ActionBar's Pages toggle. */}
           {onClose && (
             <button
@@ -286,11 +327,13 @@ export function PagePanel({
         </div>
       </div>
 
-      {readOnly && readOnlyNote && (
+      {showOutline && <OutlineView nodes={outline} currentPage={currentPage} onGo={onScrollToPage} />}
+      {showComments && comments}
+      {!showOutline && !showComments && readOnly && readOnlyNote && (
         <p className="px-3 py-2 border-b border-gray-700 text-[11px] leading-snug text-gray-400 break-keep shrink-0">{readOnlyNote}</p>
       )}
       {/* 도구 모음 (편집 모드 전용) */}
-      {!readOnly && (
+      {!showOutline && !showComments && !readOnly && (
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-700 shrink-0">
         {/* 추가 메뉴 */}
         <div ref={addMenuRef} className="relative">
@@ -353,7 +396,8 @@ export function PagePanel({
       )}
 
       {/* 섬네일 목록 */}
-      <div ref={listRef} className="flex-1 overflow-y-auto py-2 px-1.5 flex flex-col gap-2">
+      {/* Kept mounted behind the outline, so its thumbnails and scroll survive a tab switch. */}
+      <div ref={listRef} className={`flex-1 overflow-y-auto py-2 px-1.5 flex flex-col gap-2 ${showOutline || showComments ? 'hidden' : ''}`}>
         {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => {
           const isSelected   = selected.has(pageNum)
           const isCurrent    = currentPage === pageNum

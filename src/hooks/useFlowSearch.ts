@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { FLOW_PRINT_ATTR } from '../services/htmlPrint'
 import { highlightApi, indexText, rangeAt } from '../services/domText'
 import { getFlowSearchProvider } from '../services/flowSearchProvider'
+import { DEFAULT_FIND_OPTIONS, findAll, snippetAt, type FindOptions, type Snippet } from '../services/textSearch'
 
 /**
  * Find-in-document for the reflowing formats (Markdown, mail).
@@ -28,9 +29,14 @@ export const HL_ACTIVE = 'wz-find-active'
 export interface UseFlowSearchReturn {
   total: number
   activeIndex: number
+  /** Context for each match, for the results list (DOM search only). */
+  snippets: Snippet[]
+  options: FindOptions
+  setOptions: (options: FindOptions) => void
   run: (query: string) => void
   next: () => void
   prev: () => void
+  select: (index: number) => void
   clear: () => void
 }
 
@@ -41,6 +47,10 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
   // How many matches there are, whichever engine found them — next/prev wrap
   // on this, since a provider's matches are not Ranges.
   const countRef = useRef(0)
+  const [snippets, setSnippets] = useState<Snippet[]>([])
+  const [options, setOptionsState] = useState<FindOptions>(DEFAULT_FIND_OPTIONS)
+  const optionsRef = useRef(options)
+  const queryRef = useRef('')
 
   const paint = useCallback((ranges: Range[], active: number) => {
     const api = highlightApi()
@@ -62,10 +72,12 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
     countRef.current = 0
     setTotal(0)
     setActiveIndex(0)
+    setSnippets([])
     paint([], 0)
   }, [paint])
 
   const run = useCallback((query: string) => {
+    queryRef.current = query
     const needle = query.trim().toLowerCase()
     if (!enabled || needle.length === 0) { clear(); return }
 
@@ -86,24 +98,35 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
     if (!root) { clear(); return }
 
     const idx = indexText(root)
-    // Case-insensitive, but positions must line up with the original, so the
-    // lower-cased copy is searched and the index itself left as it is.
-    const haystack = idx.text.toLowerCase()
+    // One regular expression over the original text (services/textSearch), so
+    // positions line up without a lower-cased copy; blocks are  apart,
+    // which no query matches across.
     const found: Range[] = []
-    for (let from = 0; ; ) {
-      const at = haystack.indexOf(needle, from)
-      if (at < 0) break
-      const range = rangeAt(idx, at, needle.length)
-      if (range) found.push(range)
-      from = at + needle.length
+    const context: Snippet[] = []
+    for (const [s, e] of findAll(idx.text, query, optionsRef.current)) {
+      const range = rangeAt(idx, s, e - s)
+      if (!range) continue
+      found.push(range)
+      context.push(snippetAt(idx.text, s, e))
     }
 
     rangesRef.current = found
     countRef.current = found.length
     setTotal(found.length)
     setActiveIndex(0)
+    setSnippets(context)
     paint(found, 0)
   }, [enabled, clear, paint])
+
+  const setOptions = useCallback((next: FindOptions) => {
+    optionsRef.current = next
+    setOptionsState(next)
+    if (queryRef.current.trim()) run(queryRef.current)
+  }, [run])
+
+  const select = useCallback((index: number) => {
+    setActiveIndex(i => (index >= 0 && index < countRef.current ? index : i))
+  }, [])
 
   const next = useCallback(() => {
     const n = countRef.current
@@ -134,5 +157,5 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
   // Highlights are registered globally, so they must not outlive the search.
   useEffect(() => clear, [clear])
 
-  return { total, activeIndex, run, next, prev, clear }
+  return { total, activeIndex, snippets, options, setOptions, run, next, prev, select, clear }
 }

@@ -340,3 +340,74 @@ export const IconPages = () => (
 export const IconNotes = () => (
   <Icon><rect x="3.5" y="3.5" width="17" height="9.5" rx="1.2" /><path d="M5 16.5h14M5 20h9" /></Icon>
 )
+/** A box with a prompt: the command palette (Ctrl+K). */
+export const IconCommand = () => (
+  <Icon><rect x="3" y="4.5" width="18" height="15" rx="2.5" /><path d="m7.5 10 2.5 2-2.5 2M12.5 14.5h4" /></Icon>
+)
+/** A half-filled circle: appearance (theme and reading colours). */
+export const IconAppearance = () => (
+  <Icon><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none" /></Icon>
+)
+
+// ── Comments ────────────────────────────────────────────────────────────────
+export const IconHighlight = () => (
+  <Icon>
+    <path d="M14.5 4.5l5 5-7.5 7.5h-5v-5z" />
+    <path d="M7 17l-2.5 2.5" />
+    <path d="M3 21h18" strokeWidth="2.6" opacity="0.55" />
+  </Icon>
+)
+export const IconUnderline = () => (
+  <Icon>
+    <path d="M7 4v6a5 5 0 0 0 10 0V4" />
+    <path d="M5 20h14" />
+  </Icon>
+)
+export const IconStrike = () => (
+  <Icon>
+    <path d="M16.5 6.5C15.6 5 14 4.3 12 4.3c-2.6 0-4.5 1.3-4.5 3.3 0 1.5 1 2.5 3 3.1" />
+    <path d="M4 12h16" />
+    <path d="M8 17c.8 1.7 2.4 2.7 4.3 2.7 2.6 0 4.5-1.4 4.5-3.5 0-.9-.3-1.6-.9-2.2" />
+  </Icon>
+)
+export const IconNote = () => (
+  <Icon>
+    <path d="M4 4h16v11l-5 5H4z" />
+    <path d="M15 20v-5h5" />
+    <path d="M8 9h8M8 12.5h5" />
+  </Icon>
+)
+export const IconFill = () => (
+  <Icon>
+    <path d="M4 19h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 16v3z" />
+    <path d="M13.5 7.5l3 3" />
+    <path d="M14 19h6" />
+  </Icon>
+)
+export const IconCompare = () => (
+  <Icon>
+    <rect x="3" y="4" width="7" height="16" rx="1.2" />
+    <rect x="14" y="4" width="7" height="16" rx="1.2" />
+    <path d="M5.5 9h2M5.5 12h2M16.5 9h2M16.5 12h2M16.5 15h2" />
+  </Icon>
+)
+export const IconRedact = () => (
+  <Icon>
+    <rect x="3" y="9" width="18" height="6" rx="1" fill="currentColor" />
+    <path d="M4 5h9M4 19h12" />
+  </Icon>
+)
+export const IconCertificate = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="12" rx="1.5" />
+    <path d="M7 8h7M7 11h4" />
+    <circle cx="16.5" cy="13.5" r="2.5" />
+    <path d="M15 16l-1 4 2.5-1.2L19 20l-1-4" />
+  </Icon>
+)
+export const IconCompress = () => (
+  <Icon>
+    <path d="M6 3h8l4 4v14H6z" />
+    <path d="M12 9v4M10 11l2 2 2-2M9 17h6" />
+  </Icon>
+)

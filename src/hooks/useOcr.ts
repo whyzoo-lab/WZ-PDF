@@ -16,6 +16,8 @@ export interface UseOcrReturn {
   runAll: () => Promise<void>
   cancel: () => void
   clear: () => void
+  /** Put back what a tab had recognized (after its document is open again). */
+  restore: (results: Map<number, OcrPageResult>) => void
 }
 
 export function useOcr(pdfDoc: ViewerDoc | null, numPages: number): UseOcrReturn {
@@ -121,5 +123,8 @@ export function useOcr(pdfDoc: ViewerDoc | null, numPages: number): UseOcrReturn
     setOcrActivePage(null)
   }, [])
 
-  return { ocrResults, ocrProgress, isOcrRunning, ocrActivePage, ocrError, runPage, runAll, cancel, clear }
+  // A tab brought back to the front: what it had recognized, without running again.
+  const restore = useCallback((results: Map<number, OcrPageResult>) => { setOcrResults(new Map(results)) }, [])
+
+  return { ocrResults, ocrProgress, isOcrRunning, ocrActivePage, ocrError, runPage, runAll, cancel, clear, restore }
 }

@@ -102,6 +102,7 @@ export function EmailView({
     // is sized in `em` for that reason — a Tailwind `text-sm` would be rem-based
     // and stay stubbornly put while the rest of the message grew.
     <article
+      data-wz-reading-surface=""
       className="mx-auto max-w-3xl bg-white shadow-xl rounded-sm"
       style={{ fontSize: `${BASE_FONT_PX * zoom}px` }}
       {...{ [FLOW_PRINT_ATTR]: '' }}

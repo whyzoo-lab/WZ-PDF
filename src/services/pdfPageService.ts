@@ -1,5 +1,6 @@
 import { PDFDocument } from '@cantoo/pdf-lib'
 import { loadPdfForWriting } from './pdfLoad'
+import { collectGarbage, insertDocument, pruneRemovedPages, setPageOrder } from './pdfStructure'
 import { t } from '../i18n'
 
 export type PageOpResult = {
@@ -31,6 +32,18 @@ function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
 }
 
 /**
+ * Save an edited document without what nothing refers to any more. Every
+ * page operation edits the document in place: rebuilding it page by page
+ * into a new one (as these did) dropped the bookmarks, the form, named
+ * destinations and the document properties, and copied a font or image
+ * shared by many pages once per page.
+ */
+async function saveCompact(doc: PDFDocument): Promise<ArrayBuffer> {
+  collectGarbage(doc)
+  return toArrayBuffer(await doc.save())
+}
+
+/**
  * 지정한 페이지들을 삭제한다.
  * @param pageNums 삭제할 페이지 번호 배열 (1-based). 전체 삭제 시 오류를 던진다.
  * @returns pageMapping — 키: 기존 페이지 번호, 값: 새 페이지 번호. 삭제된 페이지는 키에 없음.
@@ -40,23 +53,19 @@ export async function deletePages(
   pageNums: number[],
   password?: string,
 ): Promise<PageOpResult> {
-  const srcDoc = await loadForEditing(bytes, password)
-  const total = srcDoc.getPageCount()
+  const doc = await loadForEditing(bytes, password)
+  const total = doc.getPageCount()
   const deleteSet = new Set(pageNums)
   if (deleteSet.size >= total) {
     throw new Error(t('pdf.cannotDeleteAll'))
   }
-  const newDoc = await PDFDocument.create()
   const pageMapping = new Map<number, number>()
   let newPageNum = 1
-  for (let i = 1; i <= total; i++) {
-    if (!deleteSet.has(i)) {
-      const [p] = await newDoc.copyPages(srcDoc, [i - 1])
-      newDoc.addPage(p)
-      pageMapping.set(i, newPageNum++)
-    }
-  }
-  return { newBytes: toArrayBuffer(await newDoc.save()), pageMapping }
+  for (let i = 1; i <= total; i++) if (!deleteSet.has(i)) pageMapping.set(i, newPageNum++)
+  // In place, last first, so the indexes still to come stay right.
+  for (let i = total; i >= 1; i--) if (deleteSet.has(i)) doc.removePage(i - 1)
+  pruneRemovedPages(doc)
+  return { newBytes: await saveCompact(doc), pageMapping }
 }
 
 /**
@@ -103,20 +112,10 @@ export async function insertBlankPage(
   afterPage = Math.min(afterPage, total)
   const refIdx = afterPage > 0 ? afterPage - 1 : 0
   const { width, height } = srcDoc.getPage(refIdx).getSize()
-  const newDoc = await PDFDocument.create()
+  srcDoc.insertPage(afterPage, [width, height])
   const pageMapping = new Map<number, number>()
-  for (let i = 1; i <= afterPage; i++) {
-    const [p] = await newDoc.copyPages(srcDoc, [i - 1])
-    newDoc.addPage(p)
-    pageMapping.set(i, i)
-  }
-  newDoc.addPage([width, height])
-  for (let i = afterPage + 1; i <= total; i++) {
-    const [p] = await newDoc.copyPages(srcDoc, [i - 1])
-    newDoc.addPage(p)
-    pageMapping.set(i, i + 1)
-  }
-  return { newBytes: toArrayBuffer(await newDoc.save()), pageMapping }
+  for (let i = 1; i <= total; i++) pageMapping.set(i, i <= afterPage ? i : i + 1)
+  return { newBytes: await saveCompact(srcDoc), pageMapping }
 }
 
 /**
@@ -129,28 +128,21 @@ export async function insertPagesFromPdf(
   srcBytes: ArrayBuffer,
   afterPage: number,
   password?: string,
+  /** The inserted file's name: its bookmarks come along under it. */
+  srcName?: string,
 ): Promise<PageOpResult> {
   const destDoc = await loadForEditing(bytes, password)
   const srcDoc  = await loadForEditing(srcBytes)
   const destTotal = destDoc.getPageCount()
   const srcTotal  = srcDoc.getPageCount()
-  const newDoc = await PDFDocument.create()
+  afterPage = Math.max(0, Math.min(afterPage, destTotal))
+  // Into the document itself, not a new one: its bookmarks, form, named
+  // destinations and properties stay; the file's links, fields and bookmarks
+  // come along working (services/pdfStructure).
+  await insertDocument(destDoc, srcDoc, afterPage, (srcName ?? '').replace(/\.pdf$/i, '') || t('pdf.insertedFile'))
   const pageMapping = new Map<number, number>()
-  for (let i = 1; i <= afterPage; i++) {
-    const [p] = await newDoc.copyPages(destDoc, [i - 1])
-    newDoc.addPage(p)
-    pageMapping.set(i, i)
-  }
-  for (let i = 0; i < srcTotal; i++) {
-    const [p] = await newDoc.copyPages(srcDoc, [i])
-    newDoc.addPage(p)
-  }
-  for (let i = afterPage + 1; i <= destTotal; i++) {
-    const [p] = await newDoc.copyPages(destDoc, [i - 1])
-    newDoc.addPage(p)
-    pageMapping.set(i, i + srcTotal)
-  }
-  return { newBytes: toArrayBuffer(await newDoc.save()), pageMapping }
+  for (let i = 1; i <= destTotal; i++) pageMapping.set(i, i <= afterPage ? i : i + srcTotal)
+  return { newBytes: await saveCompact(destDoc), pageMapping }
 }
 
 /**
@@ -163,14 +155,13 @@ export async function reorderPages(
   newOrder: number[],
   password?: string,
 ): Promise<PageOpResult> {
-  const srcDoc = await loadForEditing(bytes, password)
-  const newDoc = await PDFDocument.create()
+  const doc = await loadForEditing(bytes, password)
+  const pages = doc.getPages()
   const pageMapping = new Map<number, number>()
-  for (let newIdx = 0; newIdx < newOrder.length; newIdx++) {
-    const oldPageNum = newOrder[newIdx]
-    const [p] = await newDoc.copyPages(srcDoc, [oldPageNum - 1])
-    newDoc.addPage(p)
-    pageMapping.set(oldPageNum, newIdx + 1)
-  }
-  return { newBytes: toArrayBuffer(await newDoc.save()), pageMapping }
+  // The same page objects in a new order, so links, fields and bookmarks
+  // still point at them (setPageOrder; pdf-lib cannot reinsert pages into an
+  // emptied tree).
+  setPageOrder(doc, newOrder.map(n => pages[n - 1]))
+  newOrder.forEach((oldPageNum, newIdx) => pageMapping.set(oldPageNum, newIdx + 1))
+  return { newBytes: await saveCompact(doc), pageMapping }
 }

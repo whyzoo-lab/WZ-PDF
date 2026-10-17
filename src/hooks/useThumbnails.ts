@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, type RefObject } from 'react'
 import type { ViewerDoc } from '../types/viewerDoc'
 import { PDF_RENDER_SCALE } from '../utils/constants'
 import { peekCachedPage } from '../services/pageRender'
+import { commentRenderParams } from '../services/pdfCommentImport'
 
 /** 썸네일 렌더링 배율 (PDF_RENDER_SCALE * 0.2 = 약 90px 너비) */
 const THUMBNAIL_SCALE = 0.2
@@ -33,7 +34,8 @@ async function renderThumbnail(doc: ViewerDoc, pageNumber: number): Promise<stri
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(raster.canvas, 0, 0, canvas.width, canvas.height)
   } else {
-    await page.render({ canvas, viewport }).promise
+    const extra = await commentRenderParams(doc, pageNumber)
+    await page.render({ canvas, viewport, ...extra } as Parameters<typeof page.render>[0]).promise
   }
   // On white: a JPEG has no transparency, and a transparent picture's empty
   // pixels came out black.

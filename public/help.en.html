@@ -233,6 +233,7 @@
       <li><a href="#pages">📄 Pages</a></li>
       <li><a href="#ocr">🔍 Text recognition (OCR)</a></li>
       <li><a href="#stamp">🖊️ Stamps · signatures · watermarks</a></li>
+      <li><a href="#comments">💬 Highlights · notes · forms</a></li>
       <li><a href="#password">🔐 Passwords</a></li>
       <li><a href="#markup">✏️ On-screen markup</a></li>
       <li><a href="#present">🎯 Presenter tools</a></li>
@@ -333,8 +334,17 @@
     <div class="tip">
       💡 <strong>Zoom:</strong> <kbd>Ctrl</kbd> + mouse wheel (around the pointer), or <strong>+</strong> / <strong>–</strong> in the title bar. <strong>Fit width</strong> beside them makes the text bigger and sharper.
     </div>
+    <div class="tip tip-ok">
+      ⌨️ <strong>Command search:</strong> press <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>K</kbd> and type what you want to do (save, rotate, print…). Every feature, straight from the keyboard.
+    </div>
     <div class="tip">
-      🔎 <strong>Find:</strong> 🔍 on the left rail or <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>F</kbd> searches the document, in every format.
+      📑 <strong>Outline:</strong> a PDF with bookmarks gets an <strong>Outline</strong> tab in the page panel. Click to jump; filter it from the box at the top.
+    </div>
+    <div class="tip">
+      🌙 <strong>Appearance:</strong> the <strong>Appearance</strong> menu on the left rail has a dark theme and reading colours (sepia, night). The file is not changed.
+    </div>
+    <div class="tip">
+      🔎 <strong>Find:</strong> 🔍 on the left rail or <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>F</kbd> searches the document, in every format. It starts from the page you are on, has <strong>Aa</strong> (match case) and <strong>ab</strong> (whole words), and a list of every result with its context.
     </div>
     <div class="tip">
       🎬 <strong>Fullscreen:</strong> <kbd>F5</kbd> starts from the first page, <kbd>Alt</kbd><span class="sc-sep">+</span><kbd>F5</kbd> from the page you are on.
@@ -505,6 +515,24 @@
     <div class="tip">
       💡 Stamps and signatures follow their page when pages are deleted or reordered.
     </div>
+    <div class="tip tip-ok">
+      🗂️ <strong>Tabs:</strong> opening a file while one is open puts it in a new tab. Click the tabs in the title bar, <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>Tab</kbd> to move on, <kbd>Ctrl</kbd><span class="sc-sep">+</span><kbd>W</kbd> to close. Each tab keeps its own marks, undo and page.
+    </div>
+    <div class="tip tip-ok">
+      🗜️ <strong>Reduce file size:</strong> <strong>Reduce file size</strong> in the save menu lowers needlessly high picture resolution and merges duplicated data (Standard, Screen, High quality) — for when a PDF is too big to e-mail.
+    </div>
+    <div class="tip tip-ok">
+      🔏 <strong>Digital signatures:</strong> a signed PDF shows <strong>✔ signed</strong> beside its title — click it to see whether each signature is valid and whether anything changed after it. Comments and form filling on a signed PDF are appended when saved, so its signatures stay valid. Sign yourself with a certificate file (.pfx, .p12) from <strong>Sign</strong> on the edit rail.
+    </div>
+    <div class="tip tip-ok">
+      ⬛ <strong>Redact:</strong> mark text or draw areas from <strong>Redact</strong> on the edit rail, or <strong>find and mark</strong> resident numbers, phone numbers, e-mail and card numbers at once. <strong>Apply</strong> removes what is under the marks from the file — not just covered. Marked pages become pictures; the rest of the text stays searchable. A file with marks not yet applied is not saved.
+    </div>
+    <div class="tip tip-ok">
+      🆚 <strong>Compare:</strong> click <strong>Compare</strong> on the left rail and pick an earlier version (PDF, HWP, Word, PowerPoint, Markdown): additions show green, changes yellow, removals as a red bar. Click one in the list to go there; save the report as .txt.
+    </div>
+    <div class="tip tip-ok">
+      🔗 Inserting another PDF brings its <strong>bookmarks</strong> under the file’s name, and its <strong>links</strong> and <strong>form fields</strong> keep working. Deleting or moving pages keeps the document’s own bookmarks, links and fields.
+    </div>
 
   </section>
 
@@ -584,6 +612,54 @@
     </div>
     <div class="tip">
       💾 Marks go into the file when you <strong>save as PDF</strong>. Opening another document or closing with unsaved marks asks first.
+    </div>
+
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- Highlights / underlines / notes                          -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <section id="comments">
+    <div class="s-head">
+      <div class="s-icon">💬</div>
+      <div class="s-title">
+        <h2>Highlights · underlines · notes (comments)</h2>
+        <div class="sub">Review marks to share — they show up as comments in Acrobat and Edge too</div>
+      </div>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🖍️</span><span class="f-name">Highlight · underline · strike</span></div>
+        <div class="f-desc">Pick a tool on the edit rail and drag across text. The tool stays on, so you can mark one passage after another.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">🗒️</span><span class="f-name">Notes</span></div>
+        <div class="f-desc">Pick <strong>Note</strong> and click where it goes: a sticky note appears, ready to type in. Drag it to move it.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">💬</span><span class="f-name">Comments · replies</span></div>
+        <div class="f-desc">Click a mark to open it. Write a comment, reply, mark it <strong>Done</strong> or change its colour.</div>
+      </div>
+      <div class="feat">
+        <div class="f-head"><span class="f-icon">📋</span><span class="f-name">Comment list</span></div>
+        <div class="f-desc">The <strong>Comments</strong> tab of the page list gathers them by page. Search, filter open / done, and click to go there.</div>
+      </div>
+    </div>
+    <div class="tip tip-ok">
+      📥 Comments made in other apps (Acrobat, Edge…) open as they are, and you can edit or answer them.
+    </div>
+    <div class="tip tip-ok">
+      📝 <strong>PDF forms</strong> show their fields in blue. Type, tick and choose straight away — no need to turn on editing — and <strong>save as PDF</strong> to keep the values. They print too.
+    </div>
+    <div class="tip">
+      ✍️ <strong>Fill & Sign:</strong> for a paper form with no fields, pick text, ✓, ✕, ●, ─ or today’s date from <strong>Fill</strong> on the edit rail and click where it goes. Drag to move; −/+ above it to resize. Sign with the <strong>Signature</strong> tool.
+    </div>
+    <div class="tip">
+      💾 <strong>Save as PDF</strong> writes them as real PDF comments — replies and done state included, in any PDF reader’s comment list.
+    </div>
+    <div class="tip">
+      🙋 The name on your comments is <strong>My name</strong> under the Comments tab. Marks need text on the page — recognise a scan (OCR) first.
     </div>
 
   </section>
@@ -769,6 +845,9 @@
           <span class="e-tag">Desktop app (installed or portable)</span>
         </div>
       </div>
+    </div>
+    <div class="tip tip-ok">
+      🛟 <strong>Autosave:</strong> unsaved changes are kept aside every few seconds. If the app closes unexpectedly, you are offered to <strong>recover</strong> them next time. Saving clears the copy; password-protected PDFs are not kept. <em>(desktop app)</em>
     </div>
     <div class="tip">
       🎬 A PowerPoint deck with notes can also be saved as a narrated video (MP4) with the <strong>film button</strong>. See <a href="#office">Word · PowerPoint · Excel</a>.

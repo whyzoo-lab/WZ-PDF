@@ -816,11 +816,39 @@ App.tsx is kept thin by extracting feature bundles into hooks. Each owns the sta
 
 Page CRUD operations are handled by pure functions in `src/services/pdfPageService.ts` (uses **pdf-lib**). All functions return `{ newBytes: ArrayBuffer, pageMapping: Map<number, number> }` so callers can remap existing annotations via `useAnnotations().remapAnnotations(mapping)`.
 
+**They edit the document in place** (`saveCompact`). Until this release each
+one rebuilt a new document page by page with `copyPages`, which silently
+dropped the bookmarks, the form (fields stopped being fields after any page
+edit), named destinations and the document properties — and copied a font or
+image shared by many pages once per page. Now: delete is `removePage` then
+`pruneRemovedPages` (bookmarks to the pages lose their destination, links to
+them and fields that only lived there go, named destinations to them are
+forgotten); reorder writes the new order straight into the root `/Pages`
+(`setPageOrder`, inherited resources/boxes/rotation pushed onto each page
+first — pdf-lib cannot reinsert pages into an emptied tree); and
+`collectGarbage` drops what nothing reaches from the trailer, since pdf-lib
+writes every object it holds. `services/pdfStructure.ts`, after PdfCraft's
+`crates/organize`.
+
+**Inserting a file** (`insertDocument`) follows PdfCraft's import rules: before
+copying, each source annotation loses /P and /StructParent and each link's
+destination (explicit, named or GoTo) becomes a page *index* — otherwise
+pdf-lib's copier follows those references and drags source pages in as
+unreachable copies; after copying, indexes become the copies' refs (a link to a
+page that did not come along is dropped), /P is the new page, the file's
+top-level fields join `/AcroForm /Fields` (a taken name becomes `name-1`; /DA
+and /DR fonts come along), and its bookmarks are added under one bookmark
+named after the file at its first page, placed among the top-level bookmarks
+in page order. `pdfStructure.test.ts` reads all of it back through pdf.js;
+pdf.js's `getFieldObjects` returns nothing in Node, so fields are checked
+through pdf-lib's form. Checked on `public/sample.pdf` (Chrome's internal
+links): delete, reverse and self-insert keep every link resolvable.
+
 | Function | Description |
 |---|---|
 | `deletePages(bytes, pageNums, password?)` | Remove one or more pages (1-based); surviving pages are remapped |
 | `insertBlankPage(bytes, afterPage, password?)` | Insert a blank page the size of the page before it after `afterPage` (0 = prepend) |
-| `insertPagesFromPdf(bytes, srcBytes, afterPage, password?)` | Append all pages from another PDF after `afterPage` |
+| `insertPagesFromPdf(bytes, srcBytes, afterPage, password?, srcName?)` | Insert all pages of another PDF after `afterPage`, its links, fields and bookmarks working (see below) |
 | `reorderPages(bytes, newOrder, password?)` | Reorder pages according to a permutation array |
 | `extractPages(bytes, pageNums, password?)` | Copy the given pages into a new PDF ("선택 저장") |
 
@@ -832,6 +860,293 @@ Page CRUD operations are handled by pure functions in `src/services/pdfPageServi
 - Toolbar: Insert blank page, Insert from PDF, Delete selected pages
 - `readOnly` prop: hides toolbar, disables drag, disables Delete key listener — used in Viewer mode
 - Delete key shortcut: fires `handleDelete` when `!readOnly && selected.size > 0` and focus is not in an input/textarea
+
+### Theme and reading colours
+
+`hooks/useAppearance.ts`: theme light / dark / follow the system (a `dark`
+class on `<html>`; Tailwind's `dark:` variant is declared on that class in
+index.css, so the reader's choice wins over the media query), and reading
+colours normal / sepia / night (`data-reading` on `<html>`). Dark darkens
+`--wz-canvas` (title bar, page background) but keeps pages white, as PdfCraft
+does; the main process repaints the window buttons to match
+(`appearance:titlebar` → `setTitleBarOverlay`, and `titleBarColors(startsDark())`
+at window creation). Reading colours are a CSS filter on the **page raster
+only** — the first canvas of each page's Konva stage — so stamps, signatures
+and markup on their own layers keep their colours; Markdown and mail pages
+(`data-wz-reading-surface`) are filtered whole; never in print. Stored in
+`userData/appearance.json` through IPC on the desktop (localStorage would
+freeze the packaged app), localStorage on the web. Set from the rail's 화면
+menu or the palette.
+
+### Comments: highlight, underline, strike-through, notes
+
+Review marks that travel with the file, after PdfCraft's annotation model and
+Acrobat's output. Types `highlight` / `underline` / `strikeout` (`rects`: one
+box per marked line, viewport points) and `note` (an icon at x/y), all with
+`CommentFields` — contents, author, dates, `replies`, `done`.
+
+- **Made from a text selection.** With a mark tool armed, letting go of a
+  selection marks it (`PdfPage`, a document `mouseup`/`touchend` listener per
+  mounted page): each page takes the part of the selection on it, so a
+  selection across a page break marks both. `selectionToRects` turns client
+  rects into page points through the view's rotation and merges a line's
+  spans (`mergeLineRects`); `rangeText` quotes it (pdf.js ends a line with a
+  `<br>` that has no text). The tool stays armed and the mark is not selected.
+  A note is placed by a click on the stage, selected, and its pop-over opens
+  ready to type (`autoFocus` for an empty comment).
+- **Drawn as elements, not on Konva.** `CommentMarks` sits inside the rotated
+  box over the page picture, `pointer-events: none` (selecting text through a
+  highlight must work), highlights with `mix-blend-mode: multiply` so text
+  stays black. A click finds a mark by position (`commentAt` in
+  `handlePageClick`), because the text layer lies over it. Notes and the
+  pop-over (`PageComments`) are in the turned box above the text layers.
+  `handlePageClick` ignores clicks on the Konva stage: Konva acts on pointerup,
+  so the note a click just placed was selected and then closed by that click.
+- **Comments panel** — a tab of the page list (`CommentsPanel`): by page,
+  search over contents / quoted text / thread / author, filter open / done.
+  `CommentBody` is shared by the pop-over and the panel, so they offer the same
+  things; contents are a draft committed on blur (one undo step, not one per
+  letter). The author comes from `userData/comment-author.json`, starting as the
+  OS account name (`electron/commentAuthor.ts`), editable at the panel's foot.
+- **Saved as real annotations** (`services/pdfComments.ts`): /Highlight
+  /Underline /StrikeOut with /QuadPoints and a form-XObject appearance
+  (highlight under a Multiply ExtGState), /Text notes, a /Popup for each, replies
+  as /IRT /Text annotations with an empty appearance, "done" as a hidden reply
+  with /State Completed /StateModel Review. Stored coordinates are the page's
+  viewport (its /Rotate applied, CropBox at the origin); `viewportToPdf` is
+  pdf.js's viewport transform inverted — tested on a /Rotate 90 page with an
+  offset CropBox by reading back /QuadPoints through pdf.js. **Dates, /NM and
+  /State are plain strings**: written as UTF-16 hex strings, pdf.js read the
+  dates as garbage and the state was never matched. HWP and pictures get the
+  same annotations on the PDF they save. Print draws the marks
+  (`drawAnnotations(..., { comments: true })`).
+- **A file's own comments open as editable ones** (`services/pdfCommentImport.ts`,
+  `hooks/useCommentImport.ts`): (1) before any render of a PDF page its
+  comments are marked `noView`/`noPrint` in pdf.js's annotation storage and the
+  page is drawn with `annotationMode` ENABLE_STORAGE (`commentRenderParams`, in
+  pageRender, print and thumbnails), so nothing shows twice; (2) the comments
+  are read in the background — `getAnnotations({ intent: 'any' })`, since the
+  display list leaves out hidden annotations and a review state is one — with
+  their marked text recovered from the page's text items; (3) on save the
+  original objects (`refs`: pdf.js ids "12R", popups and replies included) are
+  taken off their pages (`replacedAnnotations`) and the comments written anew.
+  Imports are added without making the document unsaved (`savedState` grows
+  with them) and with an `importKey`: a page edit reloads the file, and keys
+  stop that from importing them twice — or bringing back one the reader deleted.
+  The EXE carries the original unless a comment was added, changed or deleted
+  (`isPristineImport`). pdf.js 6 has no `convertToViewportRectangle`; corners
+  go through `convertToViewportPoint`.
+- Known gaps: the selection save (`extractPages`) copies pages with the file's
+  original annotations; images export (`imageExporter`) draws them as the file
+  has them.
+
+**The text layers turn with the page.** pdf.js lays its spans out on the
+unrotated page and marks the layer `data-main-rotation`, leaving the turn to
+CSS we never had: at 90° the layer stayed upright (and React gave it the turned
+box's sides), so selecting, find highlights and marking text all landed on the
+wrong words. `index.css` now turns `.pdf-text-layer[data-main-rotation]` as
+pdf_viewer.css does, `PdfTextLayer`/`OcrTextLayer` keep the unrotated size, and
+the OCR/HWP layer takes `rotation` too. Checked in the preview: a highlight made
+at 90° matches its span to the pixel at 90° and at 0°.
+
+### Forms (AcroForm) and Fill & Sign
+
+**Form fields are filled in place, in viewer mode too** — that is what a
+reader is for. `services/pdfForms.ts` reads each page's fillable widgets
+(text, check box, radio, list/combo; not push buttons or signature fields)
+from pdf.js, and `components/forms/FormLayer` lays real controls over them on
+the unrotated page, turned by `.wz-form-layer[data-main-rotation]` like the
+text layers. The widgets are hidden from the page picture (`noView`, in the
+same pass as comments), so an edited value never shows twice.
+- **Values are annotations**: one `formValue` per field name (a field may have
+  widgets on several pages), so undo, "unsaved", autosave and the EXE need
+  nothing new. `setField` in App drops the override when the value goes back
+  to the file's own.
+- **Text is stored per pause, not per letter** (`hooks/useDraftCommit`): the
+  control shows a draft keyed to the stored value, stored 0.7 s after typing
+  stops, on leaving the field, or on unmount. Committing on blur alone lost
+  what was typed when Ctrl+S was pressed with the caret still in the field;
+  re-keying the input to show an undo moved the caret. The comment box and
+  Fill & Sign text use the same hook.
+- **Printing** renders with the `print` intent (`usePrint`), which ignores
+  `noView`: pdf.js draws the fields from the values `applyFormStorage` puts in
+  its annotation storage (Korean through its FakeUnicodeFont).
+- **Saving** (`services/pdfFormFill.ts`, pdf-lib's form API, found by
+  `instanceof` — class names do not survive minifying): each field is set and
+  its appearance redrawn in Noto Sans KR when a value needs Hangul; a field that
+  refuses is left as it was, and an appearance that cannot be drawn sets
+  /NeedAppearances. Kept apart from pdfForms so pdf-lib stays off the viewer chunk.
+
+**Fill & Sign** (`components/fill/`, `services/fillMarks.ts`) is for forms
+without fields: the edit rail's 채우기 menu arms the `fill` mode with a tool —
+typed text, ✓ ✕ ● ─, or today's date — and each click places one (the tool
+stays armed; Esc puts it down). Items are `fill` annotations, moved by
+dragging, sized from the little bar above a selected one, and an empty text
+item disappears when left. They are saved **into the page content**, like
+stamps, through the viewport transform (`viewportToPdf`), with text turned on
+a /Rotate page so it reads where it was typed; print and HWP/picture saves
+draw them on the canvas. One shape table (`markShape`) serves screen, print
+and PDF.
+
+### Redaction that removes (가리기)
+
+A black box over text leaves the text in the file; marks here are applied
+by **rebuilding each marked page** (`services/redact.ts`,
+`services/redactRuntime.ts`): pdf.js draws the page unrotated at 300 dpi
+(`intent: 'print'`, annotations off, capped at 8,000 px a side), the boxes
+are painted black a pixel past each edge, and the page's content and
+resources are replaced by that one image — old fonts, images and text go
+with `collectGarbage`. The page's words **outside** the marks come back as
+invisible text (`drawInvisibleRuns`, words from `wordsOfPage`, OCR's on a
+scan), so the rest stays searchable. Annotations whose /Rect touches a mark
+go with their pop-ups and replies, fields that lost their widgets with
+`pruneRemovedPages`; "숨은 정보" removes /Info (pdf-lib fills it at load,
+so clearing it after loading leaves it empty), XMP, attachments (name tree
+and FileAttachment annotations), document scripts and /PieceInfo. The result
+is read back and **fails closed**: any word more than a point inside a mark
+throws `RedactionNotVerified` and the document is left as it was.
+
+This is not PdfCraft's method (it cuts glyphs, image pixels and paths out of
+the content streams and keeps vectors) — rewriting content streams was the
+part judged too risky to port; a redacted page is a picture instead. Pages
+without marks are untouched.
+
+- Marks are `redact` annotations (rects in viewport points), made by
+  selecting text (`redact` mode, like a highlight) or dragging a box
+  (`redactArea`, the rectangle draft), or by **찾아서 가리기**
+  (`findInWords`: personal-information patterns — resident numbers, mobile
+  and landline numbers, e-mail, Luhn-checked card numbers, business numbers —
+  or typed text, over the page's words joined with spaces, each match marked
+  over the share of each word it covers). Shown hatched with a red edge until
+  applied; click selects, Delete removes.
+- **A PDF with marks pending is never saved** (`exportPdf` throws a message
+  saying to apply first): the words would still be under them. Applying is one
+  undo step (marks, overlapping comments and the file together).
+- PDF only; the edit rail's 가리기 menu holds the tools, find, apply (with
+  count) and clear.
+
+### Digital signatures and incremental save
+
+`services/pdfSignatures.ts`, after PdfCraft's `crates/sign`; CMS through
+**pkijs + asn1js** (BSD-3, PeculiarVentures, over WebCrypto — pinned exact;
+they were already in node_modules through electron-builder).
+
+- **Reading** (`readSignatures`, `useSignatures` — pkijs is only fetched for a
+  file with a `/ByteRange`): every `/FT /Sig` field with a value; the bytes its
+  /ByteRange covers are checked against the CMS (`adbe.pkcs7.detached` and
+  CAdES through `SignedData.verify`, `adbe.pkcs7.sha1` by comparing the
+  encapsulated digest), RSA and ECDSA. Shown as a badge beside the title and a
+  panel: valid (nothing changed / changes appended after it), broken, or
+  unreadable; DocMDP certification level. **Identity is not checked** — no
+  trust list — and the panel says so.
+- **Saving a signed file is an incremental update** (`exportPdf`:
+  `hasSignatures` and no password change → `PDFDocument.load(…, {
+  forIncrementalUpdate: true })`). `@cantoo/pdf-lib` 2.11 records every changed
+  object itself (`registerObjectChange` on dict/array edits) and `save()`
+  appends only those; the signed bytes stay a prefix of the file
+  (`pdfSignatures.test.ts` checks byte for byte). Page edits and redaction still
+  rewrite the file — a toast says the signatures are broken.
+- **Signing** (`signPdf`): a .pfx/.p12 is opened in the renderer
+  (`readPfx`: PBES2/AES files — OpenSSL 3 and current Windows; TripleDES/RC2
+  ones fail with a message, WebCrypto has no DES), the document as "PDF 저장"
+  would write it gets a `Signature<n>` field (visible box with "서명: CN",
+  time and reason in Noto Sans KR when needed, or invisible), saved
+  incrementally without object streams so the placeholders are plain text:
+  `/ByteRange [ 0 /********** … ]` (pdf-lib writes arrays as `[ a b ]`, with
+  the spaces) and a 16 KB `/Contents` of zeros; the range is written into the
+  placeholder, the rest hashed (SHA-256), signed with signed attributes
+  (contentType, signingTime, messageDigest) and the hex written in. Signing
+  again keeps the first signature valid. Saved as `<name>_signed.pdf` (picker
+  asked first, while the click counts) and reopened. Test certificates:
+  `src/services/__fixtures__/test-signer*.p12` (self-signed, password
+  `test1234`). Korean 공동인증서 (NPKI signCert/signPri with SEED) is not
+  supported.
+
+### Reduce file size (용량 줄이기)
+
+Save menu → 용량 줄이기 (PDF): `services/pdfOptimize.ts`, a sized-down port
+of PdfCraft's `crates/optimize`. Like a page edit, it replaces the file (one
+undo step) and the reader saves as usual.
+- **Images by where they are drawn**: `scanContent` is a small content-stream
+  tokenizer (strings with escapes and nesting, dictionaries, hex strings and
+  inline images are skipped so their bytes are never read as operators);
+  `imageUses` follows q / Q / cm / Do through form XObjects (12 deep, else the
+  image is marked unmeasured and left alone) and keeps each image's smallest
+  drawn size. Above the preset's ppi (Standard 225→150, Screen 144→96, High
+  300→200) an image is resampled on a canvas (`optimizeRuntime.ts`
+  `canvasCodec`) and stored as JPEG — only if smaller. JPEGs and 8-bit
+  DeviceGray/RGB images whose filters pdf-lib can undo; masks, SMasks,
+  /Decode, predictors (pdf-lib's decoder has none), CMYK/ICC/indexed, JPX,
+  JBIG2, CCITT are left as they are.
+- **Identical objects merged** (`mergeIdentical`): streams by dict + content
+  hash, Font/FontDescriptor/ExtGState dicts by their text, repeated until
+  nothing merges (identical font files make identical descriptors make
+  identical fonts); pages, annotations and outline items keep their identity.
+- Unfiltered streams Flate-compressed with `CompressionStream('deflate')`
+  (metadata excepted), thumbnails / alternates / PieceInfo dropped, optional
+  tag removal, optional hidden-information removal (`removeHiddenInformation`
+  from redaction), garbage collected, saved with object streams.
+- Measured in the preview: three screenshots drawn small, 561 KB → 67 KB.
+
+### Tabs
+
+Opening a document while one is open puts it in a **new tab** instead of
+replacing it (so there is nothing to save first). App keeps one document's
+state as before; every other tab is a `TabSnap` of it — file, annotations,
+undo stacks (`useEditHistory` `exportStacks`/`importStacks`), saved state,
+Markdown being edited (put back through `recoveredMarkdown`), opened-doc and
+recovery key, zoom, rotation, layout, page, edit mode, padlock choice and OCR
+results. Switching snapshots the front tab and restores the other; its
+document is **opened again** (pdf.js re-parses it — the price of not keeping
+several documents loaded), and two things make that invisible:
+- `usePdfDocument(file, knownPassword)` answers pdf.js's first password
+  question with the one that opened that File before (`knownPasswords`, a
+  WeakMap in memory, never stored);
+- zoom, page and `useOcr().restore` are applied 200 ms after the document is
+  back — after `useFitZoom`'s debounced fit, which would otherwise win.
+
+Other details: an inactive tab's autosave entry is kept (`useAutosave`'s
+`keep`), so a crash still offers it; the comment-import keys are per session
+(a WeakMap keyed by `openedDoc`), so a tab coming back does not import its
+comments twice; closing a tab with unsaved work asks (`UnsavedChangesDialog`
+`reason="close"`; a tab behind is brought to the front first, where it can be
+saved); closing the last tab returns to the start screen; the window's close
+prompt counts every tab. The title bar shows tabs (name, ●, ×; middle-click
+closes) once two are open. Ctrl+Tab / Ctrl+Shift+Tab move between them,
+Ctrl+W closes. At most 20. Embed and private modes keep one document.
+
+### Compare with another file
+
+The rail's 비교 button (page documents) asks for an earlier version — PDF,
+HWP, Word, PowerPoint or Markdown — and diffs its words against the open
+document's (`services/textCompare.ts`, a port of PdfCraft's `crates/compare`:
+common prefix/suffix set aside, stretches over 3,000 words split at patience
+anchors, Myers on the rest; words compared in NFC). Words come with boxes in
+viewport points (`services/compareWords.ts`: pdf.js items split into words by
+character share, HWP runs, OCR words for a page without text); Word,
+PowerPoint and Markdown are text only, so they can only be the earlier side.
+The open document carries the marks (`CompareMarks` inside the rotated box:
+added green, changed amber, a red bar where words were removed, beside the
+next word), the list is `ComparePanel` (beside the document from `md`, over
+it on a phone), and the report saves as UTF-8 text with a BOM so Notepad reads
+Korean. The comparison belongs to the document it was made for and disappears
+when another opens.
+
+### Outline (bookmarks) tab
+
+A PDF's outline is read once per document (`hooks/useOutline.ts` →
+`services/pdfOutline.ts`): named destinations are looked up, explicit ones
+resolved through `getPageIndex` (a bare number is taken as a 0-based index, as
+some writers emit), so every entry has a page or is shown as plain text; a URL
+entry opens externally. The page panel gets a **페이지 | 목차** tab pair only
+when there is an outline, opens on 목차 for such a document (PdfCraft does the
+same), and is 16 rem wide while showing it. `OutlineView`: top level open,
+deeper closed; a filter that keeps every match's parents (PdfCraft's
+bookmarks search); expand / collapse all; the entry the reader is in (last
+one starting at or before the page) marked and kept in view. Clicking jumps to
+the page's top — the destination's position on the page is not used yet. The
+thumbnail list stays mounted (hidden) behind the outline. HWP and Word have no
+outline here yet.
 
 ### Toolbar layout: a side rail and a thin title bar
 
@@ -863,6 +1178,16 @@ the rail is too short, `itemsThatFit` (`railLayout.ts`) keeps what fits plus a
 "..." button, and the rest go into its menu — the end of the list first,
 which is what is reached for least. Save is a menu now (PDF first, Ctrl+S
 still saves directly), so "Save as PDF" is in it for a PDF as well.
+
+**Command palette (Ctrl+K, also Ctrl+Shift+P and the rail's prompt icon).**
+`ActionBar` builds one flat `PaletteCommand` list from the same handlers and
+conditions as the rail, its menus and the edit rail, so the palette never
+offers what the rail would hide. Ranking (`commandSearch.ts`) is PdfCraft's
+(`palette.rs`): substring position in the UI label, then the English label
+(`tEnglish`, so "print" finds 인쇄), then keywords (+20) and the id (+50), then
+the typed letters in order (100); commands that cannot run now sort last; 12
+shown. Added for Korean: **초성 search** ("ㅇㅅ" → 인쇄). Typing in its input
+never reaches the global letter shortcuts (they skip inputs).
 
 `ActionBar` keeps its props and lays the chrome out around the document area
 App gives it as `children`; floating bars moved with it (find and update
@@ -917,8 +1242,10 @@ Drawing tools that are **display-only and not exported to PDF**. They live along
 
 ```typescript
 // src/types/annotation.ts
-type AnnotationType = 'stamp' | 'signature' | 'watermark' | 'pen' | 'rectangle'
-type ActiveMode = 'select' | 'stamp' | 'signature' | 'watermark' | 'pen' | 'rectangle' | null
+type AnnotationType = 'stamp' | 'signature' | 'watermark' | 'pen' | 'rectangle' | 'textEdit'
+  | 'highlight' | 'underline' | 'strikeout' | 'note'   // comments — see "Comments"
+type ActiveMode = 'select' | 'stamp' | 'signature' | 'watermark' | 'pen' | 'rectangle'
+  | 'highlight' | 'underline' | 'strikeout' | 'note' | null
 
 interface PenAnnotation extends BaseAnnotation {
   type: 'pen'
@@ -1026,6 +1353,35 @@ Two bugs this closed: a new document inherited the previous one's annotations
 the draft so the editor fell back to the file as opened — the edits vanished
 from the screen the moment they were saved (`savedCopy` now records what is on
 disk separately).
+
+### Autosave and crash recovery (desktop)
+
+Unsaved work used to be lost to a crash, a power cut or a killed process.
+`hooks/useAutosave.ts` hands the open document's state to the main process
+every 15 s while it is unsaved (`electron/recovery.ts`, `recovery:*` IPC,
+`userData/recovery/<key>.bin` + `<key>.json`): the document's bytes once per
+version of `file` (a page edit is a new version; `modified` marks it), and the
+lasting annotations or the Markdown being edited whenever they change
+(compared by identity — annotations are immutable). Saving, undoing back to
+the saved state or opening another document removes the entry; a normal quit
+removes this process's entries (`will-quit`). At start `recovery:list` offers
+what is left (`RecoveryDialog`); recovering reopens the bytes at the old path,
+restores the annotations, keeps the doc unsaved (`savedState.file = null` for
+edited pages; `MarkdownView` `recoveredText` for Markdown) and re-claims the
+entry for this pid at once, or a quit before the next autosave would offer it
+again.
+
+Taken from PdfCraft's recovery store (Apache-2.0/MIT) — bytes before metadata,
+both written atomically (temp file + rename); each entry names its writer so
+a second running copy neither offers nor deletes the first one's live
+autosaves. PdfCraft holds a locked file for that; Node has no file locks, so
+the writer's pid is checked for being alive. Saving the state, not a
+re-exported PDF, keeps annotations editable after recovery and costs no
+export. **Never written:** encrypted documents (contents would sit on disk in
+the clear), ranged documents (> 500 MB, view-only), files over 200 MB, and an
+edited image collection (its manifest names pictures by in-memory ids).
+Verified in the packaged build: stamp → autosave → `taskkill /F` → restart →
+prompt → recover → the stamp is back and the title shows ●.
 
 ### Toast notifications
 
@@ -2184,6 +2540,23 @@ found these drove the real find bar (`Input.insertText`, real clicks on ↓) and
 checked that `.wz-search-hl-active` both contains the query and is inside the
 scroll container's viewport. Note the counter shows `결과 없음` for the ~220 ms
 before the debounced search runs — read it after it settles.
+
+### Find: progressive, from the page in view, phrase across lines
+
+After PdfCraft's find bar (Apache-2.0/MIT). `useSearch` searches from the page
+in view to the end, then from the start: matches found before it are put in
+front and the current index shifts with them, so the first match shown is the
+first at or after the reader, not the first in the document. Results are
+flushed every 120 ms while it runs — the counter reads `3 / 16+` until done.
+Matching is one regular expression over the original text
+(`services/textSearch.ts`), shared with `useFlowSearch`: a space in the query
+matches any whitespace run, and a pdfjs item with `hasEOL` gets a newline
+after it (belonging to that item), so a phrase broken across lines is found; case
+and whole words (`\p{L}\p{N}` boundaries) are options (Aa, ab in the bar).
+Each match carries a snippet, and the bar's list button shows them all with
+the hit marked (500 rows max); clicking one selects it. The DOM index's
+block marks (U+001F) are never matched across. The windowed spreadsheet's
+provider still takes the plain lower-cased needle.
 
 ### Annotation coordinates
 Everything stored and exported uses the `effectiveZoom = PDF_RENDER_SCALE * zoom` divisor. If you pass plain `zoom` instead of `effectiveZoom` to `toStoredCoords`, annotations will be placed at the wrong position relative to the PDF.

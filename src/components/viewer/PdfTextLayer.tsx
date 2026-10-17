@@ -281,8 +281,11 @@ export function PdfTextLayer({
         position: 'absolute',
         top: 0,
         left: 0,
-        width,
-        height,
+        // The layer is the unrotated page, turned by CSS (data-main-rotation
+        // in index.css). Given the turned box's sides instead, a page shown
+        // at 90° or 270° stretched every span off its words.
+        width: rotation % 180 === 0 ? width : height,
+        height: rotation % 180 === 0 ? height : width,
         overflow: 'hidden',
         // Wrapper doesn't catch events; the spans inside opt in via CSS.
         pointerEvents: 'none',
