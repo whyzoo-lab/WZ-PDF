@@ -104,7 +104,7 @@ export async function printFlowDoc(): Promise<boolean> {
   // scoped by a selector — so the override is injected for the duration of this
   // print and removed again afterwards.
   const pageStyle = document.createElement('style')
-  pageStyle.textContent = '@page { margin: 14mm; }'
+  pageStyle.textContent = '@page { margin: 14mm; background: white; }'
 
   try {
     document.head.appendChild(pageStyle)

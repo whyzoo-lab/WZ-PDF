@@ -532,7 +532,7 @@ notes are **subtitles** (`SlideCaptions`: white on black boxes that hug each
 line, bottom centre, portalled to `body`), on by default; `C` — also matched
 by `e.code`, since with the Korean IME it arrives as `ㅊ` — or the translucent
 CC button in the bottom-right corner turns them off. The button shows when the
-mouse moves and hides after 5 still seconds. **Alt+F5 opens the slideshow on
+mouse moves and hides after 5 still seconds. **Shift+F5 opens the slideshow on
 the slide in view**: the shortcut used to pass App's PDF page counter (always
 1 for Office) and `PptxView` ignored the start page anyway; it now gets
 `fullscreenStartPage`, and re-scrolls to it on each resize until the first
@@ -654,6 +654,21 @@ landscape when the sheet is wider than portrait — and a large sheet in
   prints on slide-size paper; only a many-piece sheet falls back to the rows on
   screen, with a toast pointing at the PDF save. The web build has no
   printToPDF: its save opens the print dialog on the same layout.
+- **One print preview for every format (desktop).** A PDF, HWP or picture
+  opened the in-app `PrintPreviewModal` while Office, Markdown and mail went
+  straight to the bare Windows dialog (Electron has no Chrome print preview),
+  so the reader saw a different window per file. Now `handlePrintAny` builds
+  the job (Markdown and mail: `flowPdfJob` of the element marked
+  `FLOW_PRINT_ATTR`), `usePrint().previewThenPrint` makes its PDF with
+  `officeJobToPdf`, shows its pages (`services/printPreview.ts`) in the same
+  modal, and confirming prints the **job**, not the pictures — paper still
+  gets text. The web build keeps the browser's own preview; a many-piece sheet
+  keeps the fallback above. Checked in the packaged app with a deck, a Word
+  file, Markdown and a sheet (~1.4 s to the preview).
+- **printToPDF paints `@page` margins with the window's background**, the
+  dark `#111827` of `app.html`, not the document's: Markdown, mail and sheet
+  PDFs (which have margins) came out framed in black. `withPrintLayout` adds
+  `@page { background: white }` to every job.
 
 ### Coordinate system
 
@@ -1113,7 +1128,7 @@ comments twice; closing a tab with unsaved work asks (`UnsavedChangesDialog`
 saved); closing the last tab returns to the start screen; the window's close
 prompt counts every tab. The title bar shows tabs (name, ●, ×; middle-click
 closes) once two are open. Ctrl+Tab / Ctrl+Shift+Tab move between them,
-Ctrl+W closes. At most 20. Embed and private modes keep one document.
+Ctrl+W or Ctrl+F4 closes. At most 20. Embed and private modes keep one document.
 
 ### Compare with another file
 
@@ -1213,7 +1228,7 @@ Drawing tools that are **display-only and not exported to PDF**. They live along
 | `2` | Toggle red rectangle drag mode (`activeMode = 'rectangle'`) |
 | `ESC` (first press) | Clear all markups + exit drawing mode (if any markups or drawing mode active) |
 | `ESC` (second press) | Exit fullscreen (if in fullscreen with no markups) |
-| `F5` / `Alt+F5` | Present from the first page / from the page in view (`fullscreenStartPage`) |
+| `F5` / `Shift+F5` | Present from the first page / from the page in view (`fullscreenStartPage`) |
 | `Home` | Jump to first page (fullscreen only) |
 | `End` | Jump to last page (fullscreen only) |
 

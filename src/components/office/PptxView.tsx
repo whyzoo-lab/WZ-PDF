@@ -272,7 +272,7 @@ export function PptxView({
   }, [])
   useLayoutEffect(() => {
     if (!fullscreen || !pres) { fsTarget.current = null; return }
-    // F5 opens on slide 1, Alt+F5 on the one in view. A hidden slide is not
+    // F5 opens on slide 1, Shift+F5 on the one in view. A hidden slide is not
     // in the slideshow, so it opens on the next one shown (or the last).
     const shown = pres.slides.map((s, i) => (s.hidden ? -1 : i)).filter(i => i >= 0)
     const from = fullscreenStartPage - 1

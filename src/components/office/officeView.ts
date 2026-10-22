@@ -48,7 +48,7 @@ export interface OfficeViewProps {
   onPageInfo?: (info: OfficePageInfo | null) => void
   /** Show a deck's speaker notes under each slide. */
   showNotes?: boolean
-  /** Page (slide) the slideshow opens on, 1-based: 1 for F5, the one in view for Alt+F5. */
+  /** Page (slide) the slideshow opens on, 1-based: 1 for F5, the one in view for Shift+F5. */
   fullscreenStartPage?: number
   /** The sentence being read aloud, or null — the slideshow shows it as the caption. */
   speaking?: string | null

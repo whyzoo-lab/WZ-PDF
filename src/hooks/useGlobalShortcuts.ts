@@ -14,7 +14,7 @@ interface GlobalShortcutsDeps {
   activeMode: ActiveMode
   annotations: Annotation[]
   selectedId: string | null
-  /** Page in view — where Alt+F5 starts the presentation. */
+  /** Page in view — where Shift+F5 starts the presentation. */
   currentPage: number
   setViewMode: (mode: ViewMode) => void
   setShowSearch: (show: boolean) => void
@@ -85,7 +85,7 @@ const DOUBLE_PRESS_MS = 350
  * on the ESC two-step actually blocks FullscreenView's own window listener.
  *
  * Shortcuts: F1 help, Ctrl+P print, Ctrl+F find, F2 open, F5 fullscreen from
- * the first page (Alt+F5 from the page in view),
+ * the first page (Shift+F5 from the page in view),
  * Delete/Backspace remove selection, ESC (two-step: clear markups → exit
  * fullscreen), 1 pen, 2 rectangle, R OCR this page (RR the whole document),
  * S read aloud, and while reading Alt+← / Alt+→ / Alt+Space to move through it.
@@ -187,9 +187,11 @@ export function useGlobalShortcuts(deps: GlobalShortcutsDeps) {
       }
       if (e.key === 'F5' && (pdfDoc || flowDoc) && viewMode !== 'fullscreen') {
         e.preventDefault()
-        // F5 starts from the beginning, Alt+F5 from where the reader is — a
+        // F5 starts from the beginning, Shift+F5 from where the reader is — a
         // presenter who stopped on slide 12 to take a question resumes there.
-        onEnterFullscreen(e.altKey ? currentPage : 1)
+        // Shift+F5 is PowerPoint's key for it; Alt+F5 (ours before 1.28.1)
+        // still works, so that habit does not suddenly jump to slide 1.
+        onEnterFullscreen(e.shiftKey || e.altKey ? currentPage : 1)
         return
       }
       // ── Moving through what is being read ────────────────────────────────

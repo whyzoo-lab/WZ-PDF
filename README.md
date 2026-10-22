@@ -52,7 +52,7 @@ and on-device speech. Ships with a
 - 🔒 **Private by design** — everything runs in the browser/desktop. Nothing is uploaded.
 - 📄 **PDF _and_ HWP/HWPX** — open Korean word-processor files exactly like a PDF, with **native selectable text** (no OCR needed).
 - 📊 **Word, PowerPoint and Excel without Office** — `.docx`, `.pptx`, `.xlsx` / `.xlsm` / `.xls` / `.ods` / `.csv` open with their layout, tables, charts and pictures, with zoom, single / two-page / all-pages layouts, a page list, find, print and fullscreen. **Every row** of a 200,000-row sheet scrolls — nothing is cut short with "open it in Excel". Save any of them **as a PDF with selectable text**.
-- 🎤 **Speaker notes, on screen and read aloud** — a deck's presenter script shows under each slide; in the slideshow it runs along the bottom as **captions** (`C` or the corner button), and read-aloud reads the script instead of the slide, **turning the slides as it goes**. `Alt+F5` starts the show from the slide in view.
+- 🎤 **Speaker notes, on screen and read aloud** — a deck's presenter script shows under each slide; in the slideshow it runs along the bottom as **captions** (`C` or the corner button), and read-aloud reads the script instead of the slide, **turning the slides as it goes**. `Shift+F5` starts the show from the slide in view.
 - 🎬 **A deck with notes becomes a narrated video** — one MP4: the slides, the script read aloud in a natural voice, and the script as a subtitle track that any player can switch on and off.
 - 🔊 **Reads documents aloud, on your machine** — press the speaker and the document is read to you, Korean included, with ten voices and a speed control; the sentence being read is highlighted, and in fullscreen the pages turn with it. It runs entirely offline once set up: nothing about what you are reading leaves the computer. (Desktop app; the voice model is a one-time 383 MB download you are asked about first.)
 - 🔁 **HWP → PDF that you can actually copy from** — the converted file carries a real text layer, so text stays selectable and searchable in any reader. Not a picture of a document.
@@ -139,7 +139,7 @@ is copied to that name. A live example runs on the
   gets a row of its own), a grid overview that fills the window, and a
   presentation **fullscreen** mode (USB-clicker friendly, touchpad swipe,
   click-to-advance, `Home`/`End` jumps). `F5` presents from the start,
-  `Alt+F5` from the page in view.
+  `Shift+F5` from the page in view.
 - **Presenter tools** (fullscreen, ZoomIt-style) — pen (`P`), highlighter (`H`),
   rectangle (`R`), arrow (`A`), laser pointer (`L`), and spotlight zoom (`Z`);
   color `1`–`5`, width `[` `]`, undo `Ctrl+Z`, erase `E`. Two-step `ESC`.

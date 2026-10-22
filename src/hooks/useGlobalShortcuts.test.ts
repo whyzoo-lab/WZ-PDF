@@ -41,7 +41,13 @@ describe('presentation shortcuts', () => {
     expect(d.onEnterFullscreen).toHaveBeenCalledWith(1)
   })
 
-  it('Alt+F5 presents from the page being read', () => {
+  it('Shift+F5 presents from the page being read', () => {
+    const d = setup('single', 7)
+    press({ key: 'F5', shiftKey: true })
+    expect(d.onEnterFullscreen).toHaveBeenCalledWith(7)
+  })
+
+  it('still takes Alt+F5, the key before 1.28.1, for the page being read', () => {
     const d = setup('single', 7)
     press({ key: 'F5', altKey: true })
     expect(d.onEnterFullscreen).toHaveBeenCalledWith(7)
@@ -50,13 +56,13 @@ describe('presentation shortcuts', () => {
   it('uses the page in view at the moment of the key press', () => {
     const d = setup('single', 7)
     d.rerender({ ...d, currentPage: 12 })
-    press({ key: 'F5', altKey: true })
+    press({ key: 'F5', shiftKey: true })
     expect(d.onEnterFullscreen).toHaveBeenCalledWith(12)
   })
 
   it('does nothing while already presenting', () => {
     const d = setup('fullscreen', 7)
-    press({ key: 'F5', altKey: true })
+    press({ key: 'F5', shiftKey: true })
     expect(d.onEnterFullscreen).not.toHaveBeenCalled()
   })
 })
@@ -187,7 +193,7 @@ describe('a private (read-only) viewer', () => {
     d.rerender({ ...d, readOnly: true } as never)
     expect(key({ key: 'c', ctrlKey: true }).defaultPrevented).toBe(false)
     key({ key: 'f', ctrlKey: true })
-    key({ key: 'F5', altKey: true })
+    key({ key: 'F5', shiftKey: true })
     expect(d.setShowSearch).toHaveBeenCalledWith(true)
     expect(d.onEnterFullscreen).toHaveBeenCalledWith(3)
   })

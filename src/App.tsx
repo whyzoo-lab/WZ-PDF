@@ -29,6 +29,7 @@ import type { Annotation, OmitId, PendingStamp } from './types/annotation'
 import type { AppMode, ViewMode } from './types/viewModes'
 import { isFlowKind, isOfficeKind, type ViewerDoc } from './types/viewerDoc'
 import type { OfficePageInfo, OfficeViewHandle } from './components/office/officeView'
+import type { PdfJob } from './services/officePdf'
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, PAGE_ATTR } from './utils/constants'
 import { captureZoomAnchor, restoreZoomAnchor, type ZoomAnchor } from './utils/zoomAnchor'
 import { classifyDocFile, DOCUMENT_ACCEPT } from './utils/detectDocType'
@@ -187,7 +188,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('single')
   const [fullscreenLayout, setFullscreenLayout] = useState<'single' | 'spread'>('single')
   // First page shown in presentation mode: 1 for F5 and the toolbar button, the
-  // page in view for Alt+F5.
+  // page in view for Shift+F5.
   const [fullscreenStartPage, setFullscreenStartPage] = useState(1)
   const [scrollToPage, setScrollToPage] = useState<number | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -601,7 +602,7 @@ export default function App() {
     if (viewMode === 'grid') setViewMode('single')
     selectAnnotation(a.id)
   }, [viewMode, selectAnnotation])
-  const { handlePrint, isPrinting, printProgress, previewPages, confirmPrint, cancelPrint } = usePrint({ pdfDoc, numPages, annotations, onError: showToast })
+  const { handlePrint, previewThenPrint, isPrinting, printProgress, previewPages, confirmPrint, cancelPrint } = usePrint({ pdfDoc, numPages, annotations, onError: showToast })
   const {
     isExporting,
     handleSaveOriginal,
@@ -1086,17 +1087,19 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshotCurrent reads this render's state
   }, [openDocument, showToast, file, embed, annotations, savedState, markdownDirty, openedDoc, zoom, rotation, viewMode, currentPage, appMode, chosenPassword, ocr.ocrResults, unsaved])
 
-  // Ctrl+Tab / Ctrl+Shift+Tab move between tabs, Ctrl+W closes one.
+  // Ctrl+Tab / Ctrl+Shift+Tab move between tabs, Ctrl+W or Ctrl+F4 closes one
+  // (Ctrl+F4 is the Windows convention for closing a document window).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.metaKey) return
       const list = tabsRef.current
+      const closeKey = e.key === 'F4' || e.key === 'w' || e.key === 'W' || e.code === 'KeyW'
       if (e.key === 'Tab' && list.length > 1) {
         e.preventDefault()
         const at = list.findIndex(t => !t.snap)
         const next = list[(at + (e.shiftKey ? list.length - 1 : 1)) % list.length]
         switchTab(next.id)
-      } else if ((e.key === 'w' || e.key === 'W') && !e.shiftKey && list.length > 0) {
+      } else if (closeKey && !e.shiftKey && list.length > 0) {
         e.preventDefault()
         const active = list.find(t => !t.snap)
         if (active) closeTab(active.id)
@@ -1367,23 +1370,38 @@ export default function App() {
   // their DOM instead — see services/htmlPrint.ts for why that's the better
   // output, not just the easier one.
   const handlePrintAny = useCallback(async () => {
-    // Word, PowerPoint, sheets: printed on the paper their PDF uses — a slide
-    // per sheet at the slide's size, Word pages at their own size and margins.
-    const officeView = officeHandleRef.current
-    if (isOfficeKind(kind) && officeView) {
-      const { printOfficeJob } = await import('./services/officePdf')
-      const job = await officeView.pdfJob()
-      if (job.pieces === 1) { await printOfficeJob(job); return }
-      // Too many rows for one print layout; the rows on screen are printed,
-      // and the PDF save is the way to all of them.
-      showToast(t('office.printLarge'))
-    }
     if (isFlowKind(kind)) {
+      // Word, PowerPoint, sheets: printed on the paper their PDF uses — a slide
+      // per sheet at the slide's size, Word pages at their own size and margins.
+      // Markdown and mail: their text on A4, as "Save as PDF" writes it.
+      const [{ canSaveOfficePdf, officeJobToPdf, printOfficeJob }, { FLOW_PRINT_ATTR }] = await Promise.all([
+        import('./services/officePdf'), import('./services/htmlPrint'),
+      ])
+      const officeView = officeHandleRef.current
+      let job: PdfJob | null = null
+      if (isOfficeKind(kind)) {
+        if (officeView) job = await officeView.pdfJob()
+      } else {
+        const source = document.querySelector<HTMLElement>(`[${FLOW_PRINT_ATTR}]`)
+        if (source) job = (await import('./services/officePdfJobs')).flowPdfJob(source)
+      }
+      if (job && job.pieces === 1) {
+        // The desktop app shows the same preview a PDF gets — of the PDF this
+        // job makes — and prints the job itself, so paper gets text. The web
+        // build goes to the browser's dialog, which has a preview of its own.
+        const ready = job
+        if (canSaveOfficePdf()) { void previewThenPrint(() => officeJobToPdf(ready), () => printOfficeJob(ready)); return }
+        if (isOfficeKind(kind)) { await printOfficeJob(job); return }
+      } else if (job) {
+        // Too many rows for one print layout; the rows on screen are printed,
+        // and the PDF save is the way to all of them.
+        showToast(t('office.printLarge'))
+      }
       const { printFlowDoc } = await import('./services/htmlPrint')
       if (await printFlowDoc()) return
     }
     handlePrint()
-  }, [kind, handlePrint, showToast])
+  }, [kind, handlePrint, previewThenPrint, showToast])
 
   useEffect(() => {
     if (!isFlowKind(kind)) return
@@ -1995,7 +2013,7 @@ export default function App() {
 
   useGlobalShortcuts({
     pdfDoc, flowDoc, viewMode, appMode, activeMode, annotations, selectedId,
-    // Alt+F5 starts where the reader is — for Word and PowerPoint that is the
+    // Shift+F5 starts where the reader is — for Word and PowerPoint that is the
     // view's own page, not the PDF counter (which stayed at 1 for them).
     currentPage: pagedOffice ? officePages!.current : currentPage,
     setViewMode, setShowSearch, onEnterFullscreen: enterFullscreen, fileInputRef,

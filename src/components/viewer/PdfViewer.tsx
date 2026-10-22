@@ -27,7 +27,7 @@ interface PdfViewerProps {
   viewMode: ViewMode
   /** Layout to use when entering fullscreen: mirrors the pre-fullscreen view mode. */
   fullscreenLayout: 'single' | 'spread'
-  /** First page shown when fullscreen opens (Alt+F5 passes the page in view). */
+  /** First page shown when fullscreen opens (Shift+F5 passes the page in view). */
   fullscreenStartPage?: number
   /** The page being read aloud while presenting: fullscreen turns to it. */
   fullscreenFollowPage?: number | null

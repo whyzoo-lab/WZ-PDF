@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ViewerDoc } from '../types/viewerDoc'
 import type { Annotation } from '../types/annotation'
 import { drawAnnotations, loadImage } from '../services/annotationCanvas'
@@ -105,6 +105,9 @@ export function usePrint({ pdfDoc, numPages, annotations, onError }: UsePrintArg
   // ships without Chrome's print preview, so window.print() there only opens the
   // bare OS dialog ("이 앱은 인쇄 미리 보기를 지원하지 않습니다").
   const [previewPages, setPreviewPages] = useState<string[] | null>(null)
+  // Set while the preview shows a document that prints its own way (Office,
+  // Markdown, mail: their text, laid out for paper) rather than these pictures.
+  const printOther = useRef<(() => Promise<void>) | null>(null)
 
   // Build every page (page + annotations) into a JPEG, then open the
   // preview. Printing itself happens on confirm.
@@ -130,7 +133,30 @@ export function usePrint({ pdfDoc, numPages, annotations, onError }: UsePrintArg
     }
   }, [pdfDoc, numPages, annotations, onError])
 
-  const cancelPrint = useCallback(() => setPreviewPages(null), [])
+  /**
+   * The same preview for documents that print as text: `make` writes the PDF
+   * that would be printed, its pages are shown, and confirming calls `print`
+   * — so what is on paper is the text, exactly as previewed.
+   */
+  const previewThenPrint = useCallback(async (make: () => Promise<Uint8Array>, print: () => Promise<void>) => {
+    setIsPrinting(true)
+    setProgress({ done: 0, total: 0 })
+    try {
+      const bytes = await make()
+      const { renderPdfPreview } = await import('../services/printPreview')
+      const pages = await renderPdfPreview(bytes, (done, total) => setProgress({ done, total }))
+      printOther.current = print
+      setPreviewPages(pages)
+    } catch (err) {
+      console.error('[print] failed:', err)
+      onError(t('print.prepareFailed', { error: errorMessage(err) }))
+    } finally {
+      setIsPrinting(false)
+      setProgress({ done: 0, total: 0 })
+    }
+  }, [onError])
+
+  const cancelPrint = useCallback(() => { printOther.current = null; setPreviewPages(null) }, [])
 
   // The preview's page images are Blob URLs; each set is released when it is
   // replaced or closed (printed, cancelled, or the app unmounts).
@@ -142,6 +168,16 @@ export function usePrint({ pdfDoc, numPages, annotations, onError }: UsePrintArg
   const confirmPrint = useCallback(async () => {
     const pages = previewPages
     if (!pages || pages.length === 0) return
+    const other = printOther.current
+    if (other) {
+      printOther.current = null
+      setPreviewPages(null)
+      try { await other() } catch (err) {
+        console.error('[print] failed:', err)
+        onError(t('print.failed', { error: errorMessage(err) }))
+      }
+      return
+    }
     let root: HTMLDivElement | null = null
     try {
       // Decode all images before printing so the dialog never captures blanks.
@@ -174,5 +210,5 @@ export function usePrint({ pdfDoc, numPages, annotations, onError }: UsePrintArg
     return () => document.removeEventListener('wz-print', onPrint)
   }, [handlePrint])
 
-  return { handlePrint, isPrinting, printProgress: progress, previewPages, confirmPrint, cancelPrint }
+  return { handlePrint, previewThenPrint, isPrinting, printProgress: progress, previewPages, confirmPrint, cancelPrint }
 }

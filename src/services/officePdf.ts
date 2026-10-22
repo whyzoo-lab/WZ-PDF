@@ -65,7 +65,10 @@ async function layoutAndPrint<T>(content: HTMLElement, job: PdfJob, print: () =>
   root.id = 'wz-print-root'
   root.appendChild(content)
   const style = document.createElement('style')
-  style.textContent = job.css
+  // printToPDF paints an @page margin with the window's own background — the
+  // dark #111827 of app.html — not the document's, so Markdown, mail and
+  // sheet PDFs came out framed in black. White paper has to be said here.
+  style.textContent = `${job.css}\n@page { background: white; }`
   try {
     document.head.appendChild(style)
     document.body.appendChild(root)
