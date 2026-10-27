@@ -30,6 +30,11 @@ describe('OcrTextLayer', () => {
     expect(spans[1].className).toMatch(/wz-search-hl-active/)
   })
 
+  it('cannot be scrolled by bringing a match into view (overflow clip, not hidden)', () => {
+    const { container } = render(<OcrTextLayer words={words} scale={1} width={200} height={200} />)
+    expect((container.firstElementChild as HTMLElement).style.overflow).toBe('clip')
+  })
+
   it('renders nothing for an empty word list', () => {
     const { container } = render(<OcrTextLayer words={[]} scale={1} width={10} height={10} />)
     expect(container.querySelectorAll('span')).toHaveLength(0)

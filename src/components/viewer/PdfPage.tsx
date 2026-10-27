@@ -612,7 +612,10 @@ function PdfPageInner({
     <div
       ref={pageRef}
       onClick={handlePageClick}
-      style={{ width: stageWidth, height: stageHeight, overflow: 'hidden', position: 'relative' }}
+      // `clip`, not `hidden`: a hidden box is still a scroll container, and
+      // scrollIntoView on a search match inside it scrolled the box itself —
+      // see PdfTextLayer.
+      style={{ width: stageWidth, height: stageHeight, overflow: 'clip', position: 'relative' }}
       role="group"
       aria-label={t('page.a11yPage', { n: pageNumber })}
       // Which page the pointer is over — where Ctrl+V pastes (see App).
@@ -774,7 +777,10 @@ function PdfPageInner({
           width={stageWidth}
           height={stageHeight}
           rotation={rotation}
-          highlights={searchHighlights}
+          // Search numbers a PDF page's own text items when it has any
+          // (useSearch), so on such a page the indices are not OCR words —
+          // applied here they lit unrelated words beside the real hits.
+          highlights={kind === 'pdf' && hasPdfText ? undefined : searchHighlights}
           onEditCommit={appMode === 'editor' ? commitTextEdit : undefined}
           reveal={revealOcr}
         />

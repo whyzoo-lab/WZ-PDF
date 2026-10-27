@@ -85,7 +85,8 @@ export const OcrTextLayer = memo(function OcrTextLayer({ words, scale, width, he
       // words stayed upright over a turned page.
       data-main-rotation={rotation}
       style={{
-        position: 'absolute', top: 0, left: 0, overflow: 'hidden', pointerEvents: 'none',
+        // `clip`, not `hidden` — see PdfTextLayer: a hidden box can be scrolled.
+        position: 'absolute', top: 0, left: 0, overflow: 'clip', pointerEvents: 'none',
         width: rotation % 180 === 0 ? width : height,
         height: rotation % 180 === 0 ? height : width,
       }}

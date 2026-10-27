@@ -2556,6 +2556,22 @@ checked that `.wz-search-hl-active` both contains the query and is inside the
 scroll container's viewport. Note the counter shows `결과 없음` for the ~220 ms
 before the debounced search runs — read it after it settles.
 
+### Layers over a page are `overflow: clip`, never `hidden`
+
+`scrollIntoView` scrolls **every** scroll container around its target, and an
+`overflow: hidden` box is one — it just has no scrollbar. Find brings the
+active match into view with `scrollIntoView`; when the document could not
+scroll far enough (a match near a page edge, or partly off to the side when
+zoomed), the text layer itself scrolled instead — 123 px, then 71 px on a real
+report (NIA guide, search "현황", Enter repeatedly) — and every highlight, and
+the text selection, slid off the words under them, a bit further with each
+match. The DOM said the right spans were highlighted; only the picture
+disagreed, so check `layer.scrollTop` before suspecting the item mapping.
+`PdfTextLayer`, `OcrTextLayer` and the `PdfPage` wrapper are `overflow: clip`
+(not a scroll container; pdf.js's own viewer does the same) and tests hold it.
+Related: on a PDF page with its own text, search indices are PDF items, so the
+OCR layer over such a page gets no highlights (`PdfPage`).
+
 ### Find: progressive, from the page in view, phrase across lines
 
 After PdfCraft's find bar (Apache-2.0/MIT). `useSearch` searches from the page

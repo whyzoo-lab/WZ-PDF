@@ -286,7 +286,14 @@ export function PdfTextLayer({
         // at 90° or 270° stretched every span off its words.
         width: rotation % 180 === 0 ? width : height,
         height: rotation % 180 === 0 ? height : width,
-        overflow: 'hidden',
+        // `clip`, not `hidden`. A hidden box is still a scroll container, and
+        // scrollIntoView scrolls every scroll container around its target: when
+        // the document could not scroll far enough (a match near a page edge),
+        // the layer itself scrolled — 123 px on a real report — and every
+        // highlight and the text selection slid off the words under them,
+        // a little further with each match. `clip` cannot be scrolled at all
+        // (pdf.js's own viewer uses it for the same reason).
+        overflow: 'clip',
         // Wrapper doesn't catch events; the spans inside opt in via CSS.
         pointerEvents: 'none',
         // pdfjs's TextLayer overwrites style.width/height via setLayerDimensions

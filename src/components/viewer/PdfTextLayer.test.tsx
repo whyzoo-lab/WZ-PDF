@@ -97,6 +97,16 @@ describe('PdfTextLayer search highlights', () => {
     spy.mockRestore()
   })
 
+  // scrollIntoView scrolls every scroll container around a match, and an
+  // overflow:hidden box is one: on a real report the layer itself scrolled
+  // 123 px and every highlight slid off its words. `clip` cannot scroll.
+  it('cannot be scrolled by bringing a match into view (overflow clip, not hidden)', () => {
+    const { container } = render(
+      <PdfTextLayer pdfDoc={doc()} pageNumber={1} scale={1} rotation={0} width={100} height={100} />,
+    )
+    expect((container.firstElementChild as HTMLElement).style.overflow).toBe('clip')
+  })
+
   it('zooming re-lays out the same spans instead of fetching and rebuilding them', async () => {
     getTextContent.mockClear(); layerUpdate.mockClear()
     const d = doc()
