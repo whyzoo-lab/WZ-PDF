@@ -57,13 +57,17 @@ function splitFrontMatter(src: string): { body: string; title: string | null } {
 }
 
 /** GitHub-style slug, so an outline link matches its heading. */
-function slugify(text: string, taken: Set<string>): string {
+function slugify(text: string, taken: Set<string>, counts: Map<string, number>): string {
   const base = text.trim().toLowerCase()
     .replace(/[^\p{L}\p{N}\s-]/gu, '')   // keep letters/numbers (incl. Hangul)
     .replace(/\s+/g, '-')
     || 'section'
-  let id = base, n = 1
-  while (taken.has(id)) id = `${base}-${++n}`
+  // Counted per base: starting again from -2 is quadratic in repeated headings
+  // (20,000 of them, 80 KB of file, froze the window for 28 s).
+  let n = counts.get(base) ?? 0
+  let id = n ? `${base}-${n + 1}` : base
+  while (taken.has(id)) id = `${base}-${++n + 1}`
+  counts.set(base, n + 1)
   taken.add(id)
   return id
 }
@@ -103,11 +107,12 @@ export async function renderMarkdown(source: string): Promise<RenderedMarkdown> 
   const doc = new DOMParser().parseFromString(`<body>${clean}</body>`, 'text/html')
 
   const taken = new Set<string>()
+  const counts = new Map<string, number>()
   const outline: MarkdownEntry[] = []
   for (const h of Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'))) {
     const text = (h.textContent ?? '').trim()
     if (!text) continue
-    const id = slugify(text, taken)
+    const id = slugify(text, taken, counts)
     h.setAttribute('id', id)
     outline.push({ level: Number(h.tagName[1]), text, id })
   }

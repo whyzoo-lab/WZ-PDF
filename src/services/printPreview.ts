@@ -11,17 +11,16 @@ import { getPdfWorkerUrl } from './pdfjsWorker'
 const PREVIEW_WIDTH_PX = 1100
 const PREVIEW_JPEG_QUALITY = 0.9
 
-/** Each page as a JPEG Blob URL, in order. The caller revokes them. */
-export async function renderPdfPreview(
-  bytes: Uint8Array,
-  onProgress?: (done: number, total: number) => void,
-): Promise<string[]> {
+/**
+ * A PDF opened with the viewer's own options (usePdfDocument.ts): FontFace off
+ * because it can hang in Electron, and the decoders, fonts and CMaps it then
+ * needs. The caller destroys the task.
+ */
+export async function loadPdfInWindow(bytes: Uint8Array) {
   const pdfjs = await import('pdfjs-dist')
   if (!pdfjs.GlobalWorkerOptions.workerSrc) pdfjs.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl()
   const base = new URL('./', document.baseURI)
-  // The viewer's own options (usePdfDocument.ts): FontFace off because it can
-  // hang in Electron, and the decoders, fonts and CMaps it then needs.
-  const task = pdfjs.getDocument({
+  return pdfjs.getDocument({
     data: bytes.slice(),
     disableFontFace: true,
     wasmUrl: new URL('wasm/', base).href,
@@ -29,6 +28,14 @@ export async function renderPdfPreview(
     cMapUrl: new URL('cmaps/', base).href,
     cMapPacked: true,
   })
+}
+
+/** Each page as a JPEG Blob URL, in order. The caller revokes them. */
+export async function renderPdfPreview(
+  bytes: Uint8Array,
+  onProgress?: (done: number, total: number) => void,
+): Promise<string[]> {
+  const task = await loadPdfInWindow(bytes)
   const urls: string[] = []
   try {
     const doc = await task.promise

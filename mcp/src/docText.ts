@@ -20,18 +20,20 @@ import { parseCsv } from 'hucre/csv'
 import { formatValue } from 'hucre'
 import type { Cell, CellValue, Sheet } from 'hucre'
 import { parseEml } from '../../src/services/emlParser.js'
-import { decodeEntities, ooxmlText, pptxText, zipText, type SlideText } from '../../src/services/ooxmlText.js'
+import {
+  decodeEntities, joinPart, ooxmlText, pptxText, relsMap, tidyLines, zipText, type SlideText,
+} from '../../src/services/ooxmlText.js'
 
 export { ooxmlText, pptxText, type SlideText }
 
 export type DocFormat = 'pdf' | 'hwp' | 'docx' | 'pptx' | 'sheet' | 'md' | 'eml' | 'image' | 'unknown'
 
-const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp']
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tif', 'tiff']
 const SHEET_EXTS = ['xlsx', 'xlsm', 'xls', 'ods', 'csv']
 const MARKDOWN_EXTS = ['md', 'markdown', 'mdown', 'mkd']
 
 /** Every extension doc_to_pdf / doc_get_text accept. */
-export const DOCUMENT_EXTS = ['pdf', 'hwp', 'hwpx', 'docx', 'pptx', ...SHEET_EXTS, ...MARKDOWN_EXTS, 'eml', ...IMAGE_EXTS]
+export const DOCUMENT_EXTS = ['pdf', 'hwp', 'hwpx', 'docx', 'pptx', ...SHEET_EXTS, ...MARKDOWN_EXTS, 'eml', ...IMAGE_EXTS, 'zip']
 
 const startsWith = (b: Uint8Array, sig: number[]) => sig.every((v, i) => b[i] === v)
 
@@ -51,7 +53,8 @@ export function detectFormat(name: string, bytes: Uint8Array): DocFormat {
     if (tail.includes('ppt/presentation.xml')) return 'pptx'
     if (tail.includes('xl/workbook.') || head.includes('opendocument.spreadsheet')) return 'sheet'
   }
-  if (IMAGE_EXTS.includes(ext)) return 'image'
+  // A ZIP that is not an Office or HWPX document: a collection of pictures.
+  if (IMAGE_EXTS.includes(ext) || ext === 'zip') return 'image'
   if (ext === 'hwp' || ext === 'hwpx') return 'hwp'
   if (ext === 'docx') return 'docx'
   if (ext === 'pptx') return 'pptx'
@@ -59,6 +62,20 @@ export function detectFormat(name: string, bytes: Uint8Array): DocFormat {
   if (MARKDOWN_EXTS.includes(ext)) return 'md'
   if (ext === 'eml') return 'eml'
   return 'unknown'
+}
+
+/**
+ * A picture the recognizer can read, by its first bytes: the extension it is
+ * written out under for the app, or null (EMF, WMF, SVG and the rest).
+ */
+export function pictureExtension(bytes: Uint8Array): string | null {
+  if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47])) return 'png'
+  if (startsWith(bytes, [0xff, 0xd8, 0xff])) return 'jpg'
+  if (startsWith(bytes, [0x47, 0x49, 0x46, 0x38])) return 'gif'
+  if (startsWith(bytes, [0x42, 0x4d])) return 'bmp'
+  if (startsWith(bytes, [0x49, 0x49, 0x2a, 0x00]) || startsWith(bytes, [0x4d, 0x4d, 0x00, 0x2a])) return 'tif'
+  if (startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) && Buffer.from(bytes.subarray(8, 12)).toString('latin1') === 'WEBP') return 'webp'
+  return null
 }
 
 /** Strict UTF-8, else CP949 — Korean notes and CSVs are still often CP949. */
@@ -78,13 +95,59 @@ export interface DocxText {
   pages: number | null
 }
 
-export async function docxText(bytes: Uint8Array): Promise<DocxText> {
+/** With `picture`, each picture is written where it stands as what it returns for its part. */
+export async function docxText(bytes: Uint8Array, picture?: (part: string) => string): Promise<DocxText> {
   const zip = await JSZip.loadAsync(bytes)
   const body = await zipText(zip, 'word/document.xml')
   if (body === null) throw new Error('not a Word document (no word/document.xml)')
   const app = await zipText(zip, 'docProps/app.xml')
   const pages = app ? Number(/<Pages>(\d+)<\/Pages>/.exec(app)?.[1] ?? NaN) : NaN
-  return { text: ooxmlText(body, 'w'), pages: Number.isFinite(pages) ? pages : null }
+  const rels = picture ? relsMap(await zipText(zip, 'word/_rels/document.xml.rels')) : null
+  const text = ooxmlText(body, 'w', picture && (rid => {
+    const target = rels?.get(rid)?.target
+    return target ? picture(joinPart('word', target)) : ''
+  }))
+  return { text, pages: Number.isFinite(pages) ? pages : null }
+}
+
+/**
+ * The pictures placed on each sheet of an .xlsx, by sheet name, in the order
+ * they are drawn: workbook → sheet → its drawing → the drawing's pictures.
+ * Other workbook formats (.xls, .ods, CSV) give none.
+ */
+export async function sheetPictures(bytes: Uint8Array): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  if (!startsWith(bytes, [0x50, 0x4b, 0x03, 0x04])) return out
+  const zip = await JSZip.loadAsync(bytes)
+  const book = await zipText(zip, 'xl/workbook.xml')
+  if (book === null) return out
+  const bookRels = relsMap(await zipText(zip, 'xl/_rels/workbook.xml.rels'))
+  const relsOf = async (part: string) => {
+    const name = part.split('/').pop()!
+    return relsMap(await zipText(zip, `${part.slice(0, -name.length)}_rels/${name}.rels`))
+  }
+  const dirOf = (part: string) => part.split('/').slice(0, -1).join('/')
+  for (const m of book.matchAll(/<sheet\b[^>]*>/g)) {
+    const name = decodeEntities(/\bname="([^"]*)"/.exec(m[0])?.[1] ?? '')
+    const rid = /\br:id="([^"]*)"/.exec(m[0])?.[1] ?? ''
+    const target = bookRels.get(rid)?.target
+    if (!target) continue
+    const sheet = joinPart('xl', target)
+    const parts: string[] = []
+    for (const rel of (await relsOf(sheet)).values()) {
+      if (!rel.type.endsWith('/drawing')) continue
+      const drawing = joinPart(dirOf(sheet), rel.target)
+      const xml = await zipText(zip, drawing)
+      if (xml === null) continue
+      const drawingRels = await relsOf(drawing)
+      for (const b of xml.matchAll(/<a:blip\b[^>]*\br:embed="([^"]*)"/g)) {
+        const media = drawingRels.get(b[1])?.target
+        if (media) parts.push(joinPart(dirOf(drawing), media))
+      }
+    }
+    if (parts.length) out.set(name, parts)
+  }
+  return out
 }
 
 // ── Spreadsheets ────────────────────────────────────────────────────────────
@@ -178,19 +241,38 @@ export async function sheetText(bytes: Uint8Array, name: string, range: SheetRan
 
 // ── Mail ────────────────────────────────────────────────────────────────────
 
+/**
+ * The body without script, style and head elements. Found one at a time: as
+ * one regular expression, each unclosed opening tag scanned to the end of the
+ * message, and a message is the sender's to write.
+ */
+function withoutHiddenElements(html: string): string {
+  const open = /<(script|style|head)\b/gi
+  const unclosed = new Set<string>()
+  let out = ''
+  let kept = 0
+  for (let m = open.exec(html); m; m = open.exec(html)) {
+    const tag = m[1].toLowerCase()
+    if (unclosed.has(tag)) continue
+    const close = new RegExp(`</${tag}>`, 'gi')
+    close.lastIndex = open.lastIndex
+    if (!close.exec(html)) { unclosed.add(tag); continue }
+    out += html.slice(kept, m.index)
+    kept = close.lastIndex
+    open.lastIndex = kept
+  }
+  return out + html.slice(kept)
+}
+
 /** Visible text of an HTML body: blocks on their own lines, no markup. */
 export function htmlToText(html: string): string {
-  return decodeEntities(
-    html
-      .replace(/<(script|style|head)\b[\s\S]*?<\/\1>/gi, '')
+  return tidyLines(decodeEntities(
+    withoutHiddenElements(html)
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/(p|div|li|tr|h[1-6]|blockquote|pre|table)>/gi, '\n')
       .replace(/<\/t[dh]>/gi, '\t')
-      .replace(/<[^>]+>/g, ''),
-  )
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+      .replace(/<[^<>]+>/g, ''),
+  ))
 }
 
 export interface EmailText {
@@ -201,6 +283,23 @@ export interface EmailText {
   date: string
   attachments: Array<{ filename: string; size: number }>
   body: string
+}
+
+/**
+ * A message's pictures: those shown in its body (inlined from cid: parts as
+ * data: URLs by the parser) and picture attachments.
+ */
+export function emlPictures(bytes: Uint8Array): Array<{ name: string; bytes: Uint8Array }> {
+  const mail = parseEml(bytes)
+  const out: Array<{ name: string; bytes: Uint8Array }> = []
+  let n = 0
+  for (const m of (mail.html ?? '').matchAll(/data:image\/[a-z0-9.+-]+;base64,([A-Za-z0-9+/=]+)/gi)) {
+    out.push({ name: `picture ${++n} in the message`, bytes: new Uint8Array(Buffer.from(m[1], 'base64')) })
+  }
+  for (const a of mail.attachments) {
+    if (a.mimeType.toLowerCase().startsWith('image/') || pictureExtension(a.bytes)) out.push({ name: a.filename, bytes: a.bytes })
+  }
+  return out
 }
 
 export function emlText(bytes: Uint8Array): EmailText {

@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { BrowserWindow } from 'electron'
-import type { ConversionBackend } from './convertRunner'
+import { withTimeout, type ConversionBackend } from './convertRunner'
 
 /**
  * HWP/HWPX → PDF, run in a window that is never shown.
@@ -26,16 +26,6 @@ const PAGE_LOAD_TIMEOUT_MS = 60_000
 /** How long to wait for the page to publish its converter entry point. */
 const BRIDGE_TIMEOUT_MS = 30_000
 
-function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms)
-    work.then(
-      value => { clearTimeout(timer); resolve(value) },
-      error => { clearTimeout(timer); reject(error) },
-    )
-  })
-}
-
 /**
  * Wait until the page has published `window.__wzCli`.
  *
@@ -52,6 +42,34 @@ async function waitForBridge(contents: Electron.WebContents): Promise<void> {
 }
 
 /**
+ * The app page in a window that is never shown, once it has published
+ * `window.__wzCli` (src/services/cliBridge.ts). The caller destroys it.
+ */
+export async function openCliWindow(loadUrl: string): Promise<BrowserWindow> {
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      // Chromium suspends timers and rAF in an unshown window, which the
+      // renderer's async decode paths wait on — the conversion would stall.
+      backgroundThrottling: false,
+    },
+  })
+  try {
+    await withTimeout(win.loadURL(loadUrl), PAGE_LOAD_TIMEOUT_MS, 'page load')
+    await withTimeout(waitForBridge(win.webContents), BRIDGE_TIMEOUT_MS, 'converter startup')
+    return win
+  } catch (error) {
+    win.destroy()
+    throw error
+  }
+}
+
+/**
  * `loadUrl` is injected so this can be pointed at the dev server; the window is
  * created here rather than reusing the app's own so nothing about the visible
  * app (menu, title bar, restore state) is involved.
@@ -64,21 +82,7 @@ export function createPdfBackend(loadUrl: string): ConversionBackend {
     perFileTimeoutMs: PER_FILE_TIMEOUT_MS,
 
     async warmup() {
-      win = new BrowserWindow({
-        show: false,
-        webPreferences: {
-          preload: path.join(__dirname, 'preload.js'),
-          contextIsolation: true,
-          nodeIntegration: false,
-          sandbox: true,
-          webSecurity: true,
-          // Chromium suspends timers and rAF in an unshown window, which the
-          // renderer's async decode paths wait on — the conversion would stall.
-          backgroundThrottling: false,
-        },
-      })
-      await withTimeout(win.loadURL(loadUrl), PAGE_LOAD_TIMEOUT_MS, 'page load')
-      await withTimeout(waitForBridge(win.webContents), BRIDGE_TIMEOUT_MS, 'converter startup')
+      win = await openCliWindow(loadUrl)
       await withTimeout(
         win.webContents.executeJavaScript('window.__wzCli.warmup()'),
         WARMUP_TIMEOUT_MS,

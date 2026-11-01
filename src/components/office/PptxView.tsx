@@ -14,6 +14,8 @@ import { OfficePagePanel } from './OfficePagePanel'
 import { SlideCaptions } from './SlideCaptions'
 import { GRID_PAGE_PX, GUTTER_PX, PAGE_GAP_PX, type OfficeViewProps } from './officeView'
 import { t } from '../../i18n'
+import { onceAFrame } from '../../utils/onceAFrame'
+import { useOnceAFrame } from '../../hooks/useOnceAFrame'
 
 interface PptxViewProps extends OfficeViewProps {
   bytes: ArrayBuffer
@@ -106,8 +108,14 @@ export function PptxView({
     const box = boxes.current.get(index)
     if (handle && box && handle.element.parentNode !== box) box.appendChild(handle.element)
   }, [])
-  const boxRef = useCallback((index: number) => (el: HTMLElement | null) => {
-    if (el) { boxes.current.set(index, el); place(index) } else boxes.current.delete(index)
+  // One function, the slide read from the box: a function per slide made
+  // React detach and reattach every box on every render.
+  const setBox = useCallback((el: HTMLElement | null) => {
+    if (!el) return
+    const index = Number(el.dataset.slideBox)
+    boxes.current.set(index, el)
+    place(index)
+    return () => { if (boxes.current.get(index) === el) boxes.current.delete(index) }
   }, [place])
 
   useEffect(() => {
@@ -160,17 +168,18 @@ export function PptxView({
       setDrawn(made.size)
     }
     // Scrolling brings new slides into view; render those before the rest.
-    const onScroll = () => {
+    const onScroll = onceAFrame(() => {
       const near = nearestPending(boxes.current, made, failed, total)
       if (near?.visible) {
         window.cancelIdleCallback?.(idle)
         window.clearTimeout(timer)
         timer = window.setTimeout(step, 0)
       }
-    }
+    })
     window.addEventListener('scroll', onScroll, true)
     return () => {
       window.removeEventListener('scroll', onScroll, true)
+      onScroll.cancel()
       window.clearTimeout(timer)
       window.cancelIdleCallback?.(idle)
       renderAll.current = () => undefined
@@ -229,17 +238,22 @@ export function PptxView({
   // Where the reader is, as a fraction of the whole column — kept so a zoom
   // or a layout change lands on the same slide instead of the same pixel.
   const position = useRef(0)
-  const onScrollList = useCallback(() => {
+  const measureCurrent = useOnceAFrame(useCallback(() => {
     const el = scrollRef.current
     if (!el) return
-    position.current = el.scrollHeight > 0 ? el.scrollTop / el.scrollHeight : 0
     const line = el.getBoundingClientRect().top + el.clientHeight * 0.3
     let page = 1
     for (const [i, box] of boxes.current) {
       if (box.getBoundingClientRect().top <= line) page = Math.max(page, i + 1)
     }
     setCurrent(page)
-  }, [])
+  }, []))
+  const onScrollList = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    position.current = el.scrollHeight > 0 ? el.scrollTop / el.scrollHeight : 0
+    measureCurrent()
+  }, [measureCurrent])
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = position.current * el.scrollHeight
@@ -296,7 +310,7 @@ export function PptxView({
   useEffect(() => {
     if (!fullscreen) return
     // The slide whose top is nearest the top of the screen — each fills it.
-    const onScroll = () => {
+    const onScroll = onceAFrame(() => {
       let best = 0
       let bestDist = Infinity
       for (const [i, box] of boxes.current) {
@@ -304,10 +318,11 @@ export function PptxView({
         if (dist < bestDist) { bestDist = dist; best = i }
       }
       setFsSlide(best)
-    }
+    })
     window.addEventListener('scroll', onScroll, true)
     const first = window.setTimeout(onScroll, 0)
     return () => {
+      onScroll.cancel()
       window.clearTimeout(first)
       window.removeEventListener('scroll', onScroll, true)
     }
@@ -402,7 +417,7 @@ export function PptxView({
         <div className="wz-slides" style={vars(fsScale)} {...{ [FLOW_PRINT_ATTR]: '' }}>
           {shown.map(({ i }) => (
             <section key={i} className="wz-slide-screen">
-              <div className="wz-slide" ref={boxRef(i)} />
+              <div className="wz-slide" ref={setBox} data-slide-box={i} />
             </section>
           ))}
         </div>
@@ -440,7 +455,7 @@ export function PptxView({
             <figure key={i} className="m-0 flex flex-col items-center gap-1.5">
               <div
                 className={`wz-slide shadow-lg ${s.hidden ? 'wz-slide-hidden' : ''} ${viewMode === 'grid' ? 'cursor-pointer' : ''}`}
-                ref={boxRef(i)}
+                ref={setBox} data-slide-box={i}
                 role="group"
                 aria-label={t('office.slide', { n: i + 1 })}
                 onClick={viewMode === 'grid' ? () => { setPendingPage(i + 1); onViewModeChange('single') } : undefined}

@@ -78,6 +78,8 @@ export interface ViewerDoc {
   /** Native positioned text for a page (HWP only — enables real text selection
    *  without OCR). Absent on the pdfjs path (PDF uses its own text layer). */
   getPageText?(pageNumber: number): Promise<HwpTextRun[]>
+  /** Whether page n carries a picture (HWP only; PDF reads its operator list). */
+  pageHasImages?(pageNumber: number): boolean
   /** Present on image collections only. */
   images?: ImageSetView
   /** The page it opens at, when not the first (a picture opened from its folder). */

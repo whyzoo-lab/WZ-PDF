@@ -10,7 +10,7 @@ import { readAppearance, titleBarColors, writeAppearance } from './appearance'
 import { readCommentAuthor, writeCommentAuthor } from './commentAuthor'
 import { PendingVideoSaves, cleanSuggestedName, validateMp4 } from './videoSave'
 import {
-  EMBED_FOOTER_BYTES, acceptEmbedded, buildTrailer, cleanEmbeddedName, isAcceptableDocument, locateEmbedded,
+  EMBED_FOOTER_BYTES, acceptEmbedded, buildTrailer, cleanEmbeddedName, isAcceptableDocument, locateEmbedded, stripEmbedded,
   type EmbeddedDocument,
 } from './embeddedDocument'
 import { registerUpdateIpc, startAutoUpdate } from './autoUpdate'
@@ -90,6 +90,7 @@ const PROD_CSP = [
   //   pdfjs does not execute PDF-embedded JavaScript, so no attacker-controlled
   //   string reaches eval.
   "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
+  "form-action 'none'",
   "style-src 'self' 'unsafe-inline'",      // inline style attrs from React/Konva
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
@@ -512,6 +513,7 @@ ipcMain.handle('export-exe', async (event, data: unknown, rawName: unknown) => {
     // read the whole 140MB+ template and then Buffer.concat duplicated it,
     // blocking Electron's main loop and temporarily consuming hundreds of MB.
     await fs.promises.copyFile(baseExe, filePath)
+    await stripEmbedded(filePath)
     await fs.promises.appendFile(filePath, docBytes)
     await fs.promises.appendFile(filePath, buildTrailer(docName, docBytes.byteLength))
 

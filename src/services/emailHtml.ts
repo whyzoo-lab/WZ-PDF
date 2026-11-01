@@ -18,6 +18,7 @@
 
 import DOMPurify from 'dompurify'
 import { openLinksOutside } from './links'
+import { unescapeCss } from '../utils/text'
 
 export interface RenderedEmailHtml {
   html: string
@@ -111,7 +112,8 @@ export function renderEmailHtml(rawHtml: string, showRemoteImages = false): Rend
   // better than a beacon.
   if (!showRemoteImages) {
     for (const el of Array.from(doc.querySelectorAll('[style]'))) {
-      const style = el.getAttribute('style') ?? ''
+      // After escapes: `u\\72l(` is `url(` to the CSS parser.
+      const style = unescapeCss(el.getAttribute('style') ?? '')
       if (/url\s*\(|@import|image-set\s*\(/i.test(style)) {
         el.removeAttribute('style')
         blockedImages++

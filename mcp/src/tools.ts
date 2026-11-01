@@ -24,9 +24,18 @@ import * as fontkit from 'fontkit'
 import { pdfjs, pdfWorkerSrc } from './pdfjs.js'
 
 import { convertHwpToPdf, convertToPdf, pdfNameFor } from './hwp.js'
+import JSZip from 'jszip'
+import { inflateBounded } from '../../src/services/ooxmlText.js'
 import {
-  DOCUMENT_EXTS, detectFormat, docxText, emlText, decodeText, pptxText, sheetText, type DocFormat,
+  DOCUMENT_EXTS, detectFormat, docxText, emlPictures, emlText, decodeText, pptxText, sheetPictures, sheetText,
+  type DocFormat, type SheetText,
 } from './docText.js'
+import {
+  MAX_PICTURE_BYTES, MAX_PICTURES, PictureMarks, pictureBlock, recognizePictures, runOcr, type OcrMode, type OcrPage, type Picture,
+} from './ocr.js'
+
+/** Pages one doc_get_text call recognizes at most; a few seconds each. */
+const DEFAULT_OCR_MAX_PAGES = 20
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -218,7 +227,14 @@ async function pdfGetText(args: { file: string; pages?: number[] }): Promise<str
   return pdfTextFromBytes(await readInputFile(args.file), args.pages)
 }
 
+interface PageText { page: number; text: string }
+
 async function pdfTextFromBytes(bytes: Uint8Array, pages?: number[]): Promise<string> {
+  return (await pdfPageTexts(bytes, pages)).map(s => `── Page ${s.page} ──\n${s.text}`).join('\n\n')
+}
+
+/** Each requested page's text layer, in order. */
+async function pdfPageTexts(bytes: Uint8Array, pages?: number[]): Promise<PageText[]> {
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(bytes),
     useWorkerFetch: false,
@@ -228,7 +244,7 @@ async function pdfTextFromBytes(bytes: Uint8Array, pages?: number[]): Promise<st
   try {
     const targetPages = pages ?? Array.from({ length: pdf.numPages }, (_, i) => i + 1)
 
-    const sections: string[] = []
+    const sections: PageText[] = []
     for (const pageNum of targetPages) {
       if (pageNum < 1 || pageNum > pdf.numPages) continue
       const page = await pdf.getPage(pageNum)
@@ -237,9 +253,9 @@ async function pdfTextFromBytes(bytes: Uint8Array, pages?: number[]): Promise<st
         .map(item => ('str' in item ? item.str : ''))
         .join(' ')
         .trim()
-      sections.push(`── Page ${pageNum} ──\n${text}`)
+      sections.push({ page: pageNum, text })
     }
-    return sections.join('\n\n')
+    return sections
   } finally {
     await loadingTask.destroy()
   }
@@ -717,7 +733,10 @@ export const tools = [
     description:
       'Read the text of any document WZ Reader opens: PDF, HWP/HWPX, Word (.docx), PowerPoint (.pptx, '
       + 'slide by slide with speaker notes), Excel/ODS/CSV (sheet by sheet, cells tab-separated, paged '
-      + 'by rows), Markdown and e-mail (.eml). HWP needs the WZ Reader desktop app.',
+      + 'by rows), Markdown, e-mail (.eml) and pictures (PNG, JPEG, TIFF, …). Text in pictures is read '
+      + 'by OCR (Korean and English): by default scanned pages and pictures without text are recognized; '
+      + 'ocr: "images" also reads the text inside pictures, charts and screenshots placed in a document, '
+      + 'marked [OCR: …] … [/OCR] where they stand. HWP and OCR need the WZ Reader desktop app.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -734,6 +753,18 @@ export const tools = [
         startRow: { type: 'number', description: 'Spreadsheets: 1-based first row. Default 1.' },
         maxRows: { type: 'number', description: 'Spreadsheets: rows per sheet. Default 500.' },
         notes: { type: 'boolean', description: 'PowerPoint: include speaker notes. Default true.' },
+        ocr: {
+          type: 'string',
+          enum: ['off', 'auto', 'images'],
+          description: 'auto (default): OCR pages and pictures that have no text of their own (scans, '
+            + 'image-only documents). images: also the text inside pictures in documents that have text. '
+            + 'off: never. OCR takes a few seconds per page or picture.',
+        },
+        ocrMaxPages: {
+          type: 'number',
+          description: `PDF/HWP/pictures: pages recognized in one call, default ${DEFAULT_OCR_MAX_PAGES}. `
+            + 'The rest are listed so you can call again with pages.',
+        },
       },
       required: ['file'],
     },
@@ -829,13 +860,13 @@ async function readDocument(file: string): Promise<{ path: string; bytes: Buffer
   return { path, bytes, format: detectFormat(path, bytes) }
 }
 
-/** HWP text: the app converts it (with its text layer) and pdfjs reads that. */
-async function hwpText(path: string, pages?: number[]): Promise<string> {
+/** HWP text, page by page: the app converts it (with its text layer) and pdfjs reads that. */
+async function hwpPageTexts(path: string, pages?: number[]): Promise<PageText[]> {
   const scratch = await mkdtemp(join(tmpdir(), 'wzpdf-mcp-text-'))
   try {
     const pdf = join(scratch, pdfNameFor(path))
     await convertToPdf(path, pdf, '--hwp2pdf')
-    return await pdfTextFromBytes(await readFile(pdf), pages)
+    return await pdfPageTexts(await readFile(pdf), pages)
   } finally {
     await rm(scratch, { recursive: true, force: true }).catch(() => undefined)
   }
@@ -843,24 +874,152 @@ async function hwpText(path: string, pages?: number[]): Promise<string> {
 
 const kb = (bytes: number) => `${Math.round(bytes / 1024)} KB`
 
+// ── OCR in doc_get_text ─────────────────────────────────────────────────────
+
+type OcrOption = 'off' | OcrMode
+
+function ocrOption(args: Record<string, unknown>): OcrOption {
+  const v = args.ocr
+  if (v === undefined || v === null) return 'auto'
+  if (v === 'off' || v === 'auto' || v === 'images') return v
+  throw new Error('ocr must be "off", "auto" or "images"')
+}
+
+function ocrMaxPages(args: Record<string, unknown>): number {
+  const v = args.ocrMaxPages
+  if (v === undefined || v === null) return DEFAULT_OCR_MAX_PAGES
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) throw new Error('ocrMaxPages must be a positive whole number')
+  return v
+}
+
+const ocrUnavailable = (error: unknown) =>
+  `(OCR unavailable: ${error instanceof Error ? error.message : String(error)})`
+
+/**
+ * A PDF's or HWP's pages, with what OCR found: a page without text of its own
+ * is read by OCR ('auto' and 'images'); in 'images' mode, the text in the
+ * pictures of the other pages follows their own text.
+ */
+async function pagesWithOcr(path: string, sections: PageText[], mode: OcrOption, maxPages: number): Promise<string> {
+  const notes: string[] = []
+  const byPage = new Map<number, OcrPage>()
+  const wanted = mode === 'off' ? [] : sections.filter(s => mode === 'images' || !s.text).map(s => s.page)
+  if (wanted.length) {
+    try {
+      const [result] = await runOcr([{ path, pages: wanted, mode: mode as OcrMode, maxPages }])
+      if (result?.error) notes.push(`(OCR failed: ${result.error})`)
+      for (const p of result?.pages ?? []) byPage.set(p.page, p)
+      if (result?.pending.length) {
+        notes.push(`(OCR stopped after ${maxPages} pages; pages ${result.pending.join(', ')} still need it — `
+          + `call again with pages: [${result.pending.slice(0, maxPages).join(', ')}])`)
+      }
+    } catch (error) {
+      notes.push(ocrUnavailable(error))
+    }
+  }
+  const out = sections.map(s => {
+    const ocr = byPage.get(s.page)
+    if (s.text) {
+      const extra = ocr?.lines.length ? `\n${pictureBlock(ocr.lines, 'pictures on this page')}` : ''
+      return `── Page ${s.page} ──\n${s.text}${extra}`
+    }
+    if (ocr) return `── Page ${s.page} (OCR) ──\n${ocr.lines.join('\n') || '(no text found)'}`
+    return `── Page ${s.page} ──\n(no text layer${mode === 'off' ? ' — a scanned page; read it with ocr: "auto"' : ''})`
+  })
+  return [...out, ...notes].join('\n\n')
+}
+
+/** A picture file — or each page of a TIFF / picture ZIP — read by OCR. */
+async function imageText(path: string, pages: number[] | undefined, mode: OcrOption, maxPages: number): Promise<string> {
+  if (mode === 'off') throw new Error('a picture has no text of its own; read it with ocr: "auto"')
+  const [result] = await runOcr([{ path, pages, mode: 'auto', maxPages }])
+  if (!result) throw new Error('OCR returned nothing')
+  if (result.error) throw new Error(`OCR failed: ${result.error}`)
+  const body = result.numPages === 1
+    ? (result.pages[0]?.lines.join('\n') || '(no text found)')
+    : result.pages.map(p => `── Page ${p.page} (OCR) ──\n${p.lines.join('\n') || '(no text found)'}`).join('\n\n')
+  const pending = result.pending.length
+    ? `\n\n(OCR stopped after ${maxPages} pages; pages ${result.pending.join(', ')} still need it — `
+      + `call again with pages: [${result.pending.slice(0, maxPages).join(', ')}])`
+    : ''
+  return body + pending
+}
+
+/** The pictures `parts` of an Office file, as stored in its zip. */
+async function zipPictures(bytes: Uint8Array, parts: string[]): Promise<Picture[]> {
+  if (parts.length === 0) return []
+  const zip = await JSZip.loadAsync(bytes)
+  const out: Picture[] = []
+  for (const part of parts) {
+    const file = zip.file(part)
+    if (!file) continue
+    // Refused here, while inflating: recognizePictures only sees what got out.
+    try {
+      out.push({ key: part, bytes: await inflateBounded(file, MAX_PICTURE_BYTES) })
+    } catch {
+      out.push({ key: part, bytes: new Uint8Array() })
+    }
+  }
+  return out
+}
+
+/** Recognize pictures; notes say what could not be read. */
+async function picturesText(pictures: Picture[]): Promise<{ text: Map<string, string[]>; notes: string[] }> {
+  if (pictures.length === 0) return { text: new Map(), notes: [] }
+  try {
+    const { text, skipped, failed } = await recognizePictures(pictures)
+    const notes: string[] = []
+    if (skipped) notes.push(`(${skipped} picture(s) not read: a format OCR cannot read (EMF, WMF, SVG), too large, or over ${MAX_PICTURES} in one call)`)
+    if (failed) notes.push(`(${failed} picture(s) could not be recognized)`)
+    return { text, notes }
+  } catch (error) {
+    return { text: new Map(), notes: [ocrUnavailable(error)] }
+  }
+}
+
 async function docGetText(args: Record<string, unknown>): Promise<string> {
   const { path, bytes, format } = await readDocument(String(args.file ?? ''))
   const pages = Array.isArray(args.pages) ? args.pages.map(Number).filter(n => Number.isInteger(n)) : undefined
+  const mode = ocrOption(args)
+  const maxPages = ocrMaxPages(args)
+  const withNotes = (text: string, notes: string[]) => [text, ...notes].join('\n\n')
   switch (format) {
     case 'pdf':
-      return pdfTextFromBytes(bytes, pages)
+      return pagesWithOcr(path, await pdfPageTexts(bytes, pages), mode, maxPages)
     case 'hwp':
-      return hwpText(path, pages)
-    case 'docx':
-      return (await docxText(bytes)).text || '(no text)'
+      return pagesWithOcr(path, await hwpPageTexts(path, pages), mode, maxPages)
+    case 'image':
+      return imageText(path, pages, mode, maxPages)
+    case 'docx': {
+      if (mode === 'off') return (await docxText(bytes)).text || '(no text)'
+      // 'auto' reads the pictures only when the document has no text — a scan
+      // pasted into Word; 'images' reads every picture, where it stands.
+      const marks = new PictureMarks()
+      const { text } = await docxText(bytes, marks.mark)
+      const plain = PictureMarks.strip(text)
+      const parts = mode === 'images' || !plain ? marks.partsIn(text) : []
+      if (parts.length === 0) return plain || '(no text)'
+      const read = await picturesText(await zipPictures(bytes, parts))
+      return withNotes(marks.fill(text, read.text) || '(no text)', read.notes)
+    }
     case 'pptx': {
-      const withNotes = args.notes !== false
-      const slides = (await pptxText(bytes)).filter(s => !pages || pages.includes(s.number))
-      return slides.map(s => [
+      const withSpeakerNotes = args.notes !== false
+      const marks = mode === 'off' ? null : new PictureMarks()
+      const slides = (await pptxText(bytes, marks?.mark)).filter(s => !pages || pages.includes(s.number))
+      let read: { text: Map<string, string[]>; notes: string[] } = { text: new Map(), notes: [] }
+      if (marks) {
+        // 'auto': pictures of slides that have no text; 'images': all of them.
+        const parts = [...new Set(slides
+          .filter(s => mode === 'images' || !PictureMarks.strip(s.text))
+          .flatMap(s => marks.partsIn(s.text)))]
+        read = await picturesText(await zipPictures(bytes, parts))
+      }
+      const body = slides.map(s => [
         `── Slide ${s.number}${s.hidden ? ' (hidden)' : ''} ──`,
-        s.text || '(no text)',
-        withNotes && s.notes ? `[Notes]\n${s.notes}` : '',
+        (marks ? marks.fill(s.text, read.text) : s.text) || '(no text)',
+        withSpeakerNotes && s.notes ? `[Notes]\n${s.notes}` : '',
       ].filter(Boolean).join('\n')).join('\n\n')
+      return withNotes(body, read.notes)
     }
     case 'sheet': {
       const sheet = typeof args.sheet === 'number' || typeof args.sheet === 'string' ? args.sheet : undefined
@@ -869,12 +1028,19 @@ async function docGetText(args: Record<string, unknown>): Promise<string> {
         startRow: typeof args.startRow === 'number' ? args.startRow : undefined,
         maxRows: typeof args.maxRows === 'number' ? args.maxRows : undefined,
       })
-      return sheets.map(s => {
+      // A sheet's pictures follow its first rows, once — not every window of them.
+      const placed = mode === 'off' ? new Map<string, string[]>() : await sheetPictures(bytes)
+      const partsOf = (s: SheetText) => (s.fromRow <= 1 && (mode === 'images' || !s.text) ? placed.get(s.name) ?? [] : [])
+      const read = await picturesText(await zipPictures(bytes, [...new Set(sheets.flatMap(partsOf))]))
+      const body = sheets.map(s => {
         const total = `${s.rowCount}${s.more ? '+' : ''}`
         const span = s.toRow ? `rows ${s.fromRow}-${s.toRow} of ${total}` : `no rows in range (${total} rows)`
         const next = s.more ? `\n(more rows follow: call again with startRow ${s.toRow + 1})` : ''
-        return `── Sheet "${s.name}"${s.hidden ? ' (hidden)' : ''}, ${span} ──\n${s.text}${next}`
+        const pictures = partsOf(s).map(part => read.text.get(part)).filter(l => l?.length)
+          .map(lines => `\n${pictureBlock(lines!)}`).join('')
+        return `── Sheet "${s.name}"${s.hidden ? ' (hidden)' : ''}, ${span} ──\n${s.text}${pictures}${next}`
       }).join('\n\n')
+      return withNotes(body, read.notes)
     }
     case 'md':
       return decodeText(bytes)
@@ -884,10 +1050,13 @@ async function docGetText(args: Record<string, unknown>): Promise<string> {
         `Subject: ${m.subject}`, `From: ${m.from}`, m.to && `To: ${m.to}`, m.cc && `Cc: ${m.cc}`, m.date && `Date: ${m.date}`,
         m.attachments.length ? `Attachments: ${m.attachments.map(a => `${a.filename} (${kb(a.size)})`).join(', ')}` : '',
       ].filter(Boolean).join('\n')
-      return `${head}\n\n${m.body}`
+      // 'auto': the pictures only when the message has no text of its own.
+      const pictures = mode === 'images' || (mode === 'auto' && !m.body) ? emlPictures(bytes) : []
+      const read = await picturesText(pictures.map((p, i) => ({ key: String(i), bytes: p.bytes })))
+      const blocks = pictures.map((_, i) => read.text.get(String(i))).map((lines, i) =>
+        lines?.length ? pictureBlock(lines, `image "${pictures[i].name}"`) : '').filter(Boolean)
+      return withNotes([`${head}\n\n${m.body}`, ...blocks].join('\n\n'), read.notes)
     }
-    case 'image':
-      throw new Error('an image has no text layer; open it in WZ Reader and run OCR (R), then save it as PDF')
     default:
       throw new Error(`cannot read this file as a document: ${basename(path)}`)
   }
@@ -897,8 +1066,15 @@ async function docInfo(args: Record<string, unknown>): Promise<string> {
   const { path, bytes, format } = await readDocument(String(args.file ?? ''))
   const head = `${basename(path)} — ${kb(bytes.length)}`
   switch (format) {
-    case 'pdf':
-      return pdfInfo({ file: String(args.file) })
+    case 'pdf': {
+      const info = await pdfInfo({ file: String(args.file) })
+      // A scanned page has no text layer; say which, so the reader knows OCR is involved.
+      const sections = await pdfPageTexts(bytes)
+      const bare = sections.filter(s => !s.text).map(s => s.page)
+      if (bare.length === 0) return info
+      const list = bare.length > 30 ? bare.slice(0, 30).join(', ') + ', …' : bare.join(', ')
+      return `${info}\nPages without a text layer (scanned): ${bare.length} — ${list}\ndoc_get_text reads them by OCR.`
+    }
     case 'hwp':
       return `${head}\nFormat: HWP/HWPX (Hancom). doc_get_text reads its text; doc_to_pdf converts it.`
     case 'docx': {
@@ -931,7 +1107,7 @@ async function docInfo(args: Record<string, unknown>): Promise<string> {
         + `Attachments: ${m.attachments.length ? m.attachments.map(a => a.filename).join(', ') : 'none'}`
     }
     case 'image':
-      return `${head}\nFormat: image. doc_to_pdf turns it into a one-page PDF.`
+      return `${head}\nFormat: picture. doc_get_text reads its text by OCR; doc_to_pdf turns it into a PDF.`
     default:
       return `${head}\nFormat: not recognised`
   }
@@ -940,7 +1116,7 @@ async function docInfo(args: Record<string, unknown>): Promise<string> {
 async function docToPdf(args: Record<string, unknown>): Promise<string> {
   const { path, format } = await readDocument(String(args.file ?? ''))
   if (format === 'pdf') throw new Error('already a PDF')
-  if (format === 'unknown') throw new Error(`cannot convert this file: ${basename(path)}`)
+  if (format === 'unknown' || extname(path).toLowerCase() === '.zip') throw new Error(`cannot convert this file: ${basename(path)}`)
   const requested = args.output ? String(args.output) : join(dirname(path), pdfNameFor(path))
   const output = await resolveOutputPath(requested, args.overwrite === true)
   const result = await convertToPdf(path, output, '--topdf')

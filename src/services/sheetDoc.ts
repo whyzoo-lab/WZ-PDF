@@ -20,6 +20,7 @@ import { formatValue, EncryptedFileError } from 'hucre'
 import type {
   BorderSide, Cell, CellStyle, CellValue, Color, FontStyle, Sheet, Workbook,
 } from 'hucre'
+import { decodeText, escapeHtml, toBase64 } from '../utils/text'
 
 export type SheetFormat = 'xlsx' | 'xls' | 'ods' | 'csv'
 
@@ -36,19 +37,6 @@ export class EncryptedWorkbookError extends Error {
 const OLE2 = [0xD0, 0xCF, 0x11, 0xE0]
 const ZIP = [0x50, 0x4B, 0x03, 0x04]
 const startsWith = (b: Uint8Array, sig: number[]) => sig.every((v, i) => b[i] === v)
-
-/**
- * Decode CSV text. Excel on Korean Windows writes CSV in CP949 without a BOM,
- * so a strict UTF-8 decode that throws is how those files are noticed — the
- * same rule Markdown uses.
- */
-function decodeText(bytes: ArrayBuffer): string {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-  } catch {
-    return new TextDecoder('euc-kr').decode(bytes)
-  }
-}
 
 /**
  * Read a workbook whole — every row. A 58 MB, 215,897 x 38 export takes ~9 s
@@ -228,9 +216,6 @@ function borderCss(side: BorderSide, theme: string[] | undefined): string {
   }
 }
 
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
 /** "A", "B", … "Z", "AA" … */
 export function columnLetter(index: number): string {
   let n = index + 1
@@ -296,14 +281,6 @@ interface Edge { css: string; weight: number }
 /** Picture formats drawn from a sheet. SVG is left out: nothing needs it. */
 const PICTURE_TYPES: Record<string, string> = {
   png: 'image/png', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let bin = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  }
-  return btoa(bin)
 }
 
 /** Pixels from one row/column to another, counting only the visible ones. */
@@ -555,7 +532,7 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
       if (!h || h === 'general') h = numeric ? 'right' : typeof value === 'boolean' ? 'center' : 'left'
       if (h === 'centerContinuous') h = 'center'
       if (h === 'distributed') h = 'justify'
-      if (h !== 'left' && h !== 'fill') css.push(`text-align:${h}`)
+      if (h === 'right' || h === 'center' || h === 'justify') css.push(`text-align:${h}`)
       const v = align?.vertical
       css.push(`vertical-align:${v === 'center' || v === 'distributed' ? 'middle' : v === 'top' ? 'top' : 'bottom'}`)
       if (align?.indent) css.push(`padding-left:${Math.min(60, align.indent) * 9 + 3}px`)

@@ -271,7 +271,7 @@ export function MarkdownView({
   return (
     // `relative` makes this element the headings' offsetParent, so the offsets
     // measured above are in the same coordinate space as its own scrollTop.
-    <div ref={scrollRef} onScroll={handleScroll} className="relative h-full overflow-auto bg-[var(--wz-canvas)] py-6 px-4">
+    <div ref={scrollRef} onScroll={handleScroll} className="wz-doc-scroller relative h-full overflow-auto bg-[var(--wz-canvas)] py-6 px-4">
       <div className="mx-auto flex max-w-5xl items-start gap-7">
         {showOutline && (
           // Sticky so it stays with you on a long file; hidden on narrow screens,

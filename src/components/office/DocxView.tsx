@@ -8,6 +8,7 @@ import { ReaderFullscreen } from '../reader/ReaderFullscreen'
 import { OfficePagePanel } from './OfficePagePanel'
 import { GRID_PAGE_PX, GUTTER_PX, PAGE_GAP_PX, type OfficeViewProps } from './officeView'
 import { t } from '../../i18n'
+import { useOnceAFrame } from '../../hooks/useOnceAFrame'
 
 interface DocxViewProps extends OfficeViewProps {
   bytes: ArrayBuffer
@@ -109,15 +110,20 @@ export function DocxView({
   // Where the reader is, as a fraction of the whole column — kept so a zoom
   // or a layout change lands on the same page instead of the same pixel.
   const position = useRef(0)
-  const onScrollPages = useCallback(() => {
+  const measurePage = useOnceAFrame(useCallback(() => {
     const el = scrollRef.current
     if (!el) return
-    position.current = el.scrollHeight > 0 ? el.scrollTop / el.scrollHeight : 0
     const line = el.getBoundingClientRect().top + el.clientHeight * 0.3
     let page = 1
     pageList.forEach((s, i) => { if (s.getBoundingClientRect().top <= line) page = i + 1 })
     setCurrentPage(page)
-  }, [pageList])
+  }, [pageList]))
+  const onScrollPages = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    position.current = el.scrollHeight > 0 ? el.scrollTop / el.scrollHeight : 0
+    measurePage()
+  }, [measurePage])
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = position.current * el.scrollHeight
@@ -207,7 +213,7 @@ export function DocxView({
           onPick={goTo}
         />
       )}
-      <div ref={scrollRef} onScroll={onScrollPages} className="h-full min-w-0 flex-1 overflow-auto bg-[var(--wz-canvas)]">
+      <div ref={scrollRef} onScroll={onScrollPages} className="wz-doc-scroller h-full min-w-0 flex-1 overflow-auto bg-[var(--wz-canvas)]">
         {/* CSS zoom rather than a transform: it changes layout size too, so the
             scrollbars match what is on screen. On a wrapper, not the marked
             element, so printing (which clones that element) is not zoomed. */}

@@ -185,6 +185,9 @@ export async function collectionForFiles(files: File[]): Promise<File> {
   return manifestFile(stripExt(files[0].name), entries)
 }
 
+/** A larger photo than any camera writes; past it an entry is a zip bomb. */
+const MAX_ZIP_PICTURE_BYTES = 512 * 1024 * 1024
+
 /**
  * A ZIP of pictures — such as the one "save images" writes. Read lazily: each
  * picture is inflated when its page is first drawn.
@@ -196,7 +199,10 @@ export async function collectionForZip(bytes: ArrayBuffer, name: string): Promis
     .filter(f => !f.dir && !f.name.startsWith('__MACOSX/') && isImageName(f.name))
     .sort((a, b) => naturalCompare(a.name, b.name))
     .slice(0, MAX_IMAGES)
-    .map(f => sourceFromInflate(f.name.split('/').pop() ?? f.name, () => f.async('arraybuffer')))
+    .map(f => sourceFromInflate(f.name.split('/').pop() ?? f.name, async () => {
+      const { inflateBounded } = await import('./ooxmlText')
+      return (await inflateBounded(f, MAX_ZIP_PICTURE_BYTES)).buffer as ArrayBuffer
+    }))
   const { entries } = await entriesFor(list)
   if (entries.length === 0) throw new Error(`${name}: no pictures inside`)
   return manifestFile(stripExt(name), entries)

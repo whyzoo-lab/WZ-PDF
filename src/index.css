@@ -522,6 +522,12 @@ canvas {
    push the whole app sideways. */
 .wz-email-body table { max-width: 100%; }
 .wz-email-body { overflow-x: auto; overflow-wrap: break-word; }
+/* A document's own `position: fixed` stays inside its scroller: inline styles
+   survive sanitizing, and a message could otherwise paint a fake dialog over
+   the whole window. On the scroller, not the body: as a containing block the
+   body would become the headings' offsetParent. Screen only, since layout
+   containment and page breaks are not worth finding out about in a PDF. */
+@media screen { .wz-doc-scroller { contain: layout; } }
 .wz-email-body a { color: #1d4ed8; text-decoration: underline; }
 .wz-email-body blockquote {
   margin: 0.5rem 0; padding-left: 0.75rem;

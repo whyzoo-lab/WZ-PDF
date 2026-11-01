@@ -148,13 +148,15 @@ function PdfViewerImpl({
         entries => {
           entries.forEach(entry => {
             const pn = Number((entry.target as HTMLElement).dataset.pageNum)
-            ratios.set(pn, entry.intersectionRatio)
+            if (entry.intersectionRatio > 0) ratios.set(pn, entry.intersectionRatio)
+            else ratios.delete(pn)
           })
           let best = 1, bestRatio = -1
           ratios.forEach((ratio, pn) => {
             if (ratio > bestRatio) { bestRatio = ratio; best = pn }
           })
-          onCurrentPageChange(best)
+          // Below scrolling in priority: this re-renders the toolbar and the page list.
+          if (bestRatio > 0) React.startTransition(() => onCurrentPageChange(best))
         },
         { root: container, threshold: Array.from({ length: 11 }, (_, i) => i / 10) },
       )

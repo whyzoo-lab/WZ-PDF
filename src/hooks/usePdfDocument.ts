@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { IMAGE_SET_MIME, type ViewerDoc, type DocKind } from '../types/viewerDoc'
 import type { ParsedEmail } from '../services/emlParser'
 import { detectDocType } from '../utils/detectDocType'
+import { decodeText } from '../utils/text'
 import { markOpen, resetOpenMarks } from '../services/openPerf'
 import {
   type DocumentFile, EAGER_DOCUMENT_LIMIT_LABEL, RANGE_CHUNK_BYTES, RANGE_INITIAL_BYTES,
@@ -285,16 +286,8 @@ export function usePdfDocument(file: DocumentFile | null, knownPassword?: (file:
         return { doc: null, kind: 'eml', email: parseEml(buffer), markdown: null }
       }
       if (type === 'md') {
-        // Markdown is text, so it needs decoding rather than parsing. Most files
-        // are UTF-8; a strict decode that throws is how we notice the ones that
-        // aren't (Korean notes are still commonly EUC-KR/CP949).
-        let text: string
-        try {
-          text = new TextDecoder('utf-8', { fatal: true }).decode(buffer)
-        } catch {
-          text = new TextDecoder('euc-kr', { fatal: false }).decode(buffer)
-        }
-        return { doc: null, kind: 'md', email: null, markdown: text }
+        // Markdown is text, so it needs decoding rather than parsing.
+        return { doc: null, kind: 'md', email: null, markdown: decodeText(buffer) }
       }
       if (type === 'docx' || type === 'pptx' || type === 'sheet') {
         return { doc: null, kind: type, email: null, markdown: null, office: { kind: type, name: file.name, bytes: buffer } }

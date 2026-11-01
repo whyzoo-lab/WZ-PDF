@@ -15,32 +15,18 @@
  */
 
 import { detectDocType } from '../utils/detectDocType'
-
-/** Base64 in fixed-size chunks; one `String.fromCharCode(...bytes)` on a
- *  multi-megabyte PDF overflows the argument limit and throws. */
-function toBase64(bytes: Uint8Array): string {
-  const CHUNK = 0x8000
-  let binary = ''
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-  }
-  return btoa(binary)
-}
+import { decodeText, escapeHtml, toBase64 } from '../utils/text'
+import type { DocOcrRequest } from './docOcr'
 
 export interface CliBridge {
   /** Load the engine and fonts once, so the first file is not billed for them. */
   warmup(): Promise<void>
   /** Convert one document to PDF and return it as base64. */
   convert(filePath: string): Promise<string>
-}
-
-/** Strict UTF-8, else CP949 — the rule the Markdown viewer uses. */
-function decodeText(bytes: ArrayBuffer): string {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-  } catch {
-    return new TextDecoder('euc-kr').decode(bytes)
-  }
+  /** Load the recognizer once (`--ocr-json`, electron/ocrJob.ts). */
+  ocrWarmup(): Promise<void>
+  /** Recognize a document's pages (services/docOcr.ts); a DocOcrResult as JSON. */
+  ocr(request: DocOcrRequest): Promise<string>
 }
 
 /** Mount `el` where it is laid out like the page, for as long as `work` runs. */
@@ -52,9 +38,6 @@ async function mounted<T>(el: HTMLElement, work: () => Promise<T>): Promise<T> {
     el.remove()
   }
 }
-
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 async function hwpToPdf(bytes: ArrayBuffer): Promise<Uint8Array> {
   const [{ loadHwp }, { createHwpViewerDoc }, { exportHwpToPdf }] = await Promise.all([
@@ -93,7 +76,12 @@ async function docxToPdf(bytes: ArrayBuffer): Promise<Uint8Array> {
   ])
   const doc = await renderDocx(bytes)
   const body = document.createElement('div')
-  body.innerHTML = `<style>${doc.css}</style><div class="wz-docx-host">${doc.html}</div>`
+  // As text: in innerHTML a value holding </style> would end the sheet and
+  // start markup that never went through the sanitizer.
+  const css = document.createElement('style')
+  css.textContent = doc.css
+  body.innerHTML = `<div class="wz-docx-host">${doc.html}</div>`
+  body.prepend(css)
   try {
     return await mounted(body, async () => {
       // Pages are split by measuring them, so this needs the live layout.
@@ -225,6 +213,18 @@ export function installCliBridge(): void {
       const bytes = await window.electronAPI!.readFile(filePath)
       const name = filePath.split(/[\\/]/).pop() ?? filePath
       return toBase64(await documentToPdf(bytes, name))
+    },
+
+    async ocrWarmup(): Promise<void> {
+      const { initOcr } = await import('./ocrEngine')
+      await initOcr()
+    },
+
+    async ocr(request: DocOcrRequest): Promise<string> {
+      const { ocrDocument } = await import('./docOcr')
+      const bytes = await window.electronAPI!.readFile(request.path)
+      const name = request.path.split(/[\\/]/).pop() ?? request.path
+      return JSON.stringify(await ocrDocument(bytes, name, request))
     },
   }
   ;(window as unknown as { __wzCli?: CliBridge }).__wzCli = bridge

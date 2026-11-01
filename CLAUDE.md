@@ -2368,6 +2368,36 @@ then pdfjs). Reusing the parser across the package boundary is why
 real files and through the shipped bundle over stdio; `tools.docs.test.ts`
 builds a fixture of each format.
 
+**OCR** (`doc_get_text` `ocr`: `auto` default, `images`, `off`; `ocrMaxPages`,
+default 20). The recognizer is the viewer's, so it runs in the app: the server
+writes a request and starts `WZ PDF.exe --ocr-json <request> <result>`
+(`electron/ocrJob.ts`, through `runCli` like the converters; hidden window via
+`openCliWindow`), and `src/services/docOcr.ts` does the work there, one file at
+a time.
+- **PDF, HWP and pictures (TIFF pages, picture ZIPs) are sent whole.** A page
+  without text of its own is recognized in both modes; in `images` mode a page
+  that has text is recognized too when it carries a picture (pdf.js operator
+  list; HWP `pageHasImages`, from the adapter's layer tree), and each line
+  lying ≥ 50 % over the page's own word boxes (`compareWords`) is dropped —
+  what is left is the text inside the pictures, so nothing comes out twice.
+  Pages are drawn with `intent: 'print'` (display rendering waits on rAF, which
+  never fires in the hidden window), on white, longest side 2,400 px; lines
+  under score 0.5 are dropped.
+- **Word, PowerPoint, sheets and mail are read in the server**, so their
+  pictures are taken out of the file (`docxText`/`pptxText` `picture` callback
+  marks where each stands — `ooxmlText` sees `a:blip` and VML `v:imagedata`;
+  `sheetPictures` follows sheet → drawing → media; `emlPictures` takes inline
+  `data:` images and picture attachments), written to a scratch folder and sent
+  as pictures. Markers are a private-use character (`PictureMarks`; a control
+  character trips `no-control-regex`), one per part — Word's AlternateContent
+  draws the same picture twice. EMF/WMF/SVG are skipped (`pictureExtension`).
+- `auto` never starts the app for a document that has text: a text PDF, a Word
+  file with pictures, a deck whose slides all have text cost nothing extra.
+- No app (`WZPDF_APP` wrong, dev checkout) costs only the OCR: the document's
+  own text comes back with `(OCR unavailable: …)`.
+Measured with the packaged build: a 2-page scan 8.6 s, the chart page of a
+text PDF 5.3 s, a Word picture 3.5 s (each including app start).
+
 **Writes are `.pdf` only and never overwrite unless asked** (`overwrite: true`,
 advertised on every tool that writes). Without `MCP_SANDBOX_DIR` — the stdio
 server the installer ships — any path was writable, and text an agent reads
@@ -2504,7 +2534,39 @@ Renderer is sandboxed and IPC inputs are validated. Notable measures:
   — usually Downloads — with the installer's token, Administrator for a
   per-machine install.
 
+- **Documents are hostile input to every text pass** (`hostileDocs.test.ts`,
+  `ooxmlText.test.ts`). A few KB of zipped XML is hundreds of KB of whatever an
+  attacker likes, so a regular expression run over it must be linear:
+  `[^<>]` not `[^>]` inside a tag (repeated unclosed `<a:blip r:id="` took 23 s
+  at 28 KB), no `/[ \t]+\n/g` (15 s on 200,000 spaces — `tidyLines` works by
+  line) and no `/ +$/` on text that grows. Zip entries are read through
+  `inflateBounded`, which counts bytes as they come out: the size a zip declares
+  is the attacker's to write. hucre's own reading of a workbook is not bounded
+  this way.
+- **A document cannot paint over the app.** Inline styles survive sanitizing, so
+  `position: fixed` in a message or Markdown would cover the window.
+  `.wz-doc-scroller` (`contain: layout`, screen only) makes the document's
+  scroller the containing block. It is on the scroller, not the body: as a
+  containing block the body would become the headings' `offsetParent`.
+- **A Word stylesheet rule must stay inside** (`selectorStaysInside`): naming
+  `.wz-docx` is not enough, `body:has(.wz-docx) button` does too. `:has`,
+  `:not`, `:is`, `:where`, `:root`, `~`, `+` are refused; docx-preview writes
+  none of them. The sheet reaches a page as text (`style.textContent`), never
+  through `innerHTML`, where `</style>` in a value would start markup.
+- **A viewer exe exported from a viewer exe** starts from a copy of itself,
+  document included, and the loader follows only the last trailer. `stripEmbedded`
+  cuts every carried document off the copy first, or the first document ships
+  hidden inside the second.
+
 ## Critical gotchas
+
+### `npm run build` does not compile the main process
+
+`build` runs `tsc -b` and Vite; `electron/*.js` comes from `npm run
+electron:compile`, which only `build:exe` and `predev` run. `npm run build`
+followed by `electron-builder --win dir` therefore packages yesterday's main
+process. A new CLI switch is not recognized, and the app starts normally with
+the switch's arguments ignored, which reads as a hang.
 
 ### pdfjs polyfills — both copies are required
 `Uint8Array.prototype.toHex` and `Map.prototype.getOrInsertComputed` must exist in

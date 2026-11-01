@@ -8,6 +8,7 @@
 
 import { stripDocExt } from '../utils/download'
 import { t } from '../i18n'
+import { escapeHtml } from '../utils/text'
 
 import { HTML_EXPORT_MAX_BYTES } from '../utils/constants'
 
@@ -33,14 +34,6 @@ function base64Pieces(buffer: ArrayBuffer): string[] {
     pieces.push(btoa(binary))
   }
   return pieces
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
 }
 
 // ── HTML template ────────────────────────────────────────────────────────────

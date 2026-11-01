@@ -493,59 +493,64 @@ export function ActionBar(props: ActionBarProps) {
   // Every action the rail, its menus and the edit rail offer, flat, with the
   // same conditions — one list, so the palette can never offer what the rail
   // would hide.
-  const commands: PaletteCommand[] = []
-  const G = { file: t('palette.groupFile'), view: t('palette.groupView'), tools: t('palette.groupTools'), edit: t('palette.groupEdit') }
-  const cmd = (
-    on: unknown, id: string, key: MessageKey, group: string, run: () => void,
-    o: { vars?: Record<string, string | number>; shortcut?: string; icon?: ReactNode; disabled?: boolean; keywords?: string } = {},
-  ) => {
-    if (!on) return
-    commands.push({ id, label: t(key, o.vars), alt: tEnglish(key, o.vars), group, run, shortcut: o.shortcut, icon: o.icon, disabled: o.disabled, keywords: o.keywords })
-  }
-  cmd(!embed, 'open-file', 'tool.openFile', G.file, pickFiles, { shortcut: 'F2', icon: <IconFolderOpen /> })
-  cmd(!embed, 'open-url', 'tool.openUrl', G.file, onOpenUrl, { icon: <IconLink /> })
-  cmd(anyDoc && !embed, 'save-pdf', 'export.pdf', G.file, onExportPdf, { shortcut: 'Ctrl+S', icon: <IconSave />, disabled: isExporting })
-  cmd(anyDoc && !embed && onSaveOriginal, 'save-original', 'export.original', G.file, () => onSaveOriginal?.(), { icon: <IconFile />, disabled: isExporting })
-  cmd(anyDoc && !embed && onExportSpreads, 'save-booklet', 'export.spread', G.file, () => onExportSpreads?.(), { icon: <IconSpread />, disabled: isExporting })
-  cmd(anyDoc && !embed && onExportHtml, 'save-html', 'export.html', G.file, () => onExportHtml?.(), { icon: <IconHtml />, disabled: isExporting })
-  cmd(anyDoc && !embed && onOptimize, 'optimize', 'optimize.menu', G.file, () => onOptimize?.(), { icon: <IconCompress />, keywords: 'optimize compress reduce size 용량 압축 줄이기' })
-  cmd(anyDoc && !embed && onExportImages, 'save-images', 'export.images', G.file, () => onExportImages?.(), { icon: <IconImage />, disabled: isExporting })
-  cmd(anyDoc && !embed && onExportExe, 'save-exe', 'export.exe', G.file, () => onExportExe?.(), { icon: <IconExe />, disabled: isExporting })
-  cmd(onSaveSlideVideo, 'save-video', 'video.save', G.file, () => onSaveSlideVideo?.(), { icon: <IconVideo />, disabled: isExporting })
-  cmd(anyDoc && onPrint, 'print', 'tool.print', G.file, () => onPrint?.(), { shortcut: 'Ctrl+P', icon: <IconPrint /> })
-  cmd(pages && !isFullscreen, 'page-list', 'tool.pages', G.view, onTogglePanel, { icon: <IconPages /> })
-  cmd(pages, 'layout-single', 'tool.single', G.view, () => onViewModeChange('single'), { icon: <IconSingle /> })
-  cmd(pages, 'layout-spread', 'tool.spread', G.view, () => onViewModeChange('spread'), { icon: <IconSpread /> })
-  cmd(pages, 'layout-grid', 'tool.grid', G.view, () => onViewModeChange('grid'), { icon: <IconGrid /> })
-  cmd(anyDoc, 'fullscreen', 'palette.fullscreen', G.view, () => onViewModeChange('fullscreen'), { shortcut: 'F5', icon: <IconFullscreen /> })
-  cmd(anyDoc && !isFullscreen, 'zoom-in', 'tool.zoomIn', G.view, onZoomIn, { shortcut: 'Ctrl++', icon: <IconZoomIn /> })
-  cmd(anyDoc && !isFullscreen, 'zoom-out', 'tool.zoomOut', G.view, onZoomOut, { shortcut: 'Ctrl+-', icon: <IconZoomOut /> })
-  cmd(anyDoc && !isFullscreen, 'zoom-reset', 'palette.zoomReset', G.view, onZoomReset)
-  cmd(anyDoc && !isFullscreen, 'fit-width', 'tool.fitWidth', G.view, onFitWidth, { icon: <IconFitWidth /> })
-  cmd(hasPdf && !isFullscreen, 'rotate-left', 'tool.rotateLeft', G.view, onRotateLeft, { vars: { deg: rotation }, icon: <IconRotateLeft /> })
-  cmd(hasPdf && !isFullscreen, 'rotate-right', 'tool.rotate', G.view, onRotate, { vars: { deg: rotation }, icon: <IconRotate /> })
-  cmd(slideNotes, 'speaker-notes', 'office.notesToggle', G.view, () => slideNotes?.onToggle(), { icon: <IconNotes /> })
-  cmd(anyDoc && onFind, 'find', 'tool.find', G.tools, () => onFind?.(), { shortcut: 'Ctrl+F', icon: <IconSearch /> })
-  cmd(hasPdf && onCompare && !embed, 'compare', 'compare.tool', G.tools, () => onCompare?.(), { icon: <IconCompare />, keywords: 'compare diff 비교 차이 버전' })
-  cmd(hasPdf, 'ocr-page', 'ocr.menuCurrent', G.tools, onRunOcr, { shortcut: 'R', icon: <IconOcr />, disabled: isOcrRunning || numPages === 0, keywords: 'ocr' })
-  cmd(hasPdf, 'ocr-all', 'ocr.menuAll', G.tools, onRunOcrAll, { shortcut: 'R R', icon: <IconOcr />, disabled: isOcrRunning || numPages === 0, keywords: 'ocr' })
-  cmd(ocrProgress, 'ocr-cancel', 'ocr.cancel', G.tools, onCancelOcr)
-  cmd(onToggleSpeech && anyDoc, 'read-aloud', isSpeaking ? 'tts.stop' : 'tts.read', G.tools, () => onToggleSpeech?.(), { icon: isSpeaking ? <IconStopSpeak /> : <IconSpeak />, keywords: 'tts' })
-  cmd(hasMarkups, 'clear-markups', 'tool.reset', G.tools, onResetMarkups, { shortcut: 'Esc', icon: <IconReset /> })
-  cmd(!embed && canEdit && anyDoc, 'toggle-edit', appMode === 'editor' ? 'palette.editOff' : 'palette.editOn', G.edit, () => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor'), { icon: <IconPencil /> })
-  cmd(hasPdf && !embed, 'password', saveLocked ? 'tool.passwordRemove' : 'tool.passwordSet', G.edit, onPassword, { icon: saveLocked ? <IconLock /> : <IconLockOpen />, disabled: isExporting })
-  for (const item of editItems) {
-    if (item.menu) continue
-    commands.push({ id: `edit-${item.id}`, label: item.caption ?? item.label, alt: undefined, group: G.edit, run: () => item.onClick?.(), shortcut: item.hint, icon: item.icon, disabled: item.disabled })
-  }
-  cmd(true, 'help', 'palette.help', G.tools, openHelp, { shortcut: 'F1' })
-  if (appearance && onAppearanceChange) {
-    for (const v of ['light', 'dark', 'system'] as const) {
-      cmd(appearance.theme !== v, `theme-${v}`, `appearance.cmd.theme.${v}`, G.view, () => onAppearanceChange({ ...appearance, theme: v }), { keywords: 'theme dark mode 테마 다크' })
+  // Built when the palette opens: fifty labels and icons are not worth making
+  // on every render for a list that is usually closed.
+  const buildCommands = (): PaletteCommand[] => {
+    const commands: PaletteCommand[] = []
+    const G = { file: t('palette.groupFile'), view: t('palette.groupView'), tools: t('palette.groupTools'), edit: t('palette.groupEdit') }
+    const cmd = (
+      on: unknown, id: string, key: MessageKey, group: string, run: () => void,
+      o: { vars?: Record<string, string | number>; shortcut?: string; icon?: ReactNode; disabled?: boolean; keywords?: string } = {},
+    ) => {
+      if (!on) return
+      commands.push({ id, label: t(key, o.vars), alt: tEnglish(key, o.vars), group, run, shortcut: o.shortcut, icon: o.icon, disabled: o.disabled, keywords: o.keywords })
     }
-    for (const v of ['normal', 'sepia', 'night'] as const) {
-      cmd(appearance.reading !== v, `reading-${v}`, `appearance.cmd.reading.${v}`, G.view, () => onAppearanceChange({ ...appearance, reading: v }), { keywords: 'reading colours 읽기 색' })
+    cmd(!embed, 'open-file', 'tool.openFile', G.file, pickFiles, { shortcut: 'F2', icon: <IconFolderOpen /> })
+    cmd(!embed, 'open-url', 'tool.openUrl', G.file, onOpenUrl, { icon: <IconLink /> })
+    cmd(anyDoc && !embed, 'save-pdf', 'export.pdf', G.file, onExportPdf, { shortcut: 'Ctrl+S', icon: <IconSave />, disabled: isExporting })
+    cmd(anyDoc && !embed && onSaveOriginal, 'save-original', 'export.original', G.file, () => onSaveOriginal?.(), { icon: <IconFile />, disabled: isExporting })
+    cmd(anyDoc && !embed && onExportSpreads, 'save-booklet', 'export.spread', G.file, () => onExportSpreads?.(), { icon: <IconSpread />, disabled: isExporting })
+    cmd(anyDoc && !embed && onExportHtml, 'save-html', 'export.html', G.file, () => onExportHtml?.(), { icon: <IconHtml />, disabled: isExporting })
+    cmd(anyDoc && !embed && onOptimize, 'optimize', 'optimize.menu', G.file, () => onOptimize?.(), { icon: <IconCompress />, keywords: 'optimize compress reduce size 용량 압축 줄이기' })
+    cmd(anyDoc && !embed && onExportImages, 'save-images', 'export.images', G.file, () => onExportImages?.(), { icon: <IconImage />, disabled: isExporting })
+    cmd(anyDoc && !embed && onExportExe, 'save-exe', 'export.exe', G.file, () => onExportExe?.(), { icon: <IconExe />, disabled: isExporting })
+    cmd(onSaveSlideVideo, 'save-video', 'video.save', G.file, () => onSaveSlideVideo?.(), { icon: <IconVideo />, disabled: isExporting })
+    cmd(anyDoc && onPrint, 'print', 'tool.print', G.file, () => onPrint?.(), { shortcut: 'Ctrl+P', icon: <IconPrint /> })
+    cmd(pages && !isFullscreen, 'page-list', 'tool.pages', G.view, onTogglePanel, { icon: <IconPages /> })
+    cmd(pages, 'layout-single', 'tool.single', G.view, () => onViewModeChange('single'), { icon: <IconSingle /> })
+    cmd(pages, 'layout-spread', 'tool.spread', G.view, () => onViewModeChange('spread'), { icon: <IconSpread /> })
+    cmd(pages, 'layout-grid', 'tool.grid', G.view, () => onViewModeChange('grid'), { icon: <IconGrid /> })
+    cmd(anyDoc, 'fullscreen', 'palette.fullscreen', G.view, () => onViewModeChange('fullscreen'), { shortcut: 'F5', icon: <IconFullscreen /> })
+    cmd(anyDoc && !isFullscreen, 'zoom-in', 'tool.zoomIn', G.view, onZoomIn, { shortcut: 'Ctrl++', icon: <IconZoomIn /> })
+    cmd(anyDoc && !isFullscreen, 'zoom-out', 'tool.zoomOut', G.view, onZoomOut, { shortcut: 'Ctrl+-', icon: <IconZoomOut /> })
+    cmd(anyDoc && !isFullscreen, 'zoom-reset', 'palette.zoomReset', G.view, onZoomReset)
+    cmd(anyDoc && !isFullscreen, 'fit-width', 'tool.fitWidth', G.view, onFitWidth, { icon: <IconFitWidth /> })
+    cmd(hasPdf && !isFullscreen, 'rotate-left', 'tool.rotateLeft', G.view, onRotateLeft, { vars: { deg: rotation }, icon: <IconRotateLeft /> })
+    cmd(hasPdf && !isFullscreen, 'rotate-right', 'tool.rotate', G.view, onRotate, { vars: { deg: rotation }, icon: <IconRotate /> })
+    cmd(slideNotes, 'speaker-notes', 'office.notesToggle', G.view, () => slideNotes?.onToggle(), { icon: <IconNotes /> })
+    cmd(anyDoc && onFind, 'find', 'tool.find', G.tools, () => onFind?.(), { shortcut: 'Ctrl+F', icon: <IconSearch /> })
+    cmd(hasPdf && onCompare && !embed, 'compare', 'compare.tool', G.tools, () => onCompare?.(), { icon: <IconCompare />, keywords: 'compare diff 비교 차이 버전' })
+    cmd(hasPdf, 'ocr-page', 'ocr.menuCurrent', G.tools, onRunOcr, { shortcut: 'R', icon: <IconOcr />, disabled: isOcrRunning || numPages === 0, keywords: 'ocr' })
+    cmd(hasPdf, 'ocr-all', 'ocr.menuAll', G.tools, onRunOcrAll, { shortcut: 'R R', icon: <IconOcr />, disabled: isOcrRunning || numPages === 0, keywords: 'ocr' })
+    cmd(ocrProgress, 'ocr-cancel', 'ocr.cancel', G.tools, onCancelOcr)
+    cmd(onToggleSpeech && anyDoc, 'read-aloud', isSpeaking ? 'tts.stop' : 'tts.read', G.tools, () => onToggleSpeech?.(), { icon: isSpeaking ? <IconStopSpeak /> : <IconSpeak />, keywords: 'tts' })
+    cmd(hasMarkups, 'clear-markups', 'tool.reset', G.tools, onResetMarkups, { shortcut: 'Esc', icon: <IconReset /> })
+    cmd(!embed && canEdit && anyDoc, 'toggle-edit', appMode === 'editor' ? 'palette.editOff' : 'palette.editOn', G.edit, () => onAppModeChange(appMode === 'editor' ? 'viewer' : 'editor'), { icon: <IconPencil /> })
+    cmd(hasPdf && !embed, 'password', saveLocked ? 'tool.passwordRemove' : 'tool.passwordSet', G.edit, onPassword, { icon: saveLocked ? <IconLock /> : <IconLockOpen />, disabled: isExporting })
+    for (const item of editItems) {
+      if (item.menu) continue
+      commands.push({ id: `edit-${item.id}`, label: item.caption ?? item.label, alt: undefined, group: G.edit, run: () => item.onClick?.(), shortcut: item.hint, icon: item.icon, disabled: item.disabled })
     }
+    cmd(true, 'help', 'palette.help', G.tools, openHelp, { shortcut: 'F1' })
+    if (appearance && onAppearanceChange) {
+      for (const v of ['light', 'dark', 'system'] as const) {
+        cmd(appearance.theme !== v, `theme-${v}`, `appearance.cmd.theme.${v}`, G.view, () => onAppearanceChange({ ...appearance, theme: v }), { keywords: 'theme dark mode 테마 다크' })
+      }
+      for (const v of ['normal', 'sepia', 'night'] as const) {
+        cmd(appearance.reading !== v, `reading-${v}`, `appearance.cmd.reading.${v}`, G.view, () => onAppearanceChange({ ...appearance, reading: v }), { keywords: 'reading colours 읽기 색' })
+      }
+    }
+    return commands
   }
 
   // ── The title bar's right end: where in the document, and how big ─────────
@@ -593,7 +598,7 @@ export function ActionBar(props: ActionBarProps) {
         {!wide && editRail}
         {!wide && toolRail}
       </div>
-      {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
+      {paletteOpen && <CommandPalette commands={buildCommands()} onClose={() => setPaletteOpen(false)} />}
       {/* Mounted always: a live region announces only what changes while it exists. */}
       <OcrAnnouncer progress={ocrProgress} />
       {!embed && <input ref={setFileInput} type="file" multiple accept={DOCUMENT_ACCEPT} className="hidden" onChange={handleFileChange} />}

@@ -268,7 +268,8 @@ npm run lint          # ESLint
 `mcp/` contains a Model Context Protocol server with fifteen tools for
 MCP-capable AI clients: read the text of **any format the app opens**
 (`doc_get_text`, `doc_info` — PDF, HWP, Word, PowerPoint with speaker notes,
-spreadsheets by rows, Markdown, mail), convert any of them to PDF exactly as
+spreadsheets by rows, Markdown, mail, pictures — with OCR for scanned pages and,
+optionally, the text inside pictures in any of them), convert any of them to PDF exactly as
 the app saves it (`doc_to_pdf`, `hwp_to_pdf`), and work on PDFs (info, text,
 search, watermark, stamp, text overlay, split, merge, delete / reorder / insert
 pages). The installer ships it ready to run on the app's own binary — no Node.js

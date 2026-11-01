@@ -1,5 +1,5 @@
 // src/components/panel/PagePanel.tsx
-import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { memo, useState, useRef, useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { ViewerDoc } from '../../types/viewerDoc'
 import { THUMB_PAGE_ATTR, useThumbnails } from '../../hooks/useThumbnails'
@@ -7,6 +7,51 @@ import { t } from '../../i18n'
 import { errorMessage } from '../../utils/errors'
 import { OutlineView } from './OutlineView'
 import type { OutlineNode } from '../../services/pdfOutline'
+
+interface ThumbRowProps {
+  pageNum: number
+  thumb: string | null | undefined
+  isSelected: boolean
+  isCurrent: boolean
+  isDragTarget: boolean
+  draggable: boolean
+}
+
+/** One row of the list; its events are handled on the list (`rowPage`). */
+const ThumbRow = memo(function ThumbRow({ pageNum, thumb, isSelected, isCurrent, isDragTarget, draggable }: ThumbRowProps) {
+  return (
+    <div
+      {...{ [THUMB_PAGE_ATTR]: pageNum }}
+      draggable={draggable}
+      className={[
+        'flex flex-col items-center gap-1 p-1 rounded cursor-pointer transition-all',
+        isSelected  ? 'bg-blue-600/30 ring-2 ring-blue-500' : 'hover:bg-gray-800',
+        isCurrent && !isSelected ? 'ring-1 ring-gray-500' : '',
+        isDragTarget ? 'border-t-2 border-blue-400' : '',
+      ].filter(Boolean).join(' ')}
+    >
+      {thumb ? (
+        <img
+          src={thumb}
+          alt={t('panel.thumbAlt', { n: pageNum })}
+          className="w-full rounded shadow-sm pointer-events-none"
+          draggable={false}
+        />
+      ) : (
+        <div className="w-full aspect-[3/4] bg-gray-700 rounded animate-pulse" />
+      )}
+      <span className={`text-[11px] tabular-nums ${isCurrent ? 'text-blue-400 font-medium' : 'text-gray-400'}`}>
+        {pageNum}
+      </span>
+    </div>
+  )
+})
+
+/** The page of the row an event happened in, or 0 between rows. */
+function rowPage(e: React.SyntheticEvent): number {
+  const row = (e.target as Element).closest(`[${THUMB_PAGE_ATTR}]`)
+  return row ? Number(row.getAttribute(THUMB_PAGE_ATTR)) : 0
+}
 
 export interface PagePanelProps {
   /** Where a failure is reported (the toast). */
@@ -397,46 +442,30 @@ export function PagePanel({
 
       {/* 섬네일 목록 */}
       {/* Kept mounted behind the outline, so its thumbnails and scroll survive a tab switch. */}
-      <div ref={listRef} className={`flex-1 overflow-y-auto py-2 px-1.5 flex flex-col gap-2 ${showOutline || showComments ? 'hidden' : ''}`}>
-        {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => {
-          const isSelected   = selected.has(pageNum)
-          const isCurrent    = currentPage === pageNum
-          const isDragTarget = dragOver === pageNum && dragSource !== pageNum
-
-          return (
-            <div
-              key={pageNum}
-              {...{ [THUMB_PAGE_ATTR]: pageNum }}
-              draggable={!readOnly}
-              onDragStart={readOnly ? undefined : e => handleDragStart(e, pageNum)}
-              onDragOver={readOnly ? undefined : e => handleDragOver(e, pageNum)}
-              onDrop={readOnly ? undefined : e => handleDrop(e, pageNum)}
-              onDragEnd={readOnly ? undefined : handleDragEnd}
-              onClick={e => handleClick(pageNum, e)}
-              onContextMenu={e => handleContextMenu(pageNum, e)}
-              className={[
-                'flex flex-col items-center gap-1 p-1 rounded cursor-pointer transition-all',
-                isSelected  ? 'bg-blue-600/30 ring-2 ring-blue-500' : 'hover:bg-gray-800',
-                isCurrent && !isSelected ? 'ring-1 ring-gray-500' : '',
-                isDragTarget ? 'border-t-2 border-blue-400' : '',
-              ].filter(Boolean).join(' ')}
-            >
-              {thumbnailOf(pageNum) ? (
-                <img
-                  src={thumbnailOf(pageNum)!}
-                  alt={t('panel.thumbAlt', { n: pageNum })}
-                  className="w-full rounded shadow-sm pointer-events-none"
-                  draggable={false}
-                />
-              ) : (
-                <div className="w-full aspect-[3/4] bg-gray-700 rounded animate-pulse" />
-              )}
-              <span className={`text-[11px] tabular-nums ${isCurrent ? 'text-blue-400 font-medium' : 'text-gray-400'}`}>
-                {pageNum}
-              </span>
-            </div>
-          )
-        })}
+      {/* One set of handlers on the list, so a row's props are only what it
+          draws: scrolling changes the current page, and of a thousand rows
+          exactly two then have anything to draw again. */}
+      <div
+        ref={listRef}
+        className={`flex-1 overflow-y-auto py-2 px-1.5 flex flex-col gap-2 ${showOutline || showComments ? 'hidden' : ''}`}
+        onClick={e => { const page = rowPage(e); if (page) handleClick(page, e) }}
+        onContextMenu={e => { const page = rowPage(e); if (page) handleContextMenu(page, e) }}
+        onDragStart={readOnly ? undefined : e => { const page = rowPage(e); if (page) handleDragStart(e, page) }}
+        onDragOver={readOnly ? undefined : e => { const page = rowPage(e); if (page) handleDragOver(e, page) }}
+        onDrop={readOnly ? undefined : e => { const page = rowPage(e); if (page) handleDrop(e, page) }}
+        onDragEnd={readOnly ? undefined : handleDragEnd}
+      >
+        {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
+          <ThumbRow
+            key={pageNum}
+            pageNum={pageNum}
+            thumb={thumbnailOf(pageNum)}
+            isSelected={selected.has(pageNum)}
+            isCurrent={currentPage === pageNum}
+            isDragTarget={dragOver === pageNum && dragSource !== pageNum}
+            draggable={!readOnly}
+          />
+        ))}
       </div>
 
       {/* 우클릭 메뉴 — 패널은 overflow-hidden이고 목록은 스크롤 영역이라,

@@ -12,6 +12,7 @@ import type { PdfJob } from '../../services/officePdf'
 import { sheetPdfJob } from '../../services/sheetPdf'
 import type { OfficeViewProps } from './officeView'
 import { t } from '../../i18n'
+import { onceAFrame } from '../../utils/onceAFrame'
 
 interface SheetViewProps extends OfficeViewProps {
   bytes: ArrayBuffer
@@ -151,12 +152,14 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     if (!windowed) return
     // Capture phase: scroll does not bubble, and the scroller is ours in the
     // page and ReaderFullscreen's when presenting.
-    window.addEventListener('scroll', update, true)
-    window.addEventListener('resize', update)
+    const onScroll = onceAFrame(update)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
     update()
     return () => {
-      window.removeEventListener('scroll', update, true)
-      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+      onScroll.cancel()
     }
   }, [windowed, update, zoom, fullscreen])
 

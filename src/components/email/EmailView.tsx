@@ -168,7 +168,7 @@ export function EmailView({
   if (fullscreen) return <ReaderFullscreen onExit={onExitFullscreen}>{message}</ReaderFullscreen>
 
   return (
-    <div className="h-full overflow-auto bg-[var(--wz-canvas)] py-6 px-4">
+    <div className="wz-doc-scroller h-full overflow-auto bg-[var(--wz-canvas)] py-6 px-4">
       {message}
     </div>
   )

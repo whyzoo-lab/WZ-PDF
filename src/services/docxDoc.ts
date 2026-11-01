@@ -19,6 +19,7 @@
 // The library itself is not patched (see "Never patch a dependency in place").
 
 import DOMPurify from 'dompurify'
+import { unescapeCss } from '../utils/text'
 import { openLinksOutside } from './links'
 
 /** docx-preview's class prefix; every rule it writes is scoped under it. */
@@ -48,15 +49,6 @@ function isLocalResource(raw: string): boolean {
 }
 
 /** Resolve CSS escapes (`\75` → `u`, `\(` → `(`), so they cannot hide a `url(`. */
-function unescapeCss(value: string): string {
-  return value
-    .replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, hex: string) => {
-      const cp = parseInt(hex, 16)
-      return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '�'
-    })
-    .replace(/\\([^\n])/g, '$1')
-}
-
 /**
  * True when every url() in a CSS value points at something local.
  *
@@ -117,13 +109,25 @@ function rebuildDeclarations(style: CSSStyleDeclaration): string {
   return out.join(' ')
 }
 
+/**
+ * Whether a selector can only reach the document. Naming the scope is not
+ * enough: `body:has(.wz-docx) button`, `.wz-docx ~ *`, `:not(.wz-docx) button` and
+ * `button[x=".wz-docx"]` all do and all style the app around it. docx-preview
+ * writes none of these forms. Every selector in the list counts, or
+ * `.wz-docx p, body` would get through.
+ */
+function selectorStaysInside(selector: string, scope: string): boolean {
+  const bare = unescapeCss(selector).replace(/\[[^\]]*\]/g, '')
+  if (/:has\(|:not\(|:is\(|:where\(|:root|[~+]/i.test(bare)) return false
+  return bare.split(',').every(part => part.includes(`.${scope}`))
+}
+
 function rebuildRules(rules: ArrayLike<RuleLike>, scope: string, out: string[]): void {
   for (const rule of Array.from(rules)) {
     if (rule.type === STYLE_RULE && rule.selectorText && rule.style) {
       // Every selector in the list, not just one: `.wz-docx p, body` would
       // otherwise reach the app around the document.
-      const scoped = rule.selectorText.split(',').every(part => part.includes(`.${scope}`))
-      if (!scoped) continue
+      if (!selectorStaysInside(rule.selectorText, scope)) continue
       const body = rebuildDeclarations(rule.style)
       if (body) out.push(`${rule.selectorText} { ${body} }`)
     } else if (rule.type === MEDIA_RULE && rule.cssRules && rule.media) {

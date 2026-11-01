@@ -57,7 +57,7 @@ export function pdfNameFor(inputPath: string): string {
   return basename(inputPath, extname(inputPath)) + '.pdf'
 }
 
-function runApp(exe: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+export function runApp(exe: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   // ELECTRON_RUN_AS_NODE must not reach the child. The shipped server is itself
   // started through the app binary with that variable set (it is how the server
   // runs without a separate Node install), and a child inheriting it would boot

@@ -33,12 +33,24 @@ npm run build
 
 | 도구 | 설명 |
 |---|---|
-| `doc_get_text` | 문서의 글을 읽습니다. PDF·HWP(쪽 단위), Word(표는 칸을 탭으로 구분), PowerPoint(슬라이드별, 발표자 노트 포함), Excel·ODS·CSV(시트별, 칸은 탭, `startRow`/`maxRows`로 나눠 읽기), Markdown, 메일(제목·보낸 사람·첨부 목록과 본문) |
-| `doc_info` | 형식과 쪽·슬라이드(숨긴 슬라이드 포함)·시트(행 수), 메일의 제목·보낸 사람·첨부 |
+| `doc_get_text` | 문서의 글을 읽습니다. PDF·HWP(쪽 단위), Word(표는 칸을 탭으로 구분), PowerPoint(슬라이드별, 발표자 노트 포함), Excel·ODS·CSV(시트별, 칸은 탭, `startRow`/`maxRows`로 나눠 읽기), Markdown, 메일(제목·보낸 사람·첨부 목록과 본문), 그림(PNG·JPEG·TIFF·그림 ZIP). 그림 속 글자는 OCR로 읽습니다 — 아래 "OCR" 참고 |
+| `doc_info` | 형식과 쪽·슬라이드(숨긴 슬라이드 포함)·시트(행 수), 메일의 제목·보낸 사람·첨부. PDF는 글자층이 없는(스캔한) 쪽도 알려 줍니다 |
 | `doc_to_pdf` | 앱에서 "PDF로 저장"한 것과 같은 PDF로 변환 (HWP, Word, PowerPoint, Excel·CSV, Markdown, 메일, 이미지). 글자를 선택·검색할 수 있는 PDF |
 | `hwp_to_pdf` | 한글 문서 → PDF (예전 이름; `doc_to_pdf`와 같은 결과) |
 
-`doc_to_pdf`, 그리고 HWP에 대한 `doc_get_text`는 WZ Reader 앱이 필요합니다(아래 참고). 나머지는 서버 혼자 처리합니다.
+`doc_to_pdf`, HWP에 대한 `doc_get_text`, 그리고 OCR은 WZ Reader 앱이 필요합니다(아래 참고). 나머지는 서버 혼자 처리합니다.
+
+### OCR — 그림 속 글자
+
+`doc_get_text`의 `ocr` 옵션으로 정합니다. 인식기는 앱에서 R 키로 쓰는 것과 같습니다(PaddleOCR 한국어 모델, PC 안에서만 실행).
+
+| `ocr` | 하는 일 |
+|---|---|
+| `auto` (기본) | 글이 없는 곳만 읽습니다: 스캔한 PDF 쪽, 그림 파일, 그림 한 장뿐인 HWP 쪽·슬라이드, 글 없이 그림만 있는 Word·메일 |
+| `images` | 위에 더해, 글이 있는 문서 안의 그림·차트·스크린샷 속 글자도 읽습니다. PDF·HWP는 쪽 전체를 인식한 뒤 쪽의 원래 글자와 겹치는 줄은 빼서, 같은 글이 두 번 나오지 않습니다 |
+| `off` | 읽지 않습니다 |
+
+읽은 글은 그림이 있던 자리에 `[OCR: image] … [/OCR]`로 표시됩니다. 한 번에 인식하는 쪽은 `ocrMaxPages`(기본 20)까지이고, 남은 쪽은 응답에 적힌 `pages`로 다시 부르면 됩니다. 쪽이나 그림마다 몇 초씩 걸립니다. 앱을 찾지 못하면 OCR만 빠지고 문서의 글은 그대로 돌려줍니다.
 
 ### PDF
 
@@ -80,6 +92,12 @@ Claude Desktop에 위 설정을 추가한 뒤 채팅에서:
 
 > 📌 "D:/data/전국공장현황.xlsx에서 처음 100행만 보여줘"
 > → `doc_get_text({ file: "...", maxRows: 100 })` — 이어서 읽으려면 응답에 적힌 `startRow`로 다시 호출
+
+> 📌 "D:/scan/계약서_스캔.pdf 내용 정리해줘" (글자층이 없는 스캔본)
+> → `doc_get_text` — 기본값 `ocr: "auto"`로 스캔한 쪽을 OCR로 읽음
+
+> 📌 "D:/docs/분기보고.pptx의 차트에 적힌 숫자까지 읽어줘"
+> → `doc_get_text({ file: "...", ocr: "images" })`
 
 > 📌 "D:/docs/계약서.docx를 PDF로 바꿔서 '대외비' 워터마크 넣어줘"
 > → `doc_to_pdf` → `pdf_add_watermark`
@@ -180,6 +198,12 @@ Chromium, so these delegate to the desktop app in the same headless mode the
 same file the app's "Save as PDF" produces, with selectable text.
 `pdf_get_text` and `pdf_search` therefore work on the result immediately.
 `doc_get_text` on a HWP document goes through the same conversion.
+
+OCR goes through the app as well: `WZ PDF.exe --ocr-json <request> <result>`
+(`electron/ocrJob.ts`) recognizes PDF, HWP and picture pages in a hidden
+window with the viewer's own recognizer (`src/services/docOcr.ts`). For Word,
+PowerPoint, sheets and mail the server takes the pictures out of the file and
+sends each one as a picture.
 
 Everything else `doc_get_text` and `doc_info` read in the server itself: Word
 and PowerPoint XML through JSZip, spreadsheets through hucre (the reader the app

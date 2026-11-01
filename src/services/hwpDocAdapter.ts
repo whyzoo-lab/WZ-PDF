@@ -50,10 +50,20 @@ export function createHwpViewerDoc(doc: HwpDocument): ViewerDoc {
   // Per-page embedded-image bbox (null = page has no picture), parsed once.
   const imageBboxCache = new Map<number, Bbox | null>()
 
-  /** Scale-1 page size, measured once via a throwaway probe render and cached. */
+  /** Scale-1 page size, read once and cached; a throwaway render if rhwp will not say. */
   function natural(idx0: number): { width: number; height: number } {
     const hit = naturalCache.get(idx0)
     if (hit) return hit
+    // The page's own size, without drawing it. A grid or two-page view asks
+    // for every page at once, on the main thread.
+    try {
+      const { width, height } = JSON.parse(doc.getPageInfo(idx0)) as { width?: number; height?: number }
+      if (width && height) {
+        const vp = { width, height }
+        naturalCache.set(idx0, vp)
+        return vp
+      }
+    } catch { /* measured below */ }
     const probe = document.createElement('canvas')
     doc.renderPageToCanvas(idx0, probe, 1)           // sizes probe to page×1
     const vp = { width: probe.width, height: probe.height }
@@ -109,6 +119,7 @@ export function createHwpViewerDoc(doc: HwpDocument): ViewerDoc {
         return []
       }
     },
+    pageHasImages: (pageNumber: number) => imageBbox(pageNumber - 1) !== null,
     getPage: async (pageNumber: number): Promise<ViewerPage> => {
       const idx0 = pageNumber - 1
       return {

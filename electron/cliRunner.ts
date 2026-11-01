@@ -2,6 +2,7 @@ import { converterFor } from './cli'
 import { EXIT_USAGE, runConversion } from './convertRunner'
 import { createHwpxBackend } from './hwpxCliBackend'
 import { createPdfBackend } from './pdfCliBackend'
+import { OCR_JOB_FLAG, runOcrJob } from './ocrJob'
 
 /**
  * Entry point for every console converter — `hwp2pdf`, `hwp2hwpx`, `hwpx2hwp`.
@@ -14,10 +15,12 @@ import { createPdfBackend } from './pdfCliBackend'
  */
 
 export function hasCliFlag(argv: readonly string[]): boolean {
-  return converterFor(argv) !== null
+  return converterFor(argv) !== null || argv.includes(OCR_JOB_FLAG)
 }
 
 export async function runCli(argv: readonly string[], loadUrl: string): Promise<number> {
+  // The MCP server's OCR: not a converter, but the same hidden-window path.
+  if (argv.includes(OCR_JOB_FLAG)) return runOcrJob(argv, loadUrl)
   const spec = converterFor(argv)
   if (!spec) return EXIT_USAGE
 
@@ -32,5 +35,6 @@ export async function runCli(argv: readonly string[], loadUrl: string): Promise<
 
 /** The tool name to blame in a top-level failure message. */
 export function cliToolName(argv: readonly string[]): string {
+  if (argv.includes(OCR_JOB_FLAG)) return 'wz ocr'
   return converterFor(argv)?.name ?? 'wz convert'
 }

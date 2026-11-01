@@ -62,10 +62,20 @@ export function paginateDocx(wrapper: HTMLElement): HTMLElement[] {
   const pages = (): HTMLElement[] =>
     Array.from(wrapper.children).filter(c => c.tagName === 'SECTION') as HTMLElement[]
 
+  const pageFrom = (start: Element | null): HTMLElement | null => {
+    let el = start
+    while (el && el.tagName !== 'SECTION') el = el.nextElementSibling
+    return el as HTMLElement | null
+  }
+
   // A page can overflow by more than one page, so its remainder is checked in
-  // turn; the guard bounds a pathological document.
-  for (let i = 0, guard = 0; i < pages().length && guard < 5000; i++, guard++) {
-    const section = pages()[i]
+  // turn; the guard bounds a pathological document. Walking siblings rather
+  // than listing the pages each time: that was quadratic in the page count.
+  for (
+    let section = pageFrom(wrapper.firstElementChild), guard = 0;
+    section && guard < 5000;
+    section = pageFrom(section.nextElementSibling), guard++
+  ) {
     const { article, footer } = partsOf(section)
     if (!article) continue
     const style = getComputedStyle(section)

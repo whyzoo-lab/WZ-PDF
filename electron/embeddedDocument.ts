@@ -20,6 +20,7 @@
  * allowed extension, the signature its format must have, the size cap.
  */
 
+import fs from 'fs'
 import path from 'path'
 import {
   MAX_DOCUMENT_BYTES, hasSupportedDocumentSignature, isAllowedDocumentPath, isTextDocumentPath,
@@ -120,4 +121,28 @@ export function acceptEmbedded(bytes: Uint8Array, rawName: Uint8Array | null): E
   const name = cleanEmbeddedName(decoded)
   if (!name || name !== decoded || !isAcceptableDocument(name, bytes)) return null
   return { bytes, name }
+}
+
+/**
+ * Cut every carried document off a copy of the running exe. Inside a viewer
+ * exe the template is that exe, document and all, and the loader only follows
+ * the last trailer: exporting another file from it would ship the first one
+ * too — hidden from the recipient's view, but readable from the bytes.
+ * A loop, for exes exported this way by earlier versions.
+ */
+export async function stripEmbedded(exeFile: string): Promise<void> {
+  const handle = await fs.promises.open(exeFile, 'r+')
+  try {
+    for (;;) {
+      const { size } = await handle.stat()
+      if (size < EMBED_FOOTER_BYTES) return
+      const footer = Buffer.allocUnsafe(EMBED_FOOTER_BYTES)
+      await handle.read(footer, 0, EMBED_FOOTER_BYTES, size - EMBED_FOOTER_BYTES)
+      const at = locateEmbedded(size, footer)
+      if (!at) return
+      await handle.truncate(at.offset)
+    }
+  } finally {
+    await handle.close()
+  }
 }

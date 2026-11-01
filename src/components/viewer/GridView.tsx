@@ -6,6 +6,9 @@ import { PDF_RENDER_SCALE } from '../../utils/constants'
 import { usePageSizes } from '../../hooks/usePageSizes'
 import { median, type PageSize } from '../../utils/spreadLayout'
 
+/** The grid is read-only; one function, so a page's memo holds. */
+const noop = () => {}
+
 const GRID_ZOOM = 0.3
 /** Gap between cells, px. */
 const GAP = 12
@@ -70,9 +73,9 @@ export function GridView({ pdfDoc, kind, numPages, rotation, annotations, onPage
                 activeMode={null}
                 pendingStamp={null}
                 pendingSignature={null}
-                onAnnotationSelect={() => {}}
-                onAnnotationUpdate={() => {}}
-                onAnnotationAdd={() => {}}
+                onAnnotationSelect={noop}
+                onAnnotationUpdate={noop}
+                onAnnotationAdd={noop}
               />
             </div>
             <span className="text-xs text-gray-700 font-medium">{pageNum}</span>
