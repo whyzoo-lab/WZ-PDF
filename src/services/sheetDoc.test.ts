@@ -215,6 +215,23 @@ describe('csv', () => {
     expect(rows[1][1].textContent).toBe('007')
     expect(rows[1][1].getAttribute('style')).toMatch(/text-align:right/)
   })
+
+  it('reads TSV by its tabs, even when the text holds commas', async () => {
+    const text = '이름\t메모\n홍길동\t1,000원, 현금\n'
+    const { workbook, format } = await loadWorkbook(new TextEncoder().encode(text).buffer, '명단.tsv')
+    expect(format).toBe('csv')
+    expect(workbook.sheets[0].name).toBe('명단')
+    expect(workbook.sheets[0].rows).toEqual([['이름', '메모'], ['홍길동', '1,000원, 현금']])
+  })
+
+  it('sizes each column to its content', async () => {
+    const text = 'id,name\n1,"A much longer name than a default column holds"\n'
+    const { workbook } = await loadWorkbook(new TextEncoder().encode(text).buffer, 'a.csv')
+    const widths = [...parse(renderSheetHtml(workbook.sheets[0], workbook, { csv: true }).html)
+      .querySelectorAll('col')].slice(1).map(c => parseInt(c.getAttribute('style')!.replace('width:', '')))
+    expect(widths[0]).toBe(64)               // short values: Excel's default column
+    expect(widths[1]).toBeGreaterThan(200)   // the long name fits
+  })
 })
 
 describe('helpers', () => {

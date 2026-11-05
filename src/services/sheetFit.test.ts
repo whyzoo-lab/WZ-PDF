@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Sheet } from 'hucre'
 import {
-  colWidthPx, defaultColPx, fitNumber, maxDigitWidth, shorterGeneral, type Measure,
+  colWidthPx, defaultColPx, fitColumnWidths, fitNumber, maxDigitWidth, shorterGeneral, type Measure,
 } from './sheetFit'
 import { layoutSheet } from './sheetDoc'
 
@@ -33,6 +33,22 @@ describe('column widths', () => {
     // 15 digits wide plus padding; the second column has no width of its own.
     expect(korean.tableOpen).toContain('<col style="width:120px"><col style="width:72px">')
     expect(calibri.tableOpen).toContain('<col style="width:105px"><col style="width:64px">')
+  })
+})
+
+describe('columns fitted to their content (CSV, TSV)', () => {
+  const wide: Measure = (text) => [...text].reduce((w, ch) => w + (ch.charCodeAt(0) >= 0x1100 ? 14 : 7), 0)
+
+  it('is as wide as the widest value plus padding, within limits', () => {
+    const rows = [['id', '이름', 'memo'], ['1', '홍길동', 'x'.repeat(200)], ['22', '김', null]]
+    // 홍길동 is 42 px + 9 of padding; the memo is capped; id stays at the default.
+    expect(fitColumnWidths(rows, [0, 1, 2], {}, wide, 64, 480)).toEqual([64, 64, 480])
+    expect(fitColumnWidths([['대한민국 서울특별시 종로구']], [0], {}, wide, 64, 480)).toEqual([12 * 14 + 2 * 7 + 9])
+  })
+
+  it('ranks by width, not length: Hangul is twice a digit', () => {
+    const rows = [['1234567890'], ['가나다라마바사']]   // 70 px against 98 px
+    expect(fitColumnWidths(rows, [0], {}, wide, 0, 999)).toEqual([98 + 9])
   })
 })
 

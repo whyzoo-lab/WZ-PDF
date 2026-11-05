@@ -732,7 +732,7 @@ export const tools = [
     name: 'doc_get_text',
     description:
       'Read the text of any document WZ Reader opens: PDF, HWP/HWPX, Word (.docx), PowerPoint (.pptx, '
-      + 'slide by slide with speaker notes), Excel/ODS/CSV (sheet by sheet, cells tab-separated, paged '
+      + 'slide by slide with speaker notes), Excel/ODS/CSV/TSV (sheet by sheet, cells tab-separated, paged '
       + 'by rows), Markdown, e-mail (.eml) and pictures (PNG, JPEG, TIFF, …). Text in pictures is read '
       + 'by OCR (Korean and English): by default scanned pages and pictures without text are recognized; '
       + 'ocr: "images" also reads the text inside pictures, charts and screenshots placed in a document, '
@@ -784,7 +784,7 @@ export const tools = [
     name: 'doc_to_pdf',
     description:
       'Convert a document to PDF exactly as the WZ Reader app saves it: HWP/HWPX, Word, PowerPoint '
-      + '(one slide per page, hidden slides left out), Excel/ODS/CSV (every visible sheet, as Excel '
+      + '(one slide per page, hidden slides left out), Excel/ODS/CSV/TSV (every visible sheet, as Excel '
       + 'saves a PDF), Markdown, e-mail and images. Text stays selectable, so pdf_get_text and '
       + 'pdf_search work on the result. Requires the WZ Reader desktop app.',
     inputSchema: {

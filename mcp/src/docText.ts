@@ -29,7 +29,7 @@ export { ooxmlText, pptxText, type SlideText }
 export type DocFormat = 'pdf' | 'hwp' | 'docx' | 'pptx' | 'sheet' | 'md' | 'eml' | 'image' | 'unknown'
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tif', 'tiff']
-const SHEET_EXTS = ['xlsx', 'xlsm', 'xls', 'ods', 'csv']
+const SHEET_EXTS = ['xlsx', 'xlsm', 'xls', 'ods', 'csv', 'tsv']
 const MARKDOWN_EXTS = ['md', 'markdown', 'mdown', 'mkd']
 
 /** Every extension doc_to_pdf / doc_get_text accept. */
@@ -205,7 +205,9 @@ export async function sheetText(bytes: Uint8Array, name: string, range: SheetRan
       ? (await readOds(bytes, { readStyles: true, maxRows: readRows })).sheets
       : (await readXlsx(bytes, { readStyles: true, maxRows: readRows })).sheets
   } else {
-    const rows = parseCsv(decodeText(bytes), { typeInference: false, maxRows: readRows })
+    // TSV: tabs, named rather than detected (its text may hold commas).
+    const delimiter = /\.tsv$/i.test(name) ? '\t' : undefined
+    const rows = parseCsv(decodeText(bytes), { typeInference: false, maxRows: readRows, delimiter })
     sheets = [{ name: name.replace(/\.[^.]+$/, '') || 'Sheet1', rows }]
   }
 

@@ -492,6 +492,13 @@ Things that had to be decided rather than drawn:
 - CSV is shown **as written** (`typeInference: false` — "007" stays "007"),
   decoded as UTF-8 with a strict decoder and CP949 as the fallback, which is
   what Korean Excel writes. Numeric-looking CSV text is right-aligned.
+  **TSV** is the same reader with `delimiter: '\t'`, chosen by the `.tsv`
+  name rather than detection (a tab file whose text holds commas could be read
+  as CSV); its format is still `'csv'`, so everything downstream treats them
+  alike. Both have no widths, so **each column is fitted to its content**
+  (`fitColumnWidths`): at least Excel's default column, at most 60 digits
+  (~480 px), only the four widest-looking values of a column measured — 394 ms
+  for 215,897 x 38 cells, where measuring each would dominate opening.
 - An encrypted workbook says so (`EncryptedWorkbookError`) rather than failing
   generically.
 

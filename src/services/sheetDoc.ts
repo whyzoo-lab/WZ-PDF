@@ -1,6 +1,6 @@
 // src/services/sheetDoc.ts
 //
-// Spreadsheets (.xlsx/.xlsm, legacy .xls, .ods, .csv) → an HTML table, via hucre.
+// Spreadsheets (.xlsx/.xlsm, legacy .xls, .ods, .csv/.tsv) → an HTML table, via hucre.
 //
 // hucre reads values, styles and merges; this module draws them the way Excel
 // does closely enough to read a sheet: column widths and row heights, fonts,
@@ -22,7 +22,8 @@ import type {
 } from 'hucre'
 import { decodeText, escapeHtml, toBase64 } from '../utils/text'
 import {
-  CELL_TEXT_INSET, colWidthPx, defaultColPx, fitNumber, maxDigitWidth, scientific, textMeasure,
+  CELL_TEXT_INSET, colWidthPx, defaultColPx, FIT_MAX_DIGITS, fitColumnWidths, fitNumber, maxDigitWidth,
+  scientific, textMeasure,
   type FontSpec, type Measure,
 } from './sheetFit'
 
@@ -72,7 +73,10 @@ export async function loadWorkbook(bytes: ArrayBuffer, name: string): Promise<Lo
   }
   // CSV: shown as written. Type inference would turn "007" into 7 and "1.50"
   // into 1.5 — a viewer should not reformat what is in the file.
-  const rows = parseCsv(decodeText(bytes), { typeInference: false })
+  // TSV is the same with tabs. Named, not left to detection: a tab-separated
+  // file whose text holds commas could be taken for a CSV.
+  const delimiter = /\.tsv$/i.test(name) ? '\t' : undefined
+  const rows = parseCsv(decodeText(bytes), { typeInference: false, delimiter })
   const width = rows.reduce((m, r) => Math.max(m, r.length), 0)
   for (const r of rows) while (r.length < width) r.push(null)
   const sheetName = name.replace(/\.[^.]+$/, '') || 'Sheet1'
@@ -304,7 +308,11 @@ const ROW_HEADER_PX = 44
 
 /** Draw a whole sheet as one table — for small sheets, print and tests. */
 export interface LayoutOptions {
-  /** Right-align numeric-looking text (CSV holds no types). */
+  /**
+   * Delimited text (CSV, TSV): right-align numeric-looking text, since the file
+   * holds no types, and size each column to its content, since it holds no
+   * widths either.
+   */
   csv?: boolean
   /**
    * Lay out for paper, as Excel saves a PDF: no column letters or row
@@ -387,7 +395,13 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
   const baseFont: FontSpec = { family: defaultFont, sizePt: defaultSize }
   const mdw = maxDigitWidth(baseFont, measure)
   const defaultPx = sheet.defaultColWidth ? colWidthPx(sheet.defaultColWidth, mdw) : defaultColPx(mdw)
+  // A CSV or TSV says nothing about widths, and every column at Excel's
+  // default cut dates, codes and names short: each is sized to its content.
+  const fitted = opts.csv
+    ? fitColumnWidths(rows, visibleCols, baseFont, measure, defaultPx, mdw * FIT_MAX_DIGITS)
+    : null
   const colWidth = (c: number) => {
+    if (fitted) return fitted[colPos.get(c) ?? -1] ?? defaultPx
     const w = columns[c]?.width
     return w !== undefined && w >= 0 ? colWidthPx(w, mdw) : defaultPx
   }

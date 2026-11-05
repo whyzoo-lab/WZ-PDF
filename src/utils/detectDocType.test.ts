@@ -122,9 +122,10 @@ describe('detectDocType — Office', () => {
   })
   it('opens CSV by its extension', () => {
     expect(detectDocType('a.csv', buf(0x61, 0x2C, 0x62))).toBe('sheet')
+    expect(detectDocType('a.tsv', buf(0x61, 0x09, 0x62))).toBe('sheet')
   })
   it('accepts Office files at the open dialog', () => {
-    for (const name of ['a.docx', 'a.pptx', 'a.xlsx', 'a.xls', 'a.ods', 'a.csv']) {
+    for (const name of ['a.docx', 'a.pptx', 'a.xlsx', 'a.xls', 'a.ods', 'a.csv', 'a.tsv']) {
       expect(classifyDocFile(new File([], name)).supported, name).toBe(true)
     }
     expect(classifyDocFile(new File([], 'a.doc')).supported).toBe(false)

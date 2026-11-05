@@ -137,6 +137,56 @@ export function shorterGeneral(value: number, shown: string): string[] {
   return out
 }
 
+/** Roughly how wide `text` is, in digits: Hangul, CJK and full-width count two. */
+function wideLength(text: string): number {
+  let n = 0
+  for (let i = 0; i < text.length; i++) n += text.charCodeAt(i) >= 0x1100 ? 2 : 1
+  return n
+}
+
+/** Widest a fitted column gets, in digits (~480 px in 맑은 고딕 11). */
+export const FIT_MAX_DIGITS = 60
+
+/** Strings per column measured for real; the rest are ranked by `wideLength`. */
+const FIT_CANDIDATES = 4
+
+/**
+ * Column widths for a sheet that carries none (CSV, TSV): each column as wide
+ * as its widest value plus the cell's padding, at least `minPx` and at most
+ * `maxPx` — a long description still runs over its neighbours or is clipped,
+ * as in Excel, rather than making one column a screen wide.
+ *
+ * Every value is looked at, but only the few longest of each column are
+ * measured: a 200,000-row export is millions of cells, and measuring each would
+ * be the slowest part of opening it.
+ */
+export function fitColumnWidths(
+  rows: readonly (readonly unknown[])[], columns: readonly number[],
+  font: FontSpec, measure: Measure, minPx: number, maxPx: number,
+): number[] {
+  return columns.map(c => {
+    const best: { text: string; wide: number }[] = []
+    for (const row of rows) {
+      const v = row[c]
+      if (v === null || v === undefined || v === '') continue
+      const text = typeof v === 'string' ? v : String(v)
+      // Cheap test first: even if every character were wide, could it place?
+      const floor = best.length < FIT_CANDIDATES ? -1 : best[best.length - 1].wide
+      if (text.length * 2 <= floor) continue
+      const wide = wideLength(text)
+      if (wide <= floor) continue
+      best.push({ text, wide })
+      best.sort((a, b) => b.wide - a.wide)
+      if (best.length > FIT_CANDIDATES) best.pop()
+    }
+    let widest = 0
+    for (const { text } of best) widest = Math.max(widest, measure(text, font))
+    // Both paddings, the border, and 2 px so the last glyph never touches it.
+    const px = Math.ceil(widest) + 6 + 1 + 2
+    return Math.min(maxPx, Math.max(minPx, px))
+  })
+}
+
 /**
  * What a cell shows for a number (or date) `shown`, given `room` px for it:
  * itself if it fits; for General, the first shorter form that fits; else

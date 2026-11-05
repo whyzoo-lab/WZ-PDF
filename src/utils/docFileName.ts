@@ -4,7 +4,7 @@ import { safeFilename } from './download'
 /** Every extension the app opens — what a saved or embedded copy may be called. */
 const OPENABLE_EXTS = [
   'pdf', 'hwp', 'hwpx', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp',
-  'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods', 'csv', 'eml', 'md', 'markdown', 'mdown', 'mkd',
+  'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods', 'csv', 'tsv', 'eml', 'md', 'markdown', 'mdown', 'mkd',
 ]
 
 /** The extension of `name`, lower-case, or '' when it has none the app opens. */

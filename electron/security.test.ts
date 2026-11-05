@@ -69,7 +69,7 @@ describe('Electron security helpers', () => {
 
   it('accepts every format the app can open, and nothing else', () => {
     for (const ext of ['pdf', 'hwp', 'hwpx', 'eml', 'md', 'markdown', 'png', 'jpg', 'webp',
-      'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods', 'csv']) {
+      'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods', 'csv', 'tsv']) {
       expect(isAllowedDocumentPath(`c:/docs/file.${ext}`), ext).toBe(true)
     }
     expect(isAllowedDocumentPath('c:/docs/file.exe')).toBe(false)
@@ -82,6 +82,7 @@ describe('Electron security helpers', () => {
     expect(isTextDocumentPath('a.md')).toBe(true)
     expect(isTextDocumentPath('a.eml')).toBe(true)
     expect(isTextDocumentPath('a.csv')).toBe(true)
+    expect(isTextDocumentPath('a.tsv')).toBe(true)
     // Binary formats must still prove themselves by signature.
     expect(isTextDocumentPath('a.pdf')).toBe(false)
     expect(isTextDocumentPath('a.png')).toBe(false)

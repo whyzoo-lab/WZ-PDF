@@ -52,7 +52,7 @@ export const CONVERTERS: readonly ConverterSpec[] = [
     flag: '--topdf',
     name: 'topdf',
     sourceExts: [
-      'hwp', 'hwpx', 'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods', 'csv',
+      'hwp', 'hwpx', 'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'ods', 'csv', 'tsv',
       'md', 'markdown', 'eml', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp',
     ],
     targetExt: 'pdf',

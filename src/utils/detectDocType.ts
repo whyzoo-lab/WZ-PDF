@@ -29,7 +29,7 @@ export const WORD_EXTS = ['docx']
 /** PowerPoint decks. Likewise XML only — no legacy .ppt. */
 export const SLIDE_EXTS = ['pptx']
 /** Spreadsheets hucre reads — legacy .xls included (values and merges only). */
-export const SHEET_EXTS = ['xlsx', 'xlsm', 'xls', 'ods', 'csv']
+export const SHEET_EXTS = ['xlsx', 'xlsm', 'xls', 'ods', 'csv', 'tsv']
 
 /**
  * The `accept` list for every file picker that opens a document. It lived in
@@ -39,7 +39,7 @@ export const SHEET_EXTS = ['xlsx', 'xlsm', 'xls', 'ods', 'csv']
  */
 export const DOCUMENT_ACCEPT =
   'application/pdf,.pdf,.hwp,.hwpx,.eml,message/rfc822,image/*,.bmp,.tif,.tiff,.md,.markdown,text/markdown,'
-  + '.docx,.pptx,.xlsx,.xlsm,.xls,.ods,.csv,text/csv,.zip,application/zip'
+  + '.docx,.pptx,.xlsx,.xlsm,.xls,.ods,.csv,text/csv,.tsv,text/tab-separated-values,.zip,application/zip'
 
 export function classifyDocFile(file: File): {
   isPdf: boolean; isHwp: boolean; isEml: boolean; isImage: boolean; isMarkdown: boolean
