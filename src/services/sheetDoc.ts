@@ -21,6 +21,10 @@ import type {
   BorderSide, Cell, CellStyle, CellValue, Color, FontStyle, Sheet, Workbook,
 } from 'hucre'
 import { decodeText, escapeHtml, toBase64 } from '../utils/text'
+import {
+  CELL_TEXT_INSET, colWidthPx, defaultColPx, fitNumber, maxDigitWidth, scientific, textMeasure,
+  type FontSpec, type Measure,
+} from './sheetFit'
 
 export type SheetFormat = 'xlsx' | 'xls' | 'ods' | 'csv'
 
@@ -246,7 +250,7 @@ export function formatGeneral(value: number): string {
   if (value === 0) return '0'
   const abs = Math.abs(value)
   if (abs >= 1e11 || abs < 1e-9) {
-    return value.toExponential(5).replace(/\.?0+e/, 'e').replace('e', 'E').replace(/E([+-])(\d)$/, 'E$10$2')
+    return scientific(value, 5)
   }
   return String(Number(value.toPrecision(10)))
 }
@@ -280,8 +284,6 @@ export function displayValue(value: CellValue | undefined, cell: Cell | undefine
 
 const NUMERIC_TEXT = /^[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)?(?:\.\d+)?%?$/
 
-/** Column width in Excel character units → pixels (Calibri 11, as Excel does). */
-const colPx = (width: number) => Math.max(0, Math.round(width * 7 + 5))
 /** Row height in points → pixels. */
 const rowPx = (points: number) => Math.max(0, Math.round(points * 96 / 72))
 
@@ -309,6 +311,8 @@ export interface LayoutOptions {
    * numbers, and no gridlines — only the borders the sheet itself draws.
    */
   print?: boolean
+  /** Text width in px; measured on a canvas in the page, estimated elsewhere. */
+  measure?: Measure
 }
 
 export function renderSheetHtml(sheet: Sheet, workbook: Workbook, opts: LayoutOptions = {}): RenderedSheet {
@@ -375,6 +379,24 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
   for (let r = 0; r <= endRow; r++) if (!sheet.rowDefs?.get(r)?.hidden) visibleRows.push(r)
 
   const colPos = new Map(visibleCols.map((c, i) => [c, i]))
+
+  // ── Column widths, in the default font's digit widths as Excel counts them ──
+  const measure = opts.measure ?? textMeasure()
+  const defaultFont = fontName(workbook.defaultFont?.name)
+  const defaultSize = workbook.defaultFont?.size ? Math.min(72, Math.max(6, workbook.defaultFont.size)) : undefined
+  const baseFont: FontSpec = { family: defaultFont, sizePt: defaultSize }
+  const mdw = maxDigitWidth(baseFont, measure)
+  const defaultPx = sheet.defaultColWidth ? colWidthPx(sheet.defaultColWidth, mdw) : defaultColPx(mdw)
+  const colWidth = (c: number) => {
+    const w = columns[c]?.width
+    return w !== undefined && w >= 0 ? colWidthPx(w, mdw) : defaultPx
+  }
+  const fontOf = (font: FontStyle | undefined): FontSpec => !font ? baseFont : {
+    family: fontName(font.name) ?? defaultFont,
+    sizePt: typeof font.size === 'number' && font.size > 0 && font.size < 410 ? font.size : defaultSize,
+    bold: !!font.bold,
+    italic: !!font.italic,
+  }
   const rowIndex = (r: number) => {
     const i = lowerBound(visibleRows, r)
     return visibleRows[i] === r ? i : -1
@@ -406,7 +428,6 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
   // Excel leaves off unless asked.
   const showGrid = opts.print ? sheet.pageSetup?.showGridLines === true : sheet.view?.showGridLines !== false
   const headings = !opts.print
-  const defaultWidth = sheet.defaultColWidth ?? 8.43
   const defaultHeight = sheet.defaultRowHeight ?? 15
   const valueAt = (r: number, c: number) => rows[r]?.[c] ?? null
   const hasValue = (r: number, c: number) => {
@@ -449,7 +470,7 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
       ;[r, c] = owner[0].split(',').map(Number)
     }
     const to = img.anchor.to
-    const width = img.width ?? (to ? spanPx(visibleCols, img.anchor.from.col, to.col, x => colPx(columns[x]?.width ?? defaultWidth)) : 0)
+    const width = img.width ?? (to ? spanPx(visibleCols, img.anchor.from.col, to.col, colWidth) : 0)
     const height = img.height ?? (to ? spanPx(visibleRows, img.anchor.from.row, to.row, x => rowPx(sheet.rowDefs?.get(x)?.height ?? defaultHeight)) : 0)
     if (!(width > 0 && height > 0)) continue
     const tag = `<img class="wz-sheet-img" alt="${escapeHtml(img.altText ?? '')}" src="data:${mime};base64,${toBase64(img.data)}" style="width:${Math.round(width)}px;height:${Math.round(height)}px">`
@@ -459,15 +480,14 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
 
   // ── The parts that do not depend on which rows are drawn ──
   const out: string[] = []
-  const defaultFont = fontName(workbook.defaultFont?.name)
-  const widths = visibleCols.map(c => colPx(columns[c]?.width ?? defaultWidth))
+  const widths = visibleCols.map(colWidth)
   const tableStyle = [
     // An explicit width, so the fixed layout uses the column widths and
     // nothing else: with an intrinsic width, text running over its neighbours
     // widened its own column to fit.
     `width:${(headings ? ROW_HEADER_PX : 0) + widths.reduce((a, b) => a + b, 0)}px`,
     defaultFont ? `font-family:"${defaultFont}",var(--wz-sheet-font)` : '',
-    workbook.defaultFont?.size ? `font-size:${Math.min(72, Math.max(6, workbook.defaultFont.size))}pt` : '',
+    defaultSize ? `font-size:${defaultSize}pt` : '',
   ].filter(Boolean).join(';')
   out.push(`<table class="wz-sheet-table" style="${tableStyle}"><colgroup>`)
   if (headings) out.push(`<col style="width:${ROW_HEADER_PX}px">`)
@@ -535,6 +555,16 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
 
       const align = style?.alignment
       const text = displayValue(value, cell, is1904)
+      // A number too wide for its cell is shortened or shown as '#', as Excel
+      // does, never cut to a different number; the full one is in the tooltip.
+      let shown = text
+      if ((typeof value === 'number' || value instanceof Date) && !cell?.richText?.length) {
+        let room = -CELL_TEXT_INSET
+        for (let i = ci; i < ci + (span?.cs ?? 1); i++) room += widths[i] ?? 0
+        const numFmt = style?.numFmt
+        const general = !numFmt || numFmt.toLowerCase() === 'general'
+        shown = fitNumber(value, text, general, room, fontOf(style?.font), measure)
+      }
       const numeric = typeof value === 'number' || value instanceof Date
         || (opts.csv && typeof value === 'string' && value !== '' && NUMERIC_TEXT.test(value.trim()))
       let h = align?.horizontal
@@ -562,7 +592,7 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
           })
           .join('')
       } else {
-        inner = escapeHtml(text)
+        inner = escapeHtml(shown)
       }
       const link = cell?.hyperlink?.target
       if (link && /^(?:https?:|mailto:)/i.test(link.trim())) {
@@ -571,7 +601,8 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
 
       if (pics) inner = pics.join('') + inner
       const spanAttrs = span ? `${rs > 1 ? ` rowspan="${rs}"` : ''}${span.cs > 1 ? ` colspan="${span.cs}"` : ''}` : ''
-      html.push(`<td data-c="${ci}"${spanAttrs}${cls ? ` class="${cls}"` : ''} style="${escapeHtml(css.join(';'))}">${inner}</td>`)
+      const title = shown !== text ? ` title="${escapeHtml(text)}"` : ''
+      html.push(`<td data-c="${ci}"${spanAttrs}${cls ? ` class="${cls}"` : ''}${title} style="${escapeHtml(css.join(';'))}">${inner}</td>`)
     })
     html.push('</tr>')
   }

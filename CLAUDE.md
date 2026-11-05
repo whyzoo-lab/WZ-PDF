@@ -452,7 +452,7 @@ the Unicode characters they stand for, in our wrapper (docx-preview untouched).
 **Spreadsheets are a generated table** (`services/sheetDoc.ts`), built as an
 escaped string — tens of thousands of cells through React would be the slow
 part. Values come from `Sheet.rows` (dense, A1-origin), style from `cells`.
-What it reproduces: column widths (`w*7+5` px) and row heights, fonts, fills,
+What it reproduces: column widths (see below) and row heights, fonts, fills,
 theme/indexed colours, number formats (`formatValue`, plus our own Excel
 "General" — JS prints 16 digits), merges over hidden rows/columns, hidden
 sheets, hyperlinks (http/mailto only), formulas by their cached result.
@@ -470,6 +470,19 @@ Things that had to be decided rather than drawn:
   dk2, lt2, but Excel numbers them lt1, dk1, lt2, dk2 — "Text 1" is
   `theme="1"`. hucre's `resolveThemeColor` indexes the list as written, so
   body text came out white on white (and "Background 1" fills black).
+- **Column widths are in the default font's digits** (`services/sheetFit.ts`).
+  A stored width counts the widest digit of the workbook's Normal font, measured
+  on a canvas: 7 px in Calibri 11, 8 px in 맑은 고딕 11 (Korean Excel's
+  default). The conversion is ECMA-376's (`colWidthPx`); an unsized column is
+  eight digits plus 5 px, rounded up to 8 px (64 / 72). A flat `w*7+5` made
+  Korean sheets' columns ~12 % narrower than Excel draws them, and numbers lost
+  their last digits.
+- **A number that does not fit is never cut** (`fitNumber`): General drops
+  decimals, then goes scientific (`1.23E+08`); any other format, or a date,
+  fills the cell with `#`, as Excel does. The full value is the cell's `title`,
+  and `textAt` (find) still holds it. "Fits" is the measured width against the
+  cell's width less 4 px — text wider than the content box runs into the right
+  padding, which `overflow: hidden` still shows.
 - **Column letters and row numbers are CSS** (`content: attr(data-l)`), so find,
   copy and read-aloud see only cells.
 - **Pictures** (a logo, the red company seal on a quote) are drawn as an
