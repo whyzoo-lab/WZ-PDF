@@ -13,6 +13,7 @@ import { sheetPdfJob } from '../../services/sheetPdf'
 import type { OfficeViewProps } from './officeView'
 import { t } from '../../i18n'
 import { onceAFrame } from '../../utils/onceAFrame'
+import LoadingIndicator from '../LoadingIndicator'
 
 interface SheetViewProps extends OfficeViewProps {
   bytes: ArrayBuffer
@@ -286,10 +287,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
   }
   if (!book) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-gray-400 text-sm select-none">
-        <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent" />
-        {t('url.loading')}
-      </div>
+      <LoadingIndicator label={t('url.loading')} />
     )
   }
 

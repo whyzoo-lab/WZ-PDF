@@ -466,6 +466,10 @@ Things that had to be decided rather than drawn:
 - **Text runs over empty neighbours** (`wz-spill`), as Excel draws a title in
   A1. That needs an **explicit table width** (sum of columns): with
   `width: max-content` the spilling text widened its own column instead.
+- **Theme colours 0–3 are swapped** (`themeSlot`). theme1.xml lists dk1, lt1,
+  dk2, lt2, but Excel numbers them lt1, dk1, lt2, dk2 — "Text 1" is
+  `theme="1"`. hucre's `resolveThemeColor` indexes the list as written, so
+  body text came out white on white (and "Background 1" fills black).
 - **Column letters and row numbers are CSS** (`content: attr(data-l)`), so find,
   copy and read-aloud see only cells.
 - **Pictures** (a logo, the red company seal on a quote) are drawn as an

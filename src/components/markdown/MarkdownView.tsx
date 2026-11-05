@@ -6,6 +6,7 @@ import { FLOW_PRINT_ATTR } from '../../services/htmlPrint'
 import { ReaderFullscreen } from '../reader/ReaderFullscreen'
 import type { AppMode } from '../../types/viewModes'
 import { t } from '../../i18n'
+import LoadingIndicator from '../LoadingIndicator'
 
 interface MarkdownViewProps {
   /** Raw Markdown source as loaded from the file. */
@@ -250,10 +251,7 @@ export function MarkdownView({
 
   if (!doc) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-gray-400 text-sm select-none">
-        <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-transparent" />
-        {t('url.loading')}
-      </div>
+      <LoadingIndicator label={t('url.loading')} />
     )
   }
 

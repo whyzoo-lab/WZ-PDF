@@ -71,6 +71,27 @@ describe('loadWorkbook + renderSheetHtml (xlsx)', () => {
   })
 })
 
+describe('theme colours', () => {
+  // theme1.xml order: dk1, lt1, dk2, lt2, accent1…
+  const themeColors = ['000000', 'FFFFFF', '44546A', 'E7E6E6', '4472C4', 'ED7D31', 'A5A5A5', 'FFC000', '5B9BD5', '70AD47', '0563C1', '954F72']
+
+  it('reads "Text 1" as dark and "Background 1" as light, as Excel numbers them', () => {
+    const sheet: Sheet = {
+      name: 'S',
+      rows: [['text', 'filled', 'accent']],
+      cells: new Map([
+        ['0,0', { value: 'text', type: 'string', style: { font: { color: { theme: 1 } } } }],
+        ['0,1', { value: 'filled', type: 'string', style: { fill: { type: 'pattern', pattern: 'solid', fgColor: { theme: 0 } } } }],
+        ['0,2', { value: 'accent', type: 'string', style: { font: { color: { theme: 4 } } } }],
+      ]),
+    }
+    const [[text, filled, accent]] = bodyCells(parse(renderSheetHtml(sheet, { sheets: [sheet], themeColors } as Workbook).html))
+    expect(text.getAttribute('style')).toContain('color:#000000')
+    expect(filled.getAttribute('style')).toContain('background:#ffffff')
+    expect(accent.getAttribute('style')).toContain('color:#4472c4')
+  })
+})
+
 describe('what a file controls never becomes CSS of its own', () => {
   it('strips a font name and colour that try to break out of the style attribute', () => {
     const sheet: Sheet = {

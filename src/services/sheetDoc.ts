@@ -142,6 +142,15 @@ const INDEXED = (
 
 const HEX6 = /^[0-9A-Fa-f]{6}$/
 
+/**
+ * A cell's `theme` number as a slot of the theme's colour list. The list is in
+ * the order theme1.xml writes it — dk1, lt1, dk2, lt2, accents — but Excel
+ * numbers the first four as lt1, dk1, lt2, dk2: "Text 1" is `theme="1"` and
+ * means dk1. hucre indexes the list as written, so black body text came out
+ * white on a white sheet, and "Background 1" fills black.
+ */
+export const themeSlot = (index: number) => (index >= 0 && index < 4 ? index ^ 1 : index)
+
 function cssColor(color: Color | undefined, theme: string[] | undefined): string | null {
   if (!color) return null
   let hex: string | null = null
@@ -150,7 +159,7 @@ function cssColor(color: Color | undefined, theme: string[] | undefined): string
     if (HEX6.test(rgb)) hex = rgb
   } else if (color.theme !== undefined && theme?.length) {
     try {
-      const resolved = resolveThemeColor(theme, color.theme, color.tint).replace(/^#/, '')
+      const resolved = resolveThemeColor(theme, themeSlot(color.theme), color.tint).replace(/^#/, '')
       if (HEX6.test(resolved)) hex = resolved
     } catch { /* unknown theme slot */ }
   } else if (color.indexed !== undefined) {

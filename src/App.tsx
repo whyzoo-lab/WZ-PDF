@@ -74,6 +74,7 @@ import { isComment, isTextMarkup, type CommentAnnotation } from './types/annotat
 import { StartScreen } from './components/StartScreen'
 import { errorMessage } from './utils/errors'
 import { loadPrivateMode, pickPrivateDocument, type PrivateMode } from './services/privateMode'
+import LoadingIndicator from './components/LoadingIndicator'
 
 // Modals are loaded on demand to shrink the initial bundle.
 // They only render when the user actively summons them, so the round-trip
@@ -2348,16 +2349,12 @@ export default function App() {
             </div>
           )}
           {isLoading && (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              {t('doc.loading')}
-            </div>
+            <LoadingIndicator label={t('doc.loading')} />
           )}
           {/* Drag/Open prompt — hidden in embed mode (can't drop into an iframe;
               the PDF auto-loads from ?url). */}
           {nothingOpen && openingAtLaunch && (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              {t('doc.loading')}
-            </div>
+            <LoadingIndicator label={t('doc.loading')} />
           )}
           {nothingOpen && !openingAtLaunch && (
             <StartScreen onOpenFile={() => fileInputRef.current?.click()} onOpenRecent={openPath} update={update} />
@@ -2372,10 +2369,7 @@ export default function App() {
                 {locked ? privateMessage : urlError}
               </div>
             ) : (
-              <div className="flex h-full items-center justify-center gap-2 text-gray-500 text-sm select-none">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
-                {t('url.loading')}
-              </div>
+              <LoadingIndicator label={t('url.loading')} />
             )
           )}
           {markdown !== null && (
@@ -2438,10 +2432,7 @@ export default function App() {
           {pdfDoc && (
             <ErrorBoundary>
               <Suspense fallback={
-                <div className="flex h-full items-center justify-center gap-2 text-gray-500 text-sm select-none">
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
-                  {t('url.loading')}
-                </div>
+                <LoadingIndicator label={t('url.loading')} />
               }>
               <CommentContext.Provider value={commentActions}>
               <FormContext.Provider value={formActions}>
