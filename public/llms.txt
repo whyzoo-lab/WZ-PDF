@@ -12,7 +12,7 @@ be forced with `?lang=en` or `?lang=ko`).
 ## Key features
 
 - Formats: PDF, HWP/HWPX (Korean word processor, with native selectable text),
-  Word (.docx), PowerPoint (.pptx), spreadsheets (.xlsx .xlsm .xls .ods .csv .tsv,
+  Word (.docx), PowerPoint (.pptx), spreadsheets (.xlsx .xlsm .xls .ods .csv .tsv .psv,
   every row of very large sheets), e-mail (.eml with attachments and Korean
   encodings), Markdown (rendered, and editable), images.
 - Save as PDF from any of these formats, with selectable text. HWP → PDF keeps

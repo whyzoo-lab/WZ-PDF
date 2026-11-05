@@ -36,7 +36,7 @@ describe('column widths', () => {
   })
 })
 
-describe('columns fitted to their content (CSV, TSV)', () => {
+describe('columns fitted to their content (CSV, TSV, PSV)', () => {
   const wide: Measure = (text) => [...text].reduce((w, ch) => w + (ch.charCodeAt(0) >= 0x1100 ? 14 : 7), 0)
 
   it('is as wide as the widest value plus padding, within limits', () => {

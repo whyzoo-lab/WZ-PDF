@@ -280,7 +280,7 @@ const BINARY_DOCUMENT_EXTENSIONS = [
  * renamed binary being handed back as a document, which can only be enforced
  * for formats that have one.
  */
-const TEXT_DOCUMENT_EXTENSIONS = ['eml', 'md', 'markdown', 'mdown', 'mkd', 'csv', 'tsv'] as const
+const TEXT_DOCUMENT_EXTENSIONS = ['eml', 'md', 'markdown', 'mdown', 'mkd', 'csv', 'tsv', 'psv'] as const
 
 export const DOCUMENT_EXTENSIONS: readonly string[] = [
   ...BINARY_DOCUMENT_EXTENSIONS, ...TEXT_DOCUMENT_EXTENSIONS,

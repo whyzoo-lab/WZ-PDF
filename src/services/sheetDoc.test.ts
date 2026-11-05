@@ -224,6 +224,14 @@ describe('csv', () => {
     expect(workbook.sheets[0].rows).toEqual([['이름', '메모'], ['홍길동', '1,000원, 현금']])
   })
 
+  it('reads PSV by its pipes, quoted pipes included', async () => {
+    const text = '이름|메모\n홍길동|"1,000원|현금"\n'
+    const { workbook, format } = await loadWorkbook(new TextEncoder().encode(text).buffer, '명단.psv')
+    expect(format).toBe('csv')
+    expect(workbook.sheets[0].name).toBe('명단')
+    expect(workbook.sheets[0].rows).toEqual([['이름', '메모'], ['홍길동', '1,000원|현금']])
+  })
+
   it('sizes each column to its content', async () => {
     const text = 'id,name\n1,"A much longer name than a default column holds"\n'
     const { workbook } = await loadWorkbook(new TextEncoder().encode(text).buffer, 'a.csv')

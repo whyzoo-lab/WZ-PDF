@@ -197,6 +197,7 @@
     { "ext": "xls",      "name": "WZPDF.xls",     "description": "Excel 97-2003 Workbook",     "role": "Viewer", "icon": "build/icon.ico" },
     { "ext": "csv",      "name": "WZPDF.csv",     "description": "CSV File",                   "role": "Viewer", "icon": "build/icon.ico" },
     { "ext": "tsv",      "name": "WZPDF.tsv",     "description": "Tab-Separated Values File",  "role": "Viewer", "icon": "build/icon.ico" },
+    { "ext": "psv",      "name": "WZPDF.psv",     "description": "Pipe-Separated Values File", "role": "Viewer", "icon": "build/icon.ico" },
     // Images open as one-page documents, so they belong here too. If owning
     // picture files ever feels intrusive, these six lines are the whole change.
     { "ext": "png",      "name": "WZPDF.png",     "description": "PNG Image",                  "role": "Viewer", "icon": "build/icon.ico" },

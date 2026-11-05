@@ -33,9 +33,9 @@ npm run build
 
 | 도구 | 설명 |
 |---|---|
-| `doc_get_text` | 문서의 글을 읽습니다. PDF·HWP(쪽 단위), Word(표는 칸을 탭으로 구분), PowerPoint(슬라이드별, 발표자 노트 포함), Excel·ODS·CSV·TSV(시트별, 칸은 탭, `startRow`/`maxRows`로 나눠 읽기), Markdown, 메일(제목·보낸 사람·첨부 목록과 본문), 그림(PNG·JPEG·TIFF·그림 ZIP). 그림 속 글자는 OCR로 읽습니다 — 아래 "OCR" 참고 |
+| `doc_get_text` | 문서의 글을 읽습니다. PDF·HWP(쪽 단위), Word(표는 칸을 탭으로 구분), PowerPoint(슬라이드별, 발표자 노트 포함), Excel·ODS·CSV·TSV·PSV(시트별, 칸은 탭, `startRow`/`maxRows`로 나눠 읽기), Markdown, 메일(제목·보낸 사람·첨부 목록과 본문), 그림(PNG·JPEG·TIFF·그림 ZIP). 그림 속 글자는 OCR로 읽습니다 — 아래 "OCR" 참고 |
 | `doc_info` | 형식과 쪽·슬라이드(숨긴 슬라이드 포함)·시트(행 수), 메일의 제목·보낸 사람·첨부. PDF는 글자층이 없는(스캔한) 쪽도 알려 줍니다 |
-| `doc_to_pdf` | 앱에서 "PDF로 저장"한 것과 같은 PDF로 변환 (HWP, Word, PowerPoint, Excel·CSV·TSV, Markdown, 메일, 이미지). 글자를 선택·검색할 수 있는 PDF |
+| `doc_to_pdf` | 앱에서 "PDF로 저장"한 것과 같은 PDF로 변환 (HWP, Word, PowerPoint, Excel·CSV·TSV·PSV, Markdown, 메일, 이미지). 글자를 선택·검색할 수 있는 PDF |
 | `hwp_to_pdf` | 한글 문서 → PDF (예전 이름; `doc_to_pdf`와 같은 결과) |
 
 `doc_to_pdf`, HWP에 대한 `doc_get_text`, 그리고 OCR은 WZ Reader 앱이 필요합니다(아래 참고). 나머지는 서버 혼자 처리합니다.

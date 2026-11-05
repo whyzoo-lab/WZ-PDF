@@ -494,8 +494,8 @@ Things that had to be decided rather than drawn:
   what Korean Excel writes. Numeric-looking CSV text is right-aligned.
   **TSV** is the same reader with `delimiter: '\t'`, chosen by the `.tsv`
   name rather than detection (a tab file whose text holds commas could be read
-  as CSV); its format is still `'csv'`, so everything downstream treats them
-  alike. Both have no widths, so **each column is fitted to its content**
+  as CSV); **PSV** likewise with `'|'`, from the `.psv` name. The format is
+  still `'csv'`, so everything downstream treats them alike. None has widths, so **each column is fitted to its content**
   (`fitColumnWidths`): at least Excel's default column, at most 60 digits
   (~480 px), only the four widest-looking values of a column measured — 394 ms
   for 215,897 x 38 cells, where measuring each would dominate opening.

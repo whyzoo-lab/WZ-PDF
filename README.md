@@ -51,7 +51,7 @@ and on-device speech. Ships with a
 
 - 🔒 **Private by design** — everything runs in the browser/desktop. Nothing is uploaded.
 - 📄 **PDF _and_ HWP/HWPX** — open Korean word-processor files exactly like a PDF, with **native selectable text** (no OCR needed).
-- 📊 **Word, PowerPoint and Excel without Office** — `.docx`, `.pptx`, `.xlsx` / `.xlsm` / `.xls` / `.ods` / `.csv` / `.tsv` open with their layout, tables, charts and pictures, with zoom, single / two-page / all-pages layouts, a page list, find, print and fullscreen. **Every row** of a 200,000-row sheet scrolls — nothing is cut short with "open it in Excel". Save any of them **as a PDF with selectable text**.
+- 📊 **Word, PowerPoint and Excel without Office** — `.docx`, `.pptx`, `.xlsx` / `.xlsm` / `.xls` / `.ods` / `.csv` / `.tsv` / `.psv` open with their layout, tables, charts and pictures, with zoom, single / two-page / all-pages layouts, a page list, find, print and fullscreen. **Every row** of a 200,000-row sheet scrolls — nothing is cut short with "open it in Excel". Save any of them **as a PDF with selectable text**.
 - 🎤 **Speaker notes, on screen and read aloud** — a deck's presenter script shows under each slide; in the slideshow it runs along the bottom as **captions** (`C` or the corner button), and read-aloud reads the script instead of the slide, **turning the slides as it goes**. `Shift+F5` starts the show from the slide in view.
 - 🎬 **A deck with notes becomes a narrated video** — one MP4: the slides, the script read aloud in a natural voice, and the script as a subtitle track that any player can switch on and off.
 - 🔊 **Reads documents aloud, on your machine** — press the speaker and the document is read to you, Korean included, with ten voices and a speed control; the sentence being read is highlighted, and in fullscreen the pages turn with it. It runs entirely offline once set up: nothing about what you are reading leaves the computer. (Desktop app; the voice model is a one-time 383 MB download you are asked about first.)
@@ -72,7 +72,7 @@ and on-device speech. Ships with a
 - 🔎 **On-device OCR** — recognize text in scanned pages and images, **fully offline** (Korean + English), and keep it: the recognized text is saved into the PDF, so it becomes searchable everywhere. Plus **Ctrl-drag any region → OCR → clipboard**.
 - 🧩 **Embed anywhere** — drop the viewer into any website with a single `<iframe>` (see below), or run it in **private mode**: only the documents your server designates, view only.
 - ⚡ **Starts fast, stays sharp** — the desktop app boots without waiting on code it isn't using yet, opens straight into a double-clicked document, and rasterises pages at the size they're shown so small text stays crisp.
-- 🖥️ **Web + Windows desktop** — same app. The desktop build opens `.pdf`, `.hwp`, `.hwpx`, `.docx`, `.pptx`, `.xlsx`, `.xls`, `.csv`, `.tsv`, `.eml`, `.md` and images by double-click, lists your recent documents, and **updates itself**.
+- 🖥️ **Web + Windows desktop** — same app. The desktop build opens `.pdf`, `.hwp`, `.hwpx`, `.docx`, `.pptx`, `.xlsx`, `.xls`, `.csv`, `.tsv`, `.psv`, `.eml`, `.md` and images by double-click, lists your recent documents, and **updates itself**.
 
 ## Download (Windows)
 
@@ -157,7 +157,7 @@ is copied to that name. A live example runs on the
   captions in the slideshow, hidden slides skipped.
 - **Narrated video** — a deck with notes saves as one MP4 (H.264 + AAC) with
   the script as a switchable subtitle track. Desktop app.
-- **Spreadsheets** (`.xlsx` `.xlsm` `.xls` `.ods` `.csv` `.tsv`) — column widths,
+- **Spreadsheets** (`.xlsx` `.xlsm` `.xls` `.ods` `.csv` `.tsv` `.psv`) — column widths,
   fonts, fills, borders, number formats, merged cells, hidden sheets, pictures
   (a logo, a company seal), every row of a very large sheet. Korean CSV in
   CP949 opens correctly.

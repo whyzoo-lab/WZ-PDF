@@ -151,7 +151,7 @@ export const FIT_MAX_DIGITS = 60
 const FIT_CANDIDATES = 4
 
 /**
- * Column widths for a sheet that carries none (CSV, TSV): each column as wide
+ * Column widths for a sheet that carries none (CSV, TSV, PSV): each column as wide
  * as its widest value plus the cell's padding, at least `minPx` and at most
  * `maxPx` — a long description still runs over its neighbours or is clipped,
  * as in Excel, rather than making one column a screen wide.
