@@ -14,26 +14,6 @@
   .wz-update-toast { animation: none; }
 }
 
-/* LoadingIndicator's bar: a segment that keeps crossing it, since how long a
-   document takes to read is not known in advance. */
-.wz-loading-bar { position: relative; }
-.wz-loading-bar::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 40%;
-  border-radius: inherit;
-  background: #3b82f6;
-  animation: wz-loading-slide 1.2s ease-in-out infinite;
-}
-@keyframes wz-loading-slide {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(250%); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .wz-loading-bar::after { animation: none; transform: none; opacity: 0.5; }
-}
-
 /* ── App shell sizing ────────────────────────────────────────────────────── */
 /* The whole app is a fixed-viewport SPA — inner panels (PdfViewer, PagePanel,
    modals) manage their own scroll. The outermost chrome must NEVER grow a

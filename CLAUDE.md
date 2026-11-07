@@ -226,6 +226,24 @@ same shortcuts as a PDF. What is new since 1.25 is that the document is a
   decides reuse on `requestedScale`.
 - **TIFF** via `utif2` (pinned, MIT; pako comes with JSZip already), lazy chunk.
   A multi-page TIFF is one entry per page; CCITT fax pages work.
+  **Nothing reads a TIFF whole to count or size it** (`services/tiffDir.ts`):
+  the directory chain is followed with `ImageSource.range` reads, two per
+  single-page file. Until 1.29.5 `entriesFor` read every TIFF in the folder
+  whole for its page count, and `infoOf` did too whenever the first directory
+  was past the first 256 KB — orthophotos put it at the very end. A folder of
+  27 aerial images (339 MB each, 9684 x 11652 uncompressed RGB, one row per
+  strip) read 9 GB and took **52 s** to the first picture (installed 1.29.4,
+  over CDP); now ~3 s, most of it reading the opened file.
+  **Pages are decoded at the size drawn** (`services/tiffImage.ts`).
+  Uncompressed 8-bit interleaved strips are sampled straight from the file
+  (up to 4 x 4 samples a pixel: a box filter to 4x, a supersample beyond;
+  mean difference 1.2 of 255 from a full box filter on the orthophoto), and a
+  rendering of ≤ 640 rows that needs under a quarter of the bytes reads only
+  its rows (clustered, one range a row) — a thumbnail of the orthophoto reads
+  37 MB of 339. Anything else goes through UTIF, then the same sampler, never
+  a canvas the size of the picture (that was 451 MB of RGBA plus a 451 MB
+  canvas). The last whole file is held (512 MB budget), so a zoom does not read
+  it again; moving to the next 339 MB photo is ~1.5 s, the read itself.
 - **Transparency**: the raster stays transparent. On screen a checkerboard sits
   behind pictures that may have alpha (anything but JPEG); thumbnails, print and
   OCR composite onto white (JPEG and the recognizer read empty pixels as black);
@@ -515,6 +533,23 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   screen, with spacer rows standing in for the rest, and re-draws when scrolling
   crosses a block. Position is measured from the page (`thead` height against its
   declared 22 px gives the scale), so it holds at any zoom and in fullscreen.
+- **Past ~400,000 rows the spacers are shrunk** (`services/sheetWindow.ts`).
+  Chromium caps an element's height at 33,554,432 px, so a 2,100,000-row CSV
+  (42 M px at 20 px a row) stopped at row ~1,677,000 and the rest could not be
+  scrolled to — and CSV is what a sheet is saved as exactly when it is past
+  Excel's 1,048,576 rows. Over `MAX_SHEET_PX` (8 M layout px, under the cap
+  at 3x zoom) both spacers are divided by k = total / 8 M while drawn rows
+  keep their real height, so a wheel notch still moves five rows. A row's
+  place then depends on which block is drawn, so when scrolling through rows
+  moves the block, `SheetView` moves the view by the same amount before paint
+  (`pageY` of the row that was at the top); a jump into a spacer (scrollbar
+  drag, Home/End) lands on its share of the sheet and is only moved if the new
+  block would not cover the view — writing `scrollTop` cuts a smooth scroll
+  short. At the very bottom the view stays at the bottom. Checked in the
+  preview on 2,100,000 rows: end shows row 2,100,000 (also at 300 %), the
+  middle row ~1,050,000, 100 px steps move exactly 5 rows across block
+  changes up and down, find reveals row 2,099,990; a 100,000-row sheet is
+  unchanged (k = 1).
 - A merge cut by the top of a window is **carried**: its anchor is re-emitted
   in the first drawn row with the rows that remain (`covered` maps each
   covered cell to its anchor).
@@ -1352,6 +1387,33 @@ start screen if it fails, and gives up after `OPENING_AT_LAUNCH_DEADLINE_MS`.
 `nothingOpen` also requires `!file`, which closes the one render between
 picking a file and its loader reporting in. A viewer exe's embedded PDF still
 takes the old path — it is only known after reading the exe's tail.
+
+**The "opening…" animation** (`LoadingIndicator` → `components/MobiusLoader.tsx`)
+is a **round glossy tube in the shape of ∞** (the endless loop of a Möbius
+band) at the centre, an aura of flowing light round it, and a ring of light
+threaded on the tube travelling along it, asked for in 1.29.5 after a
+reference of a glowing particle orb. It took five rounds with the reader;
+what each taught: a textbook Möbius strip read as two loops (lines only) and
+as a tilted dish (solid); an ∞ ribbon with the half twist at the crossing read
+as Möbius, and a flattened tube made it solid — but the reader then found the
+twist unnecessary (the endless ∞ tube says it), the squarish loops of a
+lemniscate of Gerono and the flat tube's sharp sides too angular ("looks like
+a company logo"), and white lines along the sides too much. Now: lemniscate
+of Bernoulli (rounder loops), a circular cross-section, no twist, no edge
+lines; then "plumper and cuter": radius 0.23 (loops 1.6x Bernoulli's height
+so the holes stay open), a broad soft highlight, a 4 % breathing swell. The
+two passes at the crossing are held apart in depth (DEPTH > R, or they meet)
+so the tube goes over and under itself; 24 quads round it, since a plump tube
+shows its facets below that. Plain canvas 2D with its own perspective projection
+(a 3D library would sit on the startup path for a spinner): far side culled,
+the rest painted back to front with the ring's segments, so the ring passes
+behind the tube. Each quad is **one opaque fill** with highlight and rim light
+mixed in — as separate additive fills, neighbouring quads' antialiased
+borders took the light twice and the tube showed a grid. ~3-4 ms a frame at
+2x, drawn at 30 fps. On the light theme a dark lens is drawn behind it,
+since added light vanishes into a pale page. One still frame for
+`prefers-reduced-motion`. It runs on the main thread, so it pauses while a
+decode holds that thread.
 
 The logo and tagline belong to the start screen only; every open document
 (PDF, Markdown, mail) shows its own name instead, and the edit switch is hidden
