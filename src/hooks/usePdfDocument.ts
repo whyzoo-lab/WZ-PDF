@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { IMAGE_SET_MIME, type ViewerDoc, type DocKind } from '../types/viewerDoc'
 import type { ParsedEmail } from '../services/emlParser'
 import { detectDocType } from '../utils/detectDocType'
-import { decodeText } from '../utils/text'
+import { decodeTextOffThread } from '../services/textDecode'
 import { markOpen, resetOpenMarks } from '../services/openPerf'
 import {
   type DocumentFile, EAGER_DOCUMENT_LIMIT_LABEL, RANGE_CHUNK_BYTES, RANGE_INITIAL_BYTES,
@@ -287,7 +287,7 @@ export function usePdfDocument(file: DocumentFile | null, knownPassword?: (file:
       }
       if (type === 'md') {
         // Markdown is text, so it needs decoding rather than parsing.
-        return { doc: null, kind: 'md', email: null, markdown: decodeText(buffer) }
+        return { doc: null, kind: 'md', email: null, markdown: await decodeTextOffThread(buffer) }
       }
       if (type === 'docx' || type === 'pptx' || type === 'sheet') {
         return { doc: null, kind: type, email: null, markdown: null, office: { kind: type, name: file.name, bytes: buffer } }

@@ -20,7 +20,8 @@ import { formatValue, EncryptedFileError } from 'hucre'
 import type {
   BorderSide, Cell, CellStyle, CellValue, Color, FontStyle, Sheet, Workbook,
 } from 'hucre'
-import { decodeText, escapeHtml, toBase64 } from '../utils/text'
+import { escapeHtml, toBase64 } from '../utils/text'
+import { decodeTextOffThread } from './textDecode'
 import {
   CELL_TEXT_INSET, colWidthPx, defaultColPx, FIT_MAX_DIGITS, fitColumnWidths, fitNumber, maxDigitWidth,
   scientific, textMeasure,
@@ -77,7 +78,7 @@ export async function loadWorkbook(bytes: ArrayBuffer, name: string): Promise<Lo
   // Named, not left to detection: a tab- or pipe-separated file whose text
   // holds commas could be taken for a CSV.
   const delimiter = /\.tsv$/i.test(name) ? '\t' : /\.psv$/i.test(name) ? '|' : undefined
-  const rows = parseCsv(decodeText(bytes), { typeInference: false, delimiter })
+  const rows = parseCsv(await decodeTextOffThread(bytes), { typeInference: false, delimiter })
   const width = rows.reduce((m, r) => Math.max(m, r.length), 0)
   for (const r of rows) while (r.length < width) r.push(null)
   const sheetName = name.replace(/\.[^.]+$/, '') || 'Sheet1'
