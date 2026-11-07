@@ -428,7 +428,8 @@ merges, no styles), which is why `.xls` is supported and `.doc`/`.ppt` are not.
 visual regression suite it runs against PowerPoint's own output; it bundles
 ECharts/zrender for charts and MPL-2.0 `mtx-decompressor` (see
 THIRD_PARTY_NOTICES). Measured chunks: docx-preview 75 KB + DocxView 5 KB,
-SheetView 183 KB (all of hucre's readers), PptxView 1.11 MB (342 KB gzip,
+SheetView 10 KB plus its worker 190 KB (all of hucre's readers, which only
+the worker loads), PptxView 1.11 MB (342 KB gzip,
 ~610 KB of it ECharts).
 
 **Detection.** Office files are zips (`.xls` is OLE2, like `.hwp`).
@@ -531,8 +532,15 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   prefix sums of declared heights) plus `rows(from, to)`. Over
   `WHOLE_SHEET_CELLS` (60k) `SheetView` draws 100-row blocks around what is on
   screen, with spacer rows standing in for the rest, and re-draws when scrolling
-  crosses a block. Position is measured from the page (`thead` height against its
-  declared 22 px gives the scale), so it holds at any zoom and in fullscreen.
+  crosses a block. Position is measured from the page, so it holds at any zoom
+  and in fullscreen: the scale is the tallest spacer's rendered height against
+  its declared one (`sheetScale`). It used to be the `thead` against its
+  declared 22 px — which renders 22.4, and that 1.8 % put a view 8 M px down
+  143,000 px short: on the 1.3 M-row PSV the End key rested in an empty
+  spacer. The header row is used only when no spacer is ≥ 2,000 px.
+  Every drawn block is followed by one more `update()` (a rAF), since drawing
+  moves the spacers under a view whose `scrollTop` stays put and no scroll
+  event says so.
 - **Past ~400,000 rows the spacers are shrunk** (`services/sheetWindow.ts`).
   Chromium caps an element's height at 33,554,432 px, so a 2,100,000-row CSV
   (42 M px at 20 px a row) stopped at row ~1,677,000 and the rest could not be
@@ -574,7 +582,8 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   and 15 s in the app — with ~2 GB of workbook on the heap each major GC costs
   0.6-1.6 s, and hundreds of MB of strings set them off; and `cellAt` built a
   `"r,c"` key for every cell even on a CSV, whose cell map is empty — 10 s of
-  the build. Now 3.7 s in the app, no task over ~110 ms.
+  the build. Now 3.7 s in the app, no task over ~110 ms. Since the workbook
+  moved into a worker (below) the index is built and searched there.
 - **Opening it, measured in the app** (221 MB CP949 PSV, dev build): CP949
   decode 2.6 s (Node does it in 0.34 s), hucre's parse ~2 s, layout 0.66 s
   (`fitColumnWidths` walks rows once for all columns: 1.2 s → 0.4 s). Parse
@@ -585,8 +594,30 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   comes back; profiled on the same file, `decodeText` on the main thread
   4.0 s → ~0.2 s (the two copies). The wall-clock time to the sheet is the
   same; the window can redraw meanwhile. Where no worker can start it decodes
-  in place. Parsing stays on the page: hucre's rows are 31 M strings, and
-  cloning them back from a worker would cost more than parsing.
+  in place.
+- **The workbook lives in a worker** (`services/sheetBook.ts` the work,
+  `sheetWorker.ts` the worker, `sheetHost.ts` the page's side). Parsing,
+  layout, find's index and search, and the PDF's print layout all run there;
+  the page asks for small things — a sheet's metrics (`SheetMetrics`: the
+  `tableOpen`, `rowTop`, first window's markup), the markup of a block of rows,
+  matches as an `Int32Array`, PDF pieces as markup. Handing the parsed workbook
+  back instead was measured and is worse than parsing on the page: v8
+  serialize + deserialize (what postMessage does) took 2.7 + 3.4 s for the
+  PSV's rows against ~2 s of parsing, and 18 + 64 s for a styled 56 MB,
+  43,935-row .xlsx. On the PSV the main thread's work while opening went from
+  ~8 s (7.85 s worst stall) to ~0.5 s, and its heap no longer holds the
+  ~2 GB workbook, so its GC pauses are gone too. On the styled 56 MB .xlsx
+  (dev build, ~66 s to the sheet either way) the worst stall went from
+  63.5 s to 5 s — and those 5 s are the page drawing and laying out its first
+  window, 300 rows x ~500 columns (150 k cells; `innerHTML` 1.5 s, layout
+  ~4 s), which windowing columns as well would cut. Rows now arrive
+  asynchronously: `win` is the block wanted, `drawn` the last that arrived
+  (the first window comes with the metrics), one request in flight. With
+  shrunk spacers only the block still wanted is drawn, since a stale one moves
+  the rows under the anchor; with true-size spacers any block is drawn. An
+  anchor waits for its own block. Where no worker can start (tests) a
+  `SheetBook` answers in the page. `cliBridge` (`topdf`) still reads in the
+  page — it has no window to keep responsive.
 - Still windowed, and known: print and read-aloud cover the rows drawn.
 
 **PowerPoint** (`services/pptxDoc.ts`, `PptxView`). Each slide is rendered
@@ -876,7 +907,7 @@ The renderer bundle is split so the initial chunk only contains code needed for 
 | `services/pdfPageService` | Page CRUD ops | Shares pdf-lib with the PDF exporter |
 | `services/hwpEngine` | Opening a HWP/HWPX file | @rhwp/core WASM; not loaded for PDF-only use |
 | `components/office/DocxView` | Opening a .docx | docx-preview (~75 KB) |
-| `components/office/SheetView` | Opening a spreadsheet | hucre readers (~180 KB) |
+| `components/office/SheetView` | Opening a spreadsheet | 10 KB; hucre's readers (~190 KB) are in `sheetWorker` |
 | `components/office/PptxView` | Opening a .pptx | pptx-renderer + ECharts (~1.1 MB) |
 | `services/slideVideo` | Save a deck as video | mediabunny (MP4 muxing over WebCodecs) |
 | `components/modals/SignaturePad` | Editor → Signature | Canvas drawing UI |
