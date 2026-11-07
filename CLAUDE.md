@@ -558,9 +558,30 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   middle row ~1,050,000, 100 px steps move exactly 5 rows across block
   changes up and down, find reveals row 2,099,990; a 100,000-row sheet is
   unchanged (k = 1).
-- A merge cut by the top of a window is **carried**: its anchor is re-emitted
-  in the first drawn row with the rows that remain (`covered` maps each
-  covered cell to its anchor).
+- A merge cut by the top or left of a window is **carried**: its anchor is
+  re-emitted in the top-left cell drawn of it, with the rows and columns that
+  remain, and a span is cut at the window's bottom and right edges, never
+  running into a spacer (`covered` maps each covered cell to its anchor).
+- **Columns are windowed too**, once a windowed sheet has more than
+  three `COL_BLOCK`s (8) of them: `head(cFrom, cTo)` and `rows(..., cFrom,
+  cTo)` draw the columns in sight plus a block either side, with one spacer
+  column each side as wide as the columns it stands for, so the table keeps
+  its width and the scrollbar is the sheet's. `colLeft` (declared lefts) says
+  which columns are in view, measured past the sticky row numbers. **A row's
+  height must not depend on which columns are drawn**: rows grow to fit
+  wrapped text, and row 2 of the 273-column survey was 130 px over columns
+  A–AF but 286 px over CS–FD, so scrolling sideways moved every row below
+  it. Cells beside the window that would make their row taller (wrapped and
+  wider than their text box, or a font taller than the row) are drawn into
+  the spacer as invisible copies (`ghostsOf`: text from `attr(data-t)`, so
+  not document text; stacked in one grid cell, so the tallest wins). On the
+  survey that is ~150 copies, all in the header row, and its height and the
+  row in mid-view match the whole-width table at every scroll position.
+  Measured in the dev app, same file and script, 1.29.8 → now: 51.6 s → 27 s
+  to the sheet, worst stall while opening 5.9 s → 0.33 s, 54,600 → 3,200
+  cells in the DOM, each sideways block redraw 0.1–0.26 s (16-column blocks
+  were 0.2–0.9 s). A picture anchored more than a block outside the window
+  is not drawn until its cell is.
 - **Find searches the data, not the DOM** (`services/flowSearchProvider.ts`).
   `useFlowSearch` walks the DOM, which here holds only the drawn rows, so a
   windowed `SheetView` registers a provider: `find` searches an index of every
@@ -608,9 +629,9 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   ~8 s (7.85 s worst stall) to ~0.5 s, and its heap no longer holds the
   ~2 GB workbook, so its GC pauses are gone too. On the styled 56 MB .xlsx
   (dev build, ~66 s to the sheet either way) the worst stall went from
-  63.5 s to 5 s — and those 5 s are the page drawing and laying out its first
-  window, 300 rows x ~500 columns (150 k cells; `innerHTML` 1.5 s, layout
-  ~4 s), which windowing columns as well would cut. Rows now arrive
+  63.5 s to 5 s — and those 5 s were the page drawing and laying out its
+  first window of every column, which windowing columns (above) cut to
+  0.33 s. Rows now arrive
   asynchronously: `win` is the block wanted, `drawn` the last that arrived
   (the first window comes with the metrics), one request in flight. With
   shrunk spacers only the block still wanted is drawn, since a stale one moves
@@ -618,7 +639,7 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   anchor waits for its own block. Where no worker can start (tests) a
   `SheetBook` answers in the page. `cliBridge` (`topdf`) still reads in the
   page — it has no window to keep responsive.
-- Still windowed, and known: print and read-aloud cover the rows drawn.
+- Still windowed, and known: print and read-aloud cover the rows and columns drawn.
 
 **PowerPoint** (`services/pptxDoc.ts`, `PptxView`). Each slide is rendered
 with `renderSlide` into a box React lays out, not through the library's
