@@ -13,6 +13,7 @@ import { sheetPdfJob } from '../../services/sheetPdf'
 import type { OfficeViewProps } from './officeView'
 import { t } from '../../i18n'
 import { onceAFrame } from '../../utils/onceAFrame'
+import { compression, declaredAt, pageY, spacers } from '../../services/sheetWindow'
 import LoadingIndicator from '../LoadingIndicator'
 
 interface SheetViewProps extends OfficeViewProps {
@@ -35,6 +36,31 @@ const BLOCK_ROWS = 100
 const HEADER_PX = 22
 
 type Window = { layout: SheetLayout; from: number; to: number }
+
+/**
+ * Where the view must be once the block [from, to) is drawn: the declared
+ * position that was at its top stays `y` px below the table body's top, or
+ * the view stays at the very end. Only needed when the spacers are shrunk
+ * (sheetWindow.ts); otherwise rows never move.
+ */
+type Anchor = Window & {
+  declared: number
+  y: number
+  /** Height of the view, layout px. */
+  viewH: number
+  /** The row at the top was a drawn one: the reader is scrolling through rows. */
+  inBlock: boolean
+  /** The view was at the very end of the sheet. */
+  end: boolean
+}
+
+/** The element that scrolls the sheet: ours in the page, ReaderFullscreen's when presenting. */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(p).overflowY)) return p
+  }
+  return null
+}
 
 /** Matches kept per search; past this a query is too broad to step through anyway. */
 const MAX_MATCHES = 100_000
@@ -127,27 +153,75 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
   const from = windowed && win?.layout === layout ? win.from : 0
   const to = !layout ? 0 : !windowed ? layout.rowCount : win?.layout === layout ? win.to : firstWindow
 
+  // How much the spacers are shrunk: 1 unless the sheet is taller than a page
+  // can be (sheetWindow.ts).
+  const k = layout ? compression(layout.rowTop[layout.rowCount]) : 1
+
   const hostRef = useRef<HTMLDivElement>(null)
+  // The block on the page now, and where the view goes once the next is drawn.
+  const drawnRef = useRef<{ layout: SheetLayout | null; from: number; to: number }>({ layout: null, from: 0, to: 0 })
+  const anchorRef = useRef<Anchor | null>(null)
   const update = useCallback(() => {
     const host = hostRef.current
     if (!layout || !windowed || !host) return
     const head = host.querySelector('thead')
     const body = host.querySelector('tbody')
-    if (!head || !body) return
+    const drawn = drawnRef.current
+    if (!head || !body || drawn.layout !== layout) return
     // Measured from the page itself, so it holds at any zoom and in
     // fullscreen, where the scroller and the scale are ReaderFullscreen's.
     const scale = head.getBoundingClientRect().height / HEADER_PX || 1
     const top = body.getBoundingClientRect().top
+    const bottom = scrollParent(host)?.getBoundingClientRect().bottom ?? window.innerHeight
     const viewTop = Math.max(0, -top) / scale
-    const viewBottom = (window.innerHeight - top) / scale
+    const viewBottom = (bottom - top) / scale
     if (viewBottom < 0) return
-    const first = rowAt(layout.rowTop, viewTop)
-    const last = rowAt(layout.rowTop, viewBottom)
+    const { rowTop } = layout
+    const declared = declaredAt(viewTop, rowTop, drawn.from, drawn.to, k)
+    const first = rowAt(rowTop, declared)
+    // Rows from `first` on, at their real height — what the view shows once
+    // it is moved to `first` — or, from a spacer, what the spacer stands for.
+    const last = rowAt(rowTop, Math.max(
+      declared + (viewBottom - viewTop), declaredAt(viewBottom, rowTop, drawn.from, drawn.to, k)))
     const nextFrom = Math.max(0, Math.floor((first - BLOCK_ROWS) / BLOCK_ROWS) * BLOCK_ROWS)
     const nextTo = Math.min(layout.rowCount, Math.ceil((last + BLOCK_ROWS) / BLOCK_ROWS) * BLOCK_ROWS)
-    setWin(w => (w && w.layout === layout && w.from === nextFrom && w.to === nextTo
-      ? w : { layout, from: nextFrom, to: nextTo }))
-  }, [layout, windowed])
+    if (nextFrom === drawn.from && nextTo === drawn.to) return
+    const { above, below } = spacers(rowTop, drawn.from, drawn.to, k)
+    const pageEnd = above + (rowTop[drawn.to] - rowTop[drawn.from]) + below
+    anchorRef.current = k > 1
+      ? {
+          layout, from: nextFrom, to: nextTo, declared, y: viewTop, viewH: viewBottom - viewTop,
+          inBlock: first >= drawn.from && first < drawn.to,
+          end: viewBottom >= pageEnd - 1,
+        }
+      : null
+    setWin({ layout, from: nextFrom, to: nextTo })
+  }, [layout, windowed, k])
+
+  // Record what is drawn, and move the view with the rows when the spacers
+  // are shrunk: before paint, so the move is never seen.
+  useLayoutEffect(() => {
+    drawnRef.current = { layout, from, to }
+    const a = anchorRef.current
+    anchorRef.current = null
+    if (!a || !layout || a.layout !== layout || a.from !== from || a.to !== to) return
+    const host = hostRef.current
+    const head = host?.querySelector('thead')
+    const scroller = scrollParent(host)
+    if (!head || !scroller) return
+    // At the very end, stay there: the last row is what was asked for.
+    if (a.end) { scroller.scrollTop = scroller.scrollHeight; return }
+    // Scrolling through drawn rows: the row at the top stays where it is.
+    // A jump into a spacer (the scrollbar dragged, Home/End) lands on its
+    // share of the sheet and is left there while the new rows cover the
+    // view, since writing scrollTop cuts short a smooth scroll on its way.
+    const { above } = spacers(layout.rowTop, from, to, k)
+    const blockEnd = above + layout.rowTop[to] - layout.rowTop[from]
+    if (!a.inBlock && a.y >= above && a.y + a.viewH <= blockEnd) return
+    const scale = head.getBoundingClientRect().height / HEADER_PX || 1
+    const delta = (pageY(a.declared, layout.rowTop, from, to, k) - a.y) * scale
+    if (Math.abs(delta) >= 0.5) scroller.scrollTop += delta
+  }, [layout, from, to, k])
 
   useLayoutEffect(() => {
     if (!windowed) return
@@ -195,6 +269,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
         // Draw the block around the match before scrolling to it.
         const nextFrom = Math.max(0, Math.floor(ri / BLOCK_ROWS) * BLOCK_ROWS - BLOCK_ROWS)
         const nextTo = Math.min(layout.rowCount, nextFrom + BLOCK_ROWS * 3)
+        anchorRef.current = null   // the find bar scrolls to the match itself
         setWin(w => (w && w.layout === layout && w.from <= ri && ri < w.to ? w : { layout, from: nextFrom, to: nextTo }))
         const shown: Found = { ...f, active: index, seq: f.seq + 1 }
         foundRef.current = shown
@@ -234,14 +309,15 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     const gap = (px: number) => (px > 0
       ? `<tr class="wz-sheet-gap" aria-hidden="true" style="height:${px}px"><td colspan="${layout.columnCount}"></td></tr>`
       : '')
+    const { above, below } = spacers(layout.rowTop, from, to, k)
     const html = layout.tableOpen
       + '<tbody>'
-      + gap(layout.rowTop[from])
+      + gap(above)
       + layout.rows(from, to)
-      + gap(layout.rowTop[layout.rowCount] - layout.rowTop[to])
+      + gap(below)
       + '</tbody></table>'
     return <div className="wz-sheet" dangerouslySetInnerHTML={{ __html: html }} />
-  }, [layout, from, to])
+  }, [layout, from, to, k])
 
   // Paint the matches among the drawn rows, and bring the active one on
   // screen. Re-run whenever the drawn rows change, since that replaces them.
