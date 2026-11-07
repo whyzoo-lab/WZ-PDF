@@ -577,8 +577,16 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   the build. Now 3.7 s in the app, no task over ~110 ms.
 - **Opening it, measured in the app** (221 MB CP949 PSV, dev build): CP949
   decode 2.6 s (Node does it in 0.34 s), hucre's parse ~2 s, layout 0.66 s
-  (`fitColumnWidths` walks rows once for all columns: 1.2 s → 0.4 s). All of
-  it holds the main thread, which is why the loader is drawn by a worker.
+  (`fitColumnWidths` walks rows once for all columns: 1.2 s → 0.4 s). Parse
+  and layout hold the main thread, which is why the loader is drawn by a
+  worker. **The decode no longer does** (`services/textDecode.ts`):
+  a text file over 4 MB (CSV/TSV/PSV, Markdown) is decoded in a one-shot
+  worker (`textDecodeWorker.ts`) — a copy of the bytes goes in, the string
+  comes back; profiled on the same file, `decodeText` on the main thread
+  4.0 s → ~0.2 s (the two copies). The wall-clock time to the sheet is the
+  same; the window can redraw meanwhile. Where no worker can start it decodes
+  in place. Parsing stays on the page: hucre's rows are 31 M strings, and
+  cloning them back from a worker would cost more than parsing.
 - Still windowed, and known: print and read-aloud cover the rows drawn.
 
 **PowerPoint** (`services/pptxDoc.ts`, `PptxView`). Each slide is rendered
@@ -1993,6 +2001,10 @@ A fresh install defaults to `C:\Program Files\WZ Reader\`; an updated one keeps
 That one file is the favicon and the toolbar logo, `build:icon` turns it into
 `build/icon.ico` (exe, installer, file associations), and `build-og.cjs`
 repeats the same paths for the OG image. Change all three together.
+A development run (`electron .`) is node_modules' `electron.exe`, whose own
+icon is Electron's atom, so `createWindow` sets `icon` to `build/icon.ico`
+when not packaged and `predev` runs `build:icon`; the packaged exe carries
+the icon itself.
 `public/sample.pdf` (the landing page's demo document) is `help.en.html`
 printed by headless Chrome (`--print-to-pdf --no-pdf-header-footer`); reprint
 it when the guide changes.
