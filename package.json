@@ -23,7 +23,7 @@
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
-    "predev": "npm run setup:pdfjs && tsc -p tsconfig.electron.json",
+    "predev": "npm run setup:pdfjs && npm run build:icon && tsc -p tsconfig.electron.json",
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "predev:vite": "npm run setup:pdfjs",
     "dev:vite": "vite",

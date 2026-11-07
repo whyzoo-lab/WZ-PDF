@@ -181,8 +181,21 @@ function serveAppProtocol() {
  */
 const OPENING_QUERY = '?open=1'
 
+/**
+ * The window's icon in a development run. A packaged app takes its taskbar
+ * icon from its own exe, which electron-builder stamps with build/icon.ico;
+ * `electron .` runs node_modules' electron.exe, which carries Electron's atom.
+ * `predev` makes the file (`build:icon`).
+ */
+function devWindowIcon(): string | undefined {
+  if (app.isPackaged) return undefined
+  const ico = path.join(__dirname, '..', 'build', 'icon.ico')
+  return fs.existsSync(ico) ? ico : undefined
+}
+
 function createWindow({ opening = false }: { opening?: boolean } = {}) {
   win = new BrowserWindow({
+    icon: devWindowIcon(),
     width: 1280,
     height: 800,
     // Floor the window size so the toolbar and viewer never distort. Below
