@@ -164,21 +164,29 @@ export function fitColumnWidths(
   rows: readonly (readonly unknown[])[], columns: readonly number[],
   font: FontSpec, measure: Measure, minPx: number, maxPx: number,
 ): number[] {
-  return columns.map(c => {
-    const best: { text: string; wide: number }[] = []
-    for (const row of rows) {
-      const v = row[c]
+  // Row by row, every column at once: a column at a time walked 1.3 M rows 24
+  // times over, and was 1.2 s of opening a 221 MB PSV (profiled in the app).
+  const bests = columns.map(() => [] as { text: string; wide: number }[])
+  const floors = columns.map(() => -1)
+  for (const row of rows) {
+    for (let k = 0; k < columns.length; k++) {
+      const v = row[columns[k]]
       if (v === null || v === undefined || v === '') continue
       const text = typeof v === 'string' ? v : String(v)
       // Cheap test first: even if every character were wide, could it place?
-      const floor = best.length < FIT_CANDIDATES ? -1 : best[best.length - 1].wide
+      const floor = floors[k]
       if (text.length * 2 <= floor) continue
       const wide = wideLength(text)
       if (wide <= floor) continue
+      const best = bests[k]
       best.push({ text, wide })
       best.sort((a, b) => b.wide - a.wide)
       if (best.length > FIT_CANDIDATES) best.pop()
+      floors[k] = best.length < FIT_CANDIDATES ? -1 : best[best.length - 1].wide
     }
+  }
+  return columns.map((_, k) => {
+    const best = bests[k]
     let widest = 0
     for (const { text } of best) widest = Math.max(widest, measure(text, font))
     // Both paddings, the border, and 2 px so the last glyph never touches it.

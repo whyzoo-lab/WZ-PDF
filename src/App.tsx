@@ -395,7 +395,7 @@ export default function App() {
   // Find-in-document comes in two flavours because the documents do: pdfjs text
   // items for pages, live DOM for the reflowing formats. `findBar` picks the one
   // that matches what is open, so the SearchBar itself stays format-agnostic.
-  const flowSearch = useFlowSearch(flowDoc)
+  const flowSearch = useFlowSearch(flowDoc, showSearch)
   const outline = useOutline(pdfDoc)
   const [appearance, setAppearance] = useAppearance()
   const [commentAuthor, setCommentAuthor] = useCommentAuthor()
@@ -1540,7 +1540,7 @@ export default function App() {
   const flowResults = useMemo(() => flowSearch.snippets.map(snippet => ({ snippet })), [flowSearch.snippets])
   const pageResults = useMemo(() => search.matches.map(m => ({ page: m.page, snippet: m.snippet })), [search.matches])
   const findBar = flowDoc
-    ? { ...flowSearch, isSearching: false, progress: null, results: flowResults }
+    ? { ...flowSearch, progress: null, results: flowResults }
     : {
         total: search.matches.length,
         activeIndex: search.activeIndex,
@@ -2394,7 +2394,9 @@ export default function App() {
           )}
           {office && (
             <ErrorBoundary>
-              <Suspense fallback={null}>
+              {/* The view's code (up to ~1 MB for slides) is fetched on first
+                  use: show the loader meanwhile, not an empty page. */}
+              <Suspense fallback={<LoadingIndicator label={t('url.loading')} />}>
                 {office.kind === 'docx' ? (
                   <DocxView
                     bytes={office.bytes}

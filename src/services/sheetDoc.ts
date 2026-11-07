@@ -346,7 +346,10 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
   const is1904 = workbook.dateSystem === '1904'
   const rows = sheet.rows ?? []
   const cells = sheet.cells ?? new Map<string, Cell>()
-  const cellAt = (r: number, c: number) => cells.get(`${r},${c}`)
+  // No key string when there is nothing to find: a CSV has no cell styles, and
+  // building "r,c" for each of its 31.6 M cells was 10 s of find's index
+  // (profiled in the app) — and as much garbage for the GC.
+  const cellAt = (r: number, c: number) => (cells.size === 0 ? undefined : cells.get(`${r},${c}`))
 
   // ── Extent: the last row and column with anything worth showing ──
   let lastRow = -1
@@ -636,7 +639,9 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
     textAt: (ri, ci) => {
       const r = visibleRows[ri]
       const c = visibleCols[ci]
-      if (r === undefined || c === undefined || covered.has(`${r},${c}`)) return ''
+      // No key string to build for a sheet without merges (every CSV): find's
+      // index reads every cell through here.
+      if (r === undefined || c === undefined || (covered.size > 0 && covered.has(`${r},${c}`))) return ''
       const cell = cellAt(r, c)
       if (cell?.richText?.length) return cell.richText.map(run => run.text).join('')
       return displayValue(valueAt(r, c), cell, is1904)

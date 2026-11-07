@@ -9,8 +9,14 @@
  * and brings each match on screen when asked.
  */
 export interface FlowSearchProvider {
-  /** Search for `needle` (already lower-cased); returns how many matches. */
-  find(needle: string): number
+  /**
+   * Search for `needle` (already lower-cased); returns how many matches — or a
+   * promise of it, for a search that hands the thread back while it works
+   * (services/sheetSearch.ts). A newer call replaces an older one.
+   */
+  find(needle: string): number | Promise<number>
+  /** The find bar has opened: get ready (a large sheet starts its index). */
+  prepare?(): void
   /** Bring match `index` on screen and highlight it. */
   reveal(index: number): void
   /** Forget the search and remove its highlights. */

@@ -14,7 +14,9 @@ import type { OfficeViewProps } from './officeView'
 import { t } from '../../i18n'
 import { onceAFrame } from '../../utils/onceAFrame'
 import { compression, declaredAt, pageY, spacers } from '../../services/sheetWindow'
+import { buildSheetIndex, searchSheetIndex, slicer, type SheetSearchIndex } from '../../services/sheetSearch'
 import LoadingIndicator from '../LoadingIndicator'
+import { loaderShown } from '../../services/loaderSignal'
 
 interface SheetViewProps extends OfficeViewProps {
   bytes: ArrayBuffer
@@ -61,6 +63,9 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
   }
   return null
 }
+
+/** Past this a workbook waits for the loader to be painted before it is read. */
+const BIG_WORKBOOK_BYTES = 4 * 1024 * 1024
 
 /** Matches kept per search; past this a query is too broad to step through anyway. */
 const MAX_MATCHES = 100_000
@@ -116,8 +121,13 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
 
   useEffect(() => {
     let cancelled = false
-    loadWorkbook(bytes, name)
-      .then(book => { if (!cancelled) setLoaded({ src: bytes, book, error: null }) })
+    // Reading a big workbook holds the main thread for seconds: let the
+    // loader reach the screen first, or the reader sees an empty page for all
+    // of it (services/loaderSignal.ts). A small one starts at once.
+    const ready = bytes.byteLength > BIG_WORKBOOK_BYTES ? loaderShown() : Promise.resolve()
+    ready
+      .then(() => (cancelled ? null : loadWorkbook(bytes, name)))
+      .then(book => { if (!cancelled && book) setLoaded({ src: bytes, book, error: null }) })
       .catch(err => {
         console.error('Spreadsheet read failed:', err)
         if (cancelled) return
@@ -242,20 +252,31 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
   const [found, setFound] = useState<Found | null>(null)
   const foundRef = useRef<Found | null>(null)
   useEffect(() => { foundRef.current = found })
+  // The text laid out for find (services/sheetSearch.ts), built on the first
+  // search of this layout and kept for the next ones.
+  const indexRef = useRef<{ layout: SheetLayout; index: Promise<SheetSearchIndex | null> } | null>(null)
+  const findSeq = useRef(0)
   useEffect(() => {
     if (!windowed || !layout) return
+    // Not cancelled by a newer search: every search needs it.
+    const indexFor = () => {
+      if (indexRef.current?.layout !== layout) {
+        // Sized once from the file: a CSV's text is at most its bytes (plus a
+        // separator a row); a zipped workbook holds several times its size.
+        const hint = book?.format === 'csv' ? bytes.byteLength + layout.rowCount * 2 : bytes.byteLength * 4
+        indexRef.current = { layout, index: buildSheetIndex(layout.rowCount, layout.columnCount - 1, layout.textAt, slicer(), hint) }
+      }
+      return indexRef.current.index
+    }
     setFlowSearchProvider({
-      find(needle) {
-        const cells: number[] = []
-        search: for (let ri = 0; ri < layout.rowCount; ri++) {
-          for (let ci = 0; ci < layout.columnCount - 1; ci++) {
-            if (layout.textAt(ri, ci).toLowerCase().includes(needle)) {
-              cells.push(ri, ci)
-              if (cells.length >= MAX_MATCHES * 2) break search
-            }
-          }
-        }
-        const next: Found = { layout, needle, cells: Int32Array.from(cells), active: -1, seq: 0 }
+      prepare() { void indexFor() },
+      async find(needle) {
+        const seq = ++findSeq.current
+        const index = await indexFor()
+        if (!index || seq !== findSeq.current) return 0
+        const cells = await searchSheetIndex(index, needle, MAX_MATCHES, slicer(() => seq !== findSeq.current))
+        if (!cells || seq !== findSeq.current) return 0
+        const next: Found = { layout, needle, cells, active: -1, seq: 0 }
         // Set at once as well: the find bar reveals the first match in the
         // same tick, before this state has rendered.
         foundRef.current = next
@@ -276,6 +297,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
         setFound(shown)
       },
       clear() {
+        findSeq.current++
         setFound(null)
         const api = highlightApi()
         api?.registry.delete(HL_ALL)
@@ -283,7 +305,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       },
     })
     return () => setFlowSearchProvider(null)
-  }, [windowed, layout])
+  }, [windowed, layout, book, bytes])
 
   // ── What the app can ask of this view ─────────────────────────────────────
   const scrollerRef = useRef<HTMLDivElement>(null)

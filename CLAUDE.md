@@ -555,11 +555,30 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   covered cell to its anchor).
 - **Find searches the data, not the DOM** (`services/flowSearchProvider.ts`).
   `useFlowSearch` walks the DOM, which here holds only the drawn rows, so a
-  windowed `SheetView` registers a provider: `find` scans `layout.textAt` over
-  every cell (capped at 100k matching cells), `reveal` draws the block around
+  windowed `SheetView` registers a provider: `find` searches an index of every
+  cell (capped at 100k matching cells), `reveal` draws the block around
   a match and paints it with the same `::highlight()` names. It scrolls to a
   match **once per activation** (`scrolledSeq`) — scrolling on every re-draw
   is exactly the snap-back bug recorded for PDF find.
+- **Find is an index, built once and off the critical path**
+  (`services/sheetSearch.ts`, 1.29.6). Scanning `textAt` per search was
+  2.0-2.5 s on a 221 MB PSV (1,315,498 x 24 cells), on the main thread, once
+  per keystroke: typing froze the window. The text is now copied once into
+  **one Uint16Array** (lower-cased per code unit through a table, cells split
+  by 1, rows by 10, `rowStart` per row) and each search is a loop over it:
+  0.4 s, sliced so no task holds the thread over ~25 ms; a newer search
+  cancels an older one (`findSeq`, and `searchSeq` in `useFlowSearch`, whose
+  provider `find` may now return a promise; the bar shows "…" meanwhile). The
+  index starts building when the find bar opens (`prepare`). Two traps found
+  by profiling the app, not Node: an index of strings built in 3.6 s in Node
+  and 15 s in the app — with ~2 GB of workbook on the heap each major GC costs
+  0.6-1.6 s, and hundreds of MB of strings set them off; and `cellAt` built a
+  `"r,c"` key for every cell even on a CSV, whose cell map is empty — 10 s of
+  the build. Now 3.7 s in the app, no task over ~110 ms.
+- **Opening it, measured in the app** (221 MB CP949 PSV, dev build): CP949
+  decode 2.6 s (Node does it in 0.34 s), hucre's parse ~2 s, layout 0.66 s
+  (`fitColumnWidths` walks rows once for all columns: 1.2 s → 0.4 s). All of
+  it holds the main thread, which is why the loader is drawn by a worker.
 - Still windowed, and known: print and read-aloud cover the rows drawn.
 
 **PowerPoint** (`services/pptxDoc.ts`, `PptxView`). Each slide is rendered
@@ -1412,8 +1431,29 @@ mixed in — as separate additive fills, neighbouring quads' antialiased
 borders took the light twice and the tube showed a grid. ~3-4 ms a frame at
 2x, drawn at 30 fps. On the light theme a dark lens is drawn behind it,
 since added light vanishes into a pale page. One still frame for
-`prefers-reduced-motion`. It runs on the main thread, so it pauses while a
-decode holds that thread.
+`prefers-reduced-motion`. Shown at **50 % opacity** (1.29.6: "too dark").
+
+**It is drawn by a worker** (1.29.6; `services/mobiusDraw.ts` the drawing,
+`services/mobiusWorker.ts` the loop, on an OffscreenCanvas from
+`transferControlToOffscreen`; the page draws it only where that is missing).
+Opening a big file is main-thread work — a 221 MB PSV held the thread ~6 s —
+and the reader saw the loader appear, vanish, and "불러오는 중…" sit alone for
+the rest. Verified in Electron: the worker drew 75 frames while the page's
+main thread was blocked for 3 s. Two more things it needed:
+- **A paint before the work.** SheetView mounted its loader and began parsing
+  in the same task, so the canvas was never painted at all and the worker's
+  frames had nowhere to show. A view about to block waits for `loaderShown()`
+  (`services/loaderSignal.ts`: the worker's first frame plus one painted
+  frame, 500 ms at most — rAF never fires in a hidden window); SheetView does
+  for files over 4 MB.
+- **One clock.** The app's "여는 중…" and the view's "불러오는 중…" are two
+  loaders; each starts from `EPOCH` (module load), so the second carries on
+  the first's motion instead of starting over. The Office views' Suspense
+  fallback is a loader too — it was `null`, an empty page while their chunk
+  loaded.
+`Page.captureScreenshot` and `PrintWindow` both fail or show stale content
+while the main thread is blocked, so neither proves the animation moved; the
+worker's `frames()` count does.
 
 The logo and tagline belong to the start screen only; every open document
 (PDF, Markdown, mail) shows its own name instead, and the edit switch is hidden

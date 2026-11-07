@@ -29,6 +29,8 @@ export const HL_ACTIVE = 'wz-find-active'
 export interface UseFlowSearchReturn {
   total: number
   activeIndex: number
+  /** A provider's search is still running. */
+  isSearching: boolean
   /** Context for each match, for the results list (DOM search only). */
   snippets: Snippet[]
   options: FindOptions
@@ -40,9 +42,10 @@ export interface UseFlowSearchReturn {
   clear: () => void
 }
 
-export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
+export function useFlowSearch(enabled: boolean, open = false): UseFlowSearchReturn {
   const [total, setTotal] = useState(0)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [isSearching, setSearching] = useState(false)
   const rangesRef = useRef<Range[]>([])
   // How many matches there are, whichever engine found them — next/prev wrap
   // on this, since a provider's matches are not Ranges.
@@ -51,6 +54,11 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
   const [options, setOptionsState] = useState<FindOptions>(DEFAULT_FIND_OPTIONS)
   const optionsRef = useRef(options)
   const queryRef = useRef('')
+  // A large sheet builds its search index while the reader is still typing.
+  useEffect(() => { if (enabled && open) getFlowSearchProvider()?.prepare?.() }, [enabled, open])
+  // Which provider search is current: one that finishes after a newer one
+  // started (or after a clear) is dropped.
+  const searchSeq = useRef(0)
 
   const paint = useCallback((ranges: Range[], active: number) => {
     const api = highlightApi()
@@ -67,6 +75,8 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
   }, [])
 
   const clear = useCallback(() => {
+    searchSeq.current++
+    setSearching(false)
     getFlowSearchProvider()?.clear()
     rangesRef.current = []
     countRef.current = 0
@@ -86,11 +96,24 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
     if (provider) {
       rangesRef.current = []
       paint([], 0)
-      const count = provider.find(needle)
-      countRef.current = count
-      setTotal(count)
-      setActiveIndex(0)
-      if (count > 0) provider.reveal(0)
+      const seq = ++searchSeq.current
+      const settle = (count: number) => {
+        // A newer search (or a clear) has replaced this one.
+        if (seq !== searchSeq.current) return
+        setSearching(false)
+        countRef.current = count
+        setTotal(count)
+        setActiveIndex(0)
+        if (count > 0) provider.reveal(0)
+      }
+      const result = provider.find(needle)
+      if (typeof result === 'number') settle(result)
+      else {
+        // "…" rather than "no results" while it works (the first search of a
+        // large sheet builds its index: seconds).
+        setSearching(true)
+        result.then(settle, err => { console.error('Find failed:', err); settle(0) })
+      }
       return
     }
 
@@ -157,5 +180,5 @@ export function useFlowSearch(enabled: boolean): UseFlowSearchReturn {
   // Highlights are registered globally, so they must not outlive the search.
   useEffect(() => clear, [clear])
 
-  return { total, activeIndex, snippets, options, setOptions, run, next, prev, select, clear }
+  return { total, activeIndex, isSearching, snippets, options, setOptions, run, next, prev, select, clear }
 }
