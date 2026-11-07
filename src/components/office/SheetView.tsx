@@ -1,20 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import {
-  loadWorkbook, layoutSheet, initialSheet, EncryptedWorkbookError,
-  type LoadedWorkbook, type SheetLayout,
-} from '../../services/sheetDoc'
+import { EncryptedWorkbookError } from '../../services/sheetErrors'
+import { openSheetHost, type SheetHost } from '../../services/sheetHost'
+import type { SheetMetrics } from '../../services/sheetBook'
+import { sheetPdfPiece } from '../../services/sheetPdfPiece'
 import { FLOW_PRINT_ATTR } from '../../services/htmlPrint'
 import { setFlowSearchProvider } from '../../services/flowSearchProvider'
 import { highlightApi, indexText, rangeAt } from '../../services/domText'
 import { HL_ACTIVE, HL_ALL } from '../../hooks/useFlowSearch'
 import { ReaderFullscreen } from '../reader/ReaderFullscreen'
 import type { PdfJob } from '../../services/officePdf'
-import { sheetPdfJob } from '../../services/sheetPdf'
 import type { OfficeViewProps } from './officeView'
 import { t } from '../../i18n'
 import { onceAFrame } from '../../utils/onceAFrame'
-import { compression, declaredAt, pageY, spacers } from '../../services/sheetWindow'
-import { buildSheetIndex, searchSheetIndex, slicer, type SheetSearchIndex } from '../../services/sheetSearch'
+import { BLOCK_ROWS, compression, declaredAt, pageY, spacers } from '../../services/sheetWindow'
 import LoadingIndicator from '../LoadingIndicator'
 import { loaderShown } from '../../services/loaderSignal'
 
@@ -24,20 +22,14 @@ interface SheetViewProps extends OfficeViewProps {
   name: string
 }
 
-type Loaded = { src: ArrayBuffer; book: LoadedWorkbook | null; error: string | null }
-
-/**
- * Cells drawn as one table before the view switches to drawing only the rows
- * in sight. Below it the whole sheet is in the DOM, so find, print and
- * read-aloud cover all of it; above it they cover the rows drawn.
- */
-const WHOLE_SHEET_CELLS = 60_000
-/** Rows are drawn in blocks, so scrolling re-draws now and then, not per row. */
-const BLOCK_ROWS = 100
+type Loaded = { src: ArrayBuffer; host: SheetHost | null; error: string | null }
 /** Declared height of the column-letter row (.wz-sheet-table thead th). */
 const HEADER_PX = 22
 
+type SheetLayout = SheetMetrics
 type Window = { layout: SheetLayout; from: number; to: number }
+/** Rows on the page: a window and its markup, from the workbook's worker. */
+type Drawn = Window & { html: string }
 
 /**
  * Where the view must be once the block [from, to) is drawn: the declared
@@ -56,6 +48,28 @@ type Anchor = Window & {
   end: boolean
 }
 
+/** A spacer at least this tall (layout px) measures the scale; the header row stands in below it. */
+const SCALE_FROM_SPACER_PX = 2000
+
+/**
+ * Screen px per layout px of the sheet, measured from the page itself, so it
+ * holds at any zoom and in fullscreen, where the scroller and the scale are
+ * ReaderFullscreen's. Read off the tallest spacer, whose declared height is
+ * exact: the header row renders 22.4 px for its declared 22, and that 1.8 %
+ * put a view 8,000,000 px down 143,000 px short — on the 1.3 M-row PSV the
+ * End key came to rest in an empty spacer instead of on the last row.
+ */
+function sheetScale(host: HTMLElement, head: Element): number {
+  let declared = 0
+  let scale = 0
+  for (const gap of host.querySelectorAll<HTMLElement>('tr.wz-sheet-gap')) {
+    const px = parseFloat(gap.style.height)
+    if (px > declared) { declared = px; scale = gap.getBoundingClientRect().height / px }
+  }
+  if (declared >= SCALE_FROM_SPACER_PX && scale > 0) return scale
+  return head.getBoundingClientRect().height / HEADER_PX || 1
+}
+
 /** The element that scrolls the sheet: ours in the page, ReaderFullscreen's when presenting. */
 function scrollParent(el: HTMLElement | null): HTMLElement | null {
   for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
@@ -66,9 +80,6 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
 
 /** Past this a workbook waits for the loader to be painted before it is read. */
 const BIG_WORKBOOK_BYTES = 4 * 1024 * 1024
-
-/** Matches kept per search; past this a query is too broad to step through anyway. */
-const MAX_MATCHES = 100_000
 
 /** A find in progress on a sheet too large for the DOM. */
 type Found = {
@@ -117,55 +128,97 @@ function rowAt(rowTop: Float64Array, y: number): number {
 export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, handleRef }: SheetViewProps) {
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   // Keyed to the workbook, so opening another file starts on its own sheet.
-  const [picked, setPicked] = useState<{ book: LoadedWorkbook; index: number } | null>(null)
+  const [picked, setPicked] = useState<{ wb: SheetHost; index: number } | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    // Reading a big workbook holds the main thread for seconds: let the
-    // loader reach the screen first, or the reader sees an empty page for all
-    // of it (services/loaderSignal.ts). A small one starts at once.
+    let opened: SheetHost | null = null
+    // The workbook is read in a worker (services/sheetBook.ts), so the page
+    // keeps drawing; the loader still waits to be painted first, so a view
+    // that must fall back to reading in the page does not show an empty
+    // window for all of it (services/loaderSignal.ts).
     const ready = bytes.byteLength > BIG_WORKBOOK_BYTES ? loaderShown() : Promise.resolve()
     ready
-      .then(() => (cancelled ? null : loadWorkbook(bytes, name)))
-      .then(book => { if (!cancelled && book) setLoaded({ src: bytes, book, error: null }) })
+      .then(() => (cancelled ? null : openSheetHost(bytes, name)))
+      .then(wb => {
+        if (!wb) return
+        if (cancelled) { wb.close(); return }
+        opened = wb
+        setLoaded({ src: bytes, host: wb, error: null })
+      })
       .catch(err => {
         console.error('Spreadsheet read failed:', err)
         if (cancelled) return
         const error = err instanceof EncryptedWorkbookError ? t('office.sheetEncrypted') : t('office.sheetFailed')
-        setLoaded({ src: bytes, book: null, error })
+        setLoaded({ src: bytes, host: null, error })
       })
-    return () => { cancelled = true }
+    return () => { cancelled = true; opened?.close() }
   }, [bytes, name])
 
   const current = loaded && loaded.src === bytes ? loaded : null
-  const book = current?.book ?? null
-  const index = book ? (picked?.book === book ? picked.index : initialSheet(book.workbook)) : 0
+  const wb = current?.host ?? null
+  const index = wb ? (picked?.wb === wb ? picked.index : wb.info.initial) : 0
 
-  const layout = useMemo(() => {
-    if (!book) return null
-    const sheet = book.workbook.sheets[index]
-    if (!sheet) return null
-    try {
-      return layoutSheet(sheet, book.workbook, { csv: book.format === 'csv' })
-    } catch (err) {
-      console.error('Spreadsheet render failed:', err)
-      return null
-    }
-  }, [book, index])
+  // The sheet's measurements and first rows, from the workbook's worker.
+  const [laid, setLaid] = useState<{ wb: SheetHost; index: number; layout: SheetLayout | null } | null>(null)
+  useEffect(() => {
+    if (!wb) return
+    let cancelled = false
+    wb.layout(index).then(
+      layout => { if (!cancelled) setLaid({ wb, index, layout }) },
+      err => {
+        console.error('Spreadsheet render failed:', err)
+        if (!cancelled) setLaid({ wb, index, layout: null })
+      },
+    )
+    return () => { cancelled = true }
+  }, [wb, index])
+  const laidOut = !!laid && laid.wb === wb && laid.index === index
+  const layout = laidOut ? laid.layout : null
 
-  const windowed = !!layout && layout.rowCount * layout.columnCount > WHOLE_SHEET_CELLS
+  const windowed = !!layout?.windowed
 
   // ── Which rows are drawn ──────────────────────────────────────────────────
   // Keyed to the layout, so a new sheet starts from its top without an effect
-  // that sets state after render.
+  // that sets state after render. `win` is the block wanted; what is on the
+  // page is the last block whose markup has arrived (`drawn`), else the first
+  // window, which comes with the layout.
   const [win, setWin] = useState<Window | null>(null)
-  const firstWindow = layout ? Math.min(layout.rowCount, BLOCK_ROWS * 3) : 0
-  const from = windowed && win?.layout === layout ? win.from : 0
-  const to = !layout ? 0 : !windowed ? layout.rowCount : win?.layout === layout ? win.to : firstWindow
+  const [drawn, setDrawn] = useState<Drawn | null>(null)
+  const shown: Drawn | null = !layout
+    ? null
+    : drawn?.layout === layout ? drawn : { layout, from: 0, to: layout.firstTo, html: layout.html }
+  const from = shown?.from ?? 0
+  const to = shown?.to ?? 0
 
   // How much the spacers are shrunk: 1 unless the sheet is taller than a page
   // can be (sheetWindow.ts).
   const k = layout ? compression(layout.rowTop[layout.rowCount]) : 1
+
+  // Ask for the wanted block, one request at a time. A block that arrives
+  // after the view has moved on is drawn anyway while the spacers are true to
+  // size — rows are where they belong whichever block is drawn — and the next
+  // is asked for. With shrunk spacers a row's place depends on the block
+  // drawn, so only the block still wanted is drawn: a stale one in between
+  // moved the rows under the view the anchor was measured against, and a jump
+  // to the end came to rest in an empty spacer.
+  const fetchingRef = useRef(false)
+  const wantRef = useRef<Window | null>(null)
+  const [fetchTick, setFetchTick] = useState(0)
+  useEffect(() => {
+    const w = windowed && win?.layout === layout ? win : null
+    wantRef.current = w
+    if (!wb || !w || fetchingRef.current || (w.from === from && w.to === to)) return
+    fetchingRef.current = true
+    wb.rows(w.layout.id, w.from, w.to).then(
+      html => {
+        fetchingRef.current = false
+        if (k === 1 || wantRef.current === w) setDrawn({ ...w, html })
+        else setFetchTick(n => n + 1)   // ask again, for the block wanted now
+      },
+      () => { fetchingRef.current = false },
+    )
+  }, [wb, windowed, win, layout, from, to, k, fetchTick])
 
   const hostRef = useRef<HTMLDivElement>(null)
   // The block on the page now, and where the view goes once the next is drawn.
@@ -180,7 +233,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     if (!head || !body || drawn.layout !== layout) return
     // Measured from the page itself, so it holds at any zoom and in
     // fullscreen, where the scroller and the scale are ReaderFullscreen's.
-    const scale = head.getBoundingClientRect().height / HEADER_PX || 1
+    const scale = sheetScale(host, head)
     const top = body.getBoundingClientRect().top
     const bottom = scrollParent(host)?.getBoundingClientRect().bottom ?? window.innerHeight
     const viewTop = Math.max(0, -top) / scale
@@ -195,7 +248,13 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       declared + (viewBottom - viewTop), declaredAt(viewBottom, rowTop, drawn.from, drawn.to, k)))
     const nextFrom = Math.max(0, Math.floor((first - BLOCK_ROWS) / BLOCK_ROWS) * BLOCK_ROWS)
     const nextTo = Math.min(layout.rowCount, Math.ceil((last + BLOCK_ROWS) / BLOCK_ROWS) * BLOCK_ROWS)
-    if (nextFrom === drawn.from && nextTo === drawn.to) return
+    const same = (w: Window | null) => !!w && w.layout === layout && w.from === nextFrom && w.to === nextTo
+    if (nextFrom === drawn.from && nextTo === drawn.to) {
+      // Back on the rows already drawn: a block still on its way is no longer wanted.
+      anchorRef.current = null
+      setWin(w => (same(w) ? w : { layout, from: nextFrom, to: nextTo }))
+      return
+    }
     const { above, below } = spacers(rowTop, drawn.from, drawn.to, k)
     const pageEnd = above + (rowTop[drawn.to] - rowTop[drawn.from]) + below
     anchorRef.current = k > 1
@@ -205,20 +264,24 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
           end: viewBottom >= pageEnd - 1,
         }
       : null
-    setWin({ layout, from: nextFrom, to: nextTo })
+    setWin(w => (same(w) ? w : { layout, from: nextFrom, to: nextTo }))
   }, [layout, windowed, k])
 
   // Record what is drawn, and move the view with the rows when the spacers
-  // are shrunk: before paint, so the move is never seen.
+  // are shrunk: before paint, so the move is never seen. The anchor waits for
+  // its own block: rows arrive from the worker, and a block asked for earlier
+  // may be drawn first.
   useLayoutEffect(() => {
     drawnRef.current = { layout, from, to }
     const a = anchorRef.current
+    if (!a || !layout) return
+    if (a.layout !== layout) { anchorRef.current = null; return }
+    if (a.from !== from || a.to !== to) return
     anchorRef.current = null
-    if (!a || !layout || a.layout !== layout || a.from !== from || a.to !== to) return
     const host = hostRef.current
     const head = host?.querySelector('thead')
     const scroller = scrollParent(host)
-    if (!head || !scroller) return
+    if (!host || !head || !scroller) return
     // At the very end, stay there: the last row is what was asked for.
     if (a.end) { scroller.scrollTop = scroller.scrollHeight; return }
     // Scrolling through drawn rows: the row at the top stays where it is.
@@ -228,10 +291,20 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     const { above } = spacers(layout.rowTop, from, to, k)
     const blockEnd = above + layout.rowTop[to] - layout.rowTop[from]
     if (!a.inBlock && a.y >= above && a.y + a.viewH <= blockEnd) return
-    const scale = head.getBoundingClientRect().height / HEADER_PX || 1
+    const scale = sheetScale(host, head)
     const delta = (pageY(a.declared, layout.rowTop, from, to, k) - a.y) * scale
     if (Math.abs(delta) >= 0.5) scroller.scrollTop += delta
   }, [layout, from, to, k])
+
+  // Look again once a block is drawn. Drawing moves the spacers, and with them
+  // what the view (whose scrollTop stays put) is showing; no scroll event
+  // says so. A smooth scroll to the end (End key) asked for blocks on its
+  // way, drew them under its feet, and came to rest in an empty spacer.
+  useEffect(() => {
+    if (!windowed) return
+    const id = requestAnimationFrame(() => update())
+    return () => cancelAnimationFrame(id)
+  }, [windowed, update, from, to])
 
   useLayoutEffect(() => {
     if (!windowed) return
@@ -252,29 +325,16 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
   const [found, setFound] = useState<Found | null>(null)
   const foundRef = useRef<Found | null>(null)
   useEffect(() => { foundRef.current = found })
-  // The text laid out for find (services/sheetSearch.ts), built on the first
-  // search of this layout and kept for the next ones.
-  const indexRef = useRef<{ layout: SheetLayout; index: Promise<SheetSearchIndex | null> } | null>(null)
+  // find's index lives with the workbook (services/sheetBook.ts): built there
+  // on the first search of this layout, or when the find bar opens.
   const findSeq = useRef(0)
   useEffect(() => {
-    if (!windowed || !layout) return
-    // Not cancelled by a newer search: every search needs it.
-    const indexFor = () => {
-      if (indexRef.current?.layout !== layout) {
-        // Sized once from the file: a CSV's text is at most its bytes (plus a
-        // separator a row); a zipped workbook holds several times its size.
-        const hint = book?.format === 'csv' ? bytes.byteLength + layout.rowCount * 2 : bytes.byteLength * 4
-        indexRef.current = { layout, index: buildSheetIndex(layout.rowCount, layout.columnCount - 1, layout.textAt, slicer(), hint) }
-      }
-      return indexRef.current.index
-    }
+    if (!windowed || !layout || !wb) return
     setFlowSearchProvider({
-      prepare() { void indexFor() },
+      prepare() { wb.prepare(layout.id) },
       async find(needle) {
         const seq = ++findSeq.current
-        const index = await indexFor()
-        if (!index || seq !== findSeq.current) return 0
-        const cells = await searchSheetIndex(index, needle, MAX_MATCHES, slicer(() => seq !== findSeq.current))
+        const cells = await wb.find(layout.id, needle).catch(() => null)
         if (!cells || seq !== findSeq.current) return 0
         const next: Found = { layout, needle, cells, active: -1, seq: 0 }
         // Set at once as well: the find bar reveals the first match in the
@@ -298,6 +358,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       },
       clear() {
         findSeq.current++
+        wb.cancelFind()
         setFound(null)
         const api = highlightApi()
         api?.registry.delete(HL_ALL)
@@ -305,13 +366,12 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       },
     })
     return () => setFlowSearchProvider(null)
-  }, [windowed, layout, book, bytes])
+  }, [windowed, layout, wb])
 
   // ── What the app can ask of this view ─────────────────────────────────────
   const scrollerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!book || !layout || layout.empty) return
-    const sheet = book.workbook.sheets[index]
+    if (!wb || !layout || layout.empty) return
     handleRef.current = {
       fitWidth: () => {
         const width = scrollerRef.current?.clientWidth
@@ -319,13 +379,18 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       },
       // A sheet has no pages to go to.
       goTo: () => undefined,
-      pdfJob: async (): Promise<PdfJob> => sheetPdfJob(sheet, book.workbook, book.format),
+      // Laid out for print where the workbook is; the page only builds the DOM.
+      pdfJob: async (): Promise<PdfJob> => {
+        const { css, pieces } = await wb.pdf(index)
+        return { css, pieces, piece: async i => sheetPdfPiece(await wb.pdfPiece(index, i)) }
+      },
     }
     return () => { handleRef.current = null }
-  }, [book, index, layout, handleRef])
+  }, [wb, index, layout, handleRef])
 
   // Memoized like the other reflowing views, so zooming or a find keystroke
   // does not rebuild thousands of cells.
+  const rowsHtml = shown?.html ?? ''
   const table = useMemo(() => {
     if (!layout || layout.empty) return null
     const gap = (px: number) => (px > 0
@@ -335,11 +400,11 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     const html = layout.tableOpen
       + '<tbody>'
       + gap(above)
-      + layout.rows(from, to)
+      + rowsHtml
       + gap(below)
       + '</tbody></table>'
     return <div className="wz-sheet" dangerouslySetInnerHTML={{ __html: html }} />
-  }, [layout, from, to, k])
+  }, [layout, from, to, rowsHtml, k])
 
   // Paint the matches among the drawn rows, and bring the active one on
   // screen. Re-run whenever the drawn rows change, since that replaces them.
@@ -383,7 +448,8 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       </div>
     )
   }
-  if (!book) {
+  // Reading the workbook, or laying out the sheet just picked.
+  if (!wb || !laidOut) {
     return (
       <LoadingIndicator label={t('url.loading')} />
     )
@@ -401,9 +467,9 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     return <ReaderFullscreen onExit={onExitFullscreen} layout="page">{content}</ReaderFullscreen>
   }
 
-  const tabs = book.workbook.sheets
+  const tabs = wb.info.sheets
     .map((s, i) => ({ s, i }))
-    .filter(({ s }) => !s.hidden && !s.veryHidden)
+    .filter(({ s }) => !s.hidden)
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -418,7 +484,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
               key={i}
               role="tab"
               aria-selected={i === index}
-              onClick={() => setPicked({ book, index: i })}
+              onClick={() => setPicked({ wb, index: i })}
               className={`shrink-0 whitespace-nowrap px-4 py-1.5 text-xs transition-colors ${
                 i === index
                   ? 'bg-white font-semibold text-green-800 shadow-[inset_0_-2px_0_#15803d]'

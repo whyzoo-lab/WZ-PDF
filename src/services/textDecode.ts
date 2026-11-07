@@ -43,7 +43,9 @@ function decodeInWorker(bytes: ArrayBuffer): Promise<string> {
  * in place where no worker can be started (tests, a refused worker).
  */
 export async function decodeTextOffThread(bytes: ArrayBuffer): Promise<string> {
-  if (bytes.byteLength < DECODE_IN_WORKER_BYTES || typeof Worker === 'undefined') return decodeText(bytes)
+  // Already in a worker (services/sheetWorker.ts): another would only copy the bytes again.
+  const offPage = typeof document === 'undefined'
+  if (bytes.byteLength < DECODE_IN_WORKER_BYTES || typeof Worker === 'undefined' || offPage) return decodeText(bytes)
   try {
     return await decodeInWorker(bytes)
   } catch (err) {

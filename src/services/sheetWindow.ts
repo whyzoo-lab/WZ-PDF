@@ -53,3 +53,12 @@ export function pageY(declared: number, rowTop: Float64Array, from: number, to: 
   if (declared <= rowTop[to]) return above + (declared - rowTop[from])
   return above + (rowTop[to] - rowTop[from]) + (declared - rowTop[to]) / k
 }
+
+/**
+ * Cells drawn as one table before the view switches to drawing only the rows
+ * in sight. Below it the whole sheet is in the DOM, so find, print and
+ * read-aloud cover all of it; above it they cover the rows drawn.
+ */
+export const WHOLE_SHEET_CELLS = 60_000
+/** Rows are drawn in blocks, so scrolling re-draws now and then, not per row. */
+export const BLOCK_ROWS = 100
