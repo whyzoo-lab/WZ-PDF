@@ -15,9 +15,10 @@
 import type { ImageAnimation, ImageSetEntry, ViewerDoc, ViewerPage } from '../types/viewerDoc'
 import { IMAGE_MIME, type ImageInfo } from './imageInfo'
 import {
-  entriesFor, infoOf, isManifestFile, knownInfo, loadUtif, manifestFile, readManifest, sourceById, sourceFromBytes,
+  entriesFor, infoOf, isManifestFile, knownInfo, manifestFile, readManifest, sourceById, sourceFromBytes,
   tiffPagesOf, type ImageSource,
 } from './imageSet'
+import { tiffPageImage } from './tiffImage'
 import { t } from '../i18n'
 
 /**
@@ -50,34 +51,8 @@ export function clampRaster(width: number, height: number): { width: number; hei
   return { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) }
 }
 
-// ── TIFF ──────────────────────────────────────────────────────────────────
-// Decoded with UTIF (utif2): Chromium has no TIFF decoder. Scanners write TIFF
-// — often CCITT fax-compressed, often several pages to a file — so this is
-// what lets a scanned document in TIFF open at all. The parsed directories of
-// the last couple of files are kept so paging through one does not re-parse it.
-
-type Utif = typeof import('utif2')
-const tiffCache: { id: string; bytes: ArrayBuffer; ifds: ReturnType<Utif['decode']> }[] = []
-
-async function tiffPageImage(src: ImageSource, page: number): Promise<ImageData> {
-  const UTIF = await loadUtif()
-  let hit = tiffCache.find(t => t.id === src.id)
-  if (!hit) {
-    const bytes = await src.read()
-    const ifds = UTIF.decode(bytes).filter(ifd => ifd.t256 && ifd.t257)
-    hit = { id: src.id, bytes, ifds }
-    tiffCache.unshift(hit)
-    tiffCache.length = Math.min(tiffCache.length, 2)
-  }
-  const ifd = hit.ifds[page]
-  if (!ifd) throw new Error(`${src.name}: no page ${page + 1}`)
-  UTIF.decodeImage(hit.bytes, ifd)
-  const rgba = UTIF.toRGBA8(ifd)
-  const data = new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, rgba.byteLength), ifd.width, ifd.height)
-  // The decoded pixels are held by the IFD; let them go with this page.
-  ;(ifd as { data?: unknown }).data = undefined
-  return data
-}
+// TIFF is decoded in services/tiffImage.ts (Chromium has no TIFF decoder), at
+// the size the page is drawn.
 
 // ── Decoding the others ───────────────────────────────────────────────────
 
@@ -122,7 +97,9 @@ async function paint(canvas: HTMLCanvasElement, e: ImageSetEntry): Promise<void>
   ctx.imageSmoothingQuality = 'high'
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   if (info.format === 'tiff') {
-    const data = await tiffPageImage(src, e.page ?? 0)
+    const data = await tiffPageImage(src, e.page ?? 0, canvas.width, canvas.height)
+    if (data.width === canvas.width && data.height === canvas.height) { ctx.putImageData(data, 0, 0); return }
+    // Zoomed past the picture's own pixels: stretch it.
     const full = document.createElement('canvas')
     full.width = data.width
     full.height = data.height

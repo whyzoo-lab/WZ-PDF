@@ -27,7 +27,16 @@ export interface ImageSource {
   read(): Promise<ArrayBuffer>
   /** The first `n` bytes (fewer if the file is shorter). */
   head(n: number): Promise<Uint8Array>
+  /**
+   * `length` bytes at `offset` (fewer at the end of the file) — a TIFF's
+   * directories and, for a small rendering, the rows it samples, without
+   * reading a file that may be hundreds of MB (services/tiffImage.ts).
+   */
+  range(offset: number, length: number): Promise<Uint8Array>
 }
+
+/** Most one `read-file-range` call may carry (electron/security.ts isValidByteRange). */
+const MAX_RANGE_CALL = 64 * 1024 * 1024
 
 const TIFF_NAME = /\.tiff?$/i
 
@@ -104,7 +113,7 @@ const files = createByteCache(192 * 1024 * 1024)
 const sources = new Map<string, ImageSource>()
 let nextId = 1
 
-function register(name: string, tiff: boolean, make: (id: string) => Pick<ImageSource, 'read' | 'head'>): ImageSource {
+function register(name: string, tiff: boolean, make: (id: string) => Pick<ImageSource, 'read' | 'head' | 'range'>): ImageSource {
   const id = `img${nextId++}`
   const src: ImageSource = { id, name, tiff, ...make(id) }
   sources.set(id, src)
@@ -120,11 +129,18 @@ export function sourceById(id: string): ImageSource {
 /** The first `n` bytes of a whole file that may already be held. */
 const headOf = async (bytes: ArrayBuffer, n: number) => new Uint8Array(bytes, 0, Math.min(n, bytes.byteLength))
 
+/** `length` bytes at `offset` of bytes in memory, clipped to the end (a view, not a copy). */
+const rangeOf = async (bytes: ArrayBuffer, offset: number, length: number) => {
+  const from = Math.min(Math.max(0, offset), bytes.byteLength)
+  return new Uint8Array(bytes, from, Math.max(0, Math.min(length, bytes.byteLength - from)))
+}
+
 export function sourceFromBytes(name: string, bytes: ArrayBuffer): ImageSource {
   const tiff = sniffImage(new Uint8Array(bytes, 0, Math.min(16, bytes.byteLength))) === 'tiff'
   return register(name, tiff, () => ({
     read: async () => bytes,
     head: n => headOf(bytes, n),
+    range: (offset, length) => rangeOf(bytes, offset, length),
   }))
 }
 
@@ -135,18 +151,39 @@ export function sourceFromFile(file: File): ImageSource {
       const held = files.peek(id)
       return held ? headOf(held, n) : new Uint8Array(await file.slice(0, n).arrayBuffer())
     },
+    range: async (offset, length) => {
+      const held = files.peek(id)
+      return held ? rangeOf(held, offset, length) : new Uint8Array(await file.slice(offset, offset + length).arrayBuffer())
+    },
   }))
 }
 
 /** A file on disk, read through the main process when a page needs it. */
 export function sourceFromPath(path: string, name: string, size: number): ImageSource {
   const api = window.electronAPI!
+  const range = async (offset: number, length: number): Promise<Uint8Array> => {
+    const from = Math.min(Math.max(0, offset), size)
+    const to = Math.min(size, from + Math.max(0, length))
+    if (to <= from) return new Uint8Array(0)
+    // One call may carry at most 64 MB; split anything larger.
+    const out = new Uint8Array(to - from)
+    for (let at = from; at < to; at += MAX_RANGE_CALL) {
+      const len = Math.min(MAX_RANGE_CALL, to - at)
+      const got = new Uint8Array(await reads.run(() => api.readFileRange(path, at, len)))
+      out.set(got.length > len ? got.subarray(0, len) : got, at - from)
+    }
+    return out
+  }
   return register(name, TIFF_NAME.test(name), id => ({
     read: () => files.get(id, () => reads.run(() => api.readFile(path))),
     head: async n => {
       const held = files.peek(id)
       if (held) return headOf(held, n)
       return new Uint8Array(await reads.run(() => api.readFileRange(path, 0, Math.min(n, size))))
+    },
+    range: async (offset, length) => {
+      const held = files.peek(id)
+      return held ? rangeOf(held, offset, length) : range(offset, length)
     },
   }))
 }
@@ -155,6 +192,6 @@ export function sourceFromPath(path: string, name: string, size: number): ImageS
 export function sourceFromInflate(name: string, inflate: () => Promise<ArrayBuffer>): ImageSource {
   return register(name, TIFF_NAME.test(name), id => {
     const read = () => files.get(id, inflate)
-    return { read, head: async n => headOf(await read(), n) }
+    return { read, head: async n => headOf(await read(), n), range: async (o, l) => rangeOf(await read(), o, l) }
   })
 }

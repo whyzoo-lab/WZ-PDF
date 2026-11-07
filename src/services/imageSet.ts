@@ -16,14 +16,17 @@
 // **Nothing is read up front but the folder listing.** A collection is built
 // from names alone, so the picture that was opened shows as soon as it is
 // decoded, whatever is beside it. A page learns its size from the first KB of
-// its file when it is first laid out (services/imageDocAdapter.ts). The one
-// exception is TIFF: a TIFF can hold several pages, and only reading it says
-// how many. This used to read the head of every file in the folder before
-// showing anything — 52 photos on a network drive took 2.3 s of that alone.
+// its file when it is first laid out (services/imageDocAdapter.ts). This used
+// to read the head of every file in the folder before showing anything — 52
+// photos on a network drive took 2.3 s of that alone. The one exception is
+// TIFF: a TIFF can hold several pages, so each one's directories are read up
+// front — by range, a couple of small reads a file. (Until 1.29.5 that read
+// every TIFF whole: a folder of 27 orthophotos, 339 MB each, took 52 s.)
 
 import { IMAGE_SET_MIME, type ImageSetEntry } from '../types/viewerDoc'
 import { imageInfo, isImageName, naturalCompare, sniffImage, type ImageInfo } from './imageInfo'
 import { pathOf } from './documentPaths'
+import { loadUtif, tiffDirectoriesOf } from './tiffImage'
 import {
   sourceById, sourceFromBytes, sourceFromFile, sourceFromInflate, sourceFromPath, type ImageSource,
 } from './imageSources'
@@ -67,7 +70,14 @@ export function infoOf(src: ImageSource): Promise<ImageInfo> {
   let p = infos.get(src.id)
   if (!p) {
     p = (async () => {
-      let info = imageInfo(await src.head(HEAD_BYTES))
+      const head = await src.head(HEAD_BYTES)
+      let info = imageInfo(head)
+      // A TIFF whose first directory is not near the start — orthophotos put
+      // it at the very end, after hundreds of MB of pixels.
+      if (!info && sniffImage(head) === 'tiff') {
+        const first = (await tiffPagesOf(src).catch(() => []))[0]
+        if (first) info = { format: 'tiff', width: first.width, height: first.height, orientation: 1, animated: false }
+      }
       // A JPEG whose frame header sits past a large embedded thumbnail.
       if (!info) info = imageInfo(new Uint8Array(await src.read()))
       if (!info) throw new Error(`${src.name}: not an image this app can show`)
@@ -85,20 +95,23 @@ export function knownInfo(src: ImageSource): ImageInfo | undefined {
   return known.get(src.id)
 }
 
-type Utif = typeof import('utif2')
-let utif: Promise<Utif> | null = null
-/** The TIFF decoder, loaded the first time a TIFF is opened (CommonJS module). */
-export const loadUtif = (): Promise<Utif> =>
-  (utif ??= import('utif2').then(m => ((m as unknown as { default?: Utif }).default ?? m)))
-
-/** Size of each page of a TIFF (the whole file is needed to count them). */
+/**
+ * Size of each page of a TIFF, from its directories — a few hundred bytes read
+ * by range wherever they sit (services/tiffDir.ts). A file whose chain cannot
+ * be walked that way is left to UTIF, which needs all of it.
+ */
 export function tiffPagesOf(src: ImageSource): Promise<{ width: number; height: number }[]> {
   let p = tiffPages.get(src.id)
   if (!p) {
     p = (async () => {
-      const UTIF = await loadUtif()
-      const ifds = UTIF.decode(await src.read()).filter(ifd => (ifd.t256 as number[] | undefined) && (ifd.t257 as number[] | undefined))
-      const pages = ifds.map(ifd => ({ width: (ifd.t256 as number[])[0], height: (ifd.t257 as number[])[0] }))
+      let pages: { width: number; height: number }[]
+      try {
+        pages = (await tiffDirectoriesOf(src)).map(d => ({ width: d.width, height: d.height }))
+      } catch {
+        const UTIF = await loadUtif()
+        const ifds = UTIF.decode(await src.read()).filter(ifd => (ifd.t256 as number[] | undefined) && (ifd.t257 as number[] | undefined))
+        pages = ifds.map(ifd => ({ width: (ifd.t256 as number[])[0], height: (ifd.t257 as number[])[0] }))
+      }
       if (pages.length === 0) throw new Error(`${src.name}: no pages`)
       return pages
     })()
