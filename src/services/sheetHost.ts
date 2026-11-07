@@ -2,13 +2,13 @@
 // worker that holds the workbook, or by a SheetBook in the page where no
 // worker can be started (tests, a refused worker).
 
-import type { BookInfo, SheetBook, SheetMetrics } from './sheetBook'
+import type { BookInfo, SheetBook, SheetMetrics, SheetRows } from './sheetBook'
 import { EncryptedWorkbookError } from './sheetErrors'
 
 export interface SheetHost {
   info: BookInfo
   layout(index: number): Promise<SheetMetrics | null>
-  rows(id: number, from: number, to: number): Promise<string>
+  rows(id: number, from: number, to: number, cFrom: number, cTo: number): Promise<SheetRows>
   prepare(id: number): void
   /** Matching cells as [row, column, …]; null when overtaken by a newer search. */
   find(id: number, needle: string): Promise<Int32Array | null>
@@ -22,7 +22,7 @@ function localHost(book: SheetBook): SheetHost {
   return {
     info: book.info(),
     layout: async index => book.layout(index),
-    rows: async (id, from, to) => book.rows(id, from, to),
+    rows: async (id, from, to, cFrom, cTo) => book.rows(id, from, to, cFrom, cTo),
     prepare: id => book.prepare(id),
     find: (id, needle) => book.find(id, needle),
     cancelFind: () => book.cancelFind(),
@@ -76,7 +76,7 @@ async function workerHost(bytes: ArrayBuffer, name: string): Promise<SheetHost> 
   return {
     info,
     layout: index => call('layout', index),
-    rows: (id, from, to) => call('rows', id, from, to),
+    rows: (id, from, to, cFrom, cTo) => call('rows', id, from, to, cFrom, cTo),
     prepare: id => { void call('prepare', id).catch(() => undefined) },
     find: (id, needle) => call('find', id, needle),
     cancelFind: () => { void call('cancelFind').catch(() => undefined) },

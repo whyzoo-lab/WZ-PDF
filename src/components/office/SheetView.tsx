@@ -12,7 +12,7 @@ import type { PdfJob } from '../../services/officePdf'
 import type { OfficeViewProps } from './officeView'
 import { t } from '../../i18n'
 import { onceAFrame } from '../../utils/onceAFrame'
-import { BLOCK_ROWS, compression, declaredAt, pageY, spacers } from '../../services/sheetWindow'
+import { BLOCK_ROWS, COL_BLOCK, ROW_HEADER_PX, cellsAcross, compression, declaredAt, pageY, spacers } from '../../services/sheetWindow'
 import LoadingIndicator from '../LoadingIndicator'
 import { loaderShown } from '../../services/loaderSignal'
 
@@ -27,9 +27,22 @@ type Loaded = { src: ArrayBuffer; host: SheetHost | null; error: string | null }
 const HEADER_PX = 22
 
 type SheetLayout = SheetMetrics
-type Window = { layout: SheetLayout; from: number; to: number }
-/** Rows on the page: a window and its markup, from the workbook's worker. */
-type Drawn = Window & { html: string }
+/** Rows [from, to) and columns [cFrom, cTo) of a layout. */
+type Window = { layout: SheetLayout; from: number; to: number; cFrom: number; cTo: number }
+/** What is on the page: a window, its table head and its rows, from the workbook's worker. */
+type Drawn = Window & { open: string; html: string }
+
+const sameWindow = (a: Window | null, b: Window) => !!a && a.layout === b.layout
+  && a.from === b.from && a.to === b.to && a.cFrom === b.cFrom && a.cTo === b.cTo
+
+/** The block of columns to draw around drawn-column indices [first, last]. */
+function columnBlock(layout: SheetLayout, first: number, last: number): { cFrom: number; cTo: number } {
+  if (!layout.colsWindowed) return { cFrom: 0, cTo: layout.cols }
+  return {
+    cFrom: Math.max(0, Math.floor((first - COL_BLOCK) / COL_BLOCK) * COL_BLOCK),
+    cTo: Math.min(layout.cols, Math.ceil((last + COL_BLOCK) / COL_BLOCK) * COL_BLOCK),
+  }
+}
 
 /**
  * Where the view must be once the block [from, to) is drawn: the declared
@@ -187,9 +200,13 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
   const [drawn, setDrawn] = useState<Drawn | null>(null)
   const shown: Drawn | null = !layout
     ? null
-    : drawn?.layout === layout ? drawn : { layout, from: 0, to: layout.firstTo, html: layout.html }
+    : drawn?.layout === layout
+      ? drawn
+      : { layout, from: 0, to: layout.firstTo, cFrom: 0, cTo: layout.firstCols, open: layout.tableOpen, html: layout.html }
   const from = shown?.from ?? 0
   const to = shown?.to ?? 0
+  const cFrom = shown?.cFrom ?? 0
+  const cTo = shown?.cTo ?? 0
 
   // How much the spacers are shrunk: 1 unless the sheet is taller than a page
   // can be (sheetWindow.ts).
@@ -208,21 +225,22 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
   useEffect(() => {
     const w = windowed && win?.layout === layout ? win : null
     wantRef.current = w
-    if (!wb || !w || fetchingRef.current || (w.from === from && w.to === to)) return
+    if (!wb || !w || fetchingRef.current
+      || (w.from === from && w.to === to && w.cFrom === cFrom && w.cTo === cTo)) return
     fetchingRef.current = true
-    wb.rows(w.layout.id, w.from, w.to).then(
-      html => {
+    wb.rows(w.layout.id, w.from, w.to, w.cFrom, w.cTo).then(
+      ({ open, html }) => {
         fetchingRef.current = false
-        if (k === 1 || wantRef.current === w) setDrawn({ ...w, html })
+        if (k === 1 || wantRef.current === w) setDrawn({ ...w, open, html })
         else setFetchTick(n => n + 1)   // ask again, for the block wanted now
       },
       () => { fetchingRef.current = false },
     )
-  }, [wb, windowed, win, layout, from, to, k, fetchTick])
+  }, [wb, windowed, win, layout, from, to, cFrom, cTo, k, fetchTick])
 
   const hostRef = useRef<HTMLDivElement>(null)
   // The block on the page now, and where the view goes once the next is drawn.
-  const drawnRef = useRef<{ layout: SheetLayout | null; from: number; to: number }>({ layout: null, from: 0, to: 0 })
+  const drawnRef = useRef<Omit<Window, 'layout'> & { layout: SheetLayout | null }>({ layout: null, from: 0, to: 0, cFrom: 0, cTo: 0 })
   const anchorRef = useRef<Anchor | null>(null)
   const update = useCallback(() => {
     const host = hostRef.current
@@ -234,8 +252,16 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     // Measured from the page itself, so it holds at any zoom and in
     // fullscreen, where the scroller and the scale are ReaderFullscreen's.
     const scale = sheetScale(host, head)
-    const top = body.getBoundingClientRect().top
-    const bottom = scrollParent(host)?.getBoundingClientRect().bottom ?? window.innerHeight
+    const bodyRect = body.getBoundingClientRect()
+    const top = bodyRect.top
+    const view = scrollParent(host)?.getBoundingClientRect()
+    const bottom = view?.bottom ?? window.innerHeight
+    // Columns in sight, past the row numbers (which stay on screen, sticky,
+    // but keep their place in the layout).
+    const x0 = ((view?.left ?? 0) - bodyRect.left) / scale - ROW_HEADER_PX
+    const x1 = ((view?.right ?? window.innerWidth) - bodyRect.left) / scale - ROW_HEADER_PX
+    const { cFrom: nextCFrom, cTo: nextCTo } = columnBlock(
+      layout, rowAt(layout.colLeft, Math.max(0, x0)), rowAt(layout.colLeft, Math.max(0, x1)))
     const viewTop = Math.max(0, -top) / scale
     const viewBottom = (bottom - top) / scale
     if (viewBottom < 0) return
@@ -248,23 +274,24 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       declared + (viewBottom - viewTop), declaredAt(viewBottom, rowTop, drawn.from, drawn.to, k)))
     const nextFrom = Math.max(0, Math.floor((first - BLOCK_ROWS) / BLOCK_ROWS) * BLOCK_ROWS)
     const nextTo = Math.min(layout.rowCount, Math.ceil((last + BLOCK_ROWS) / BLOCK_ROWS) * BLOCK_ROWS)
-    const same = (w: Window | null) => !!w && w.layout === layout && w.from === nextFrom && w.to === nextTo
+    const next: Window = { layout, from: nextFrom, to: nextTo, cFrom: nextCFrom, cTo: nextCTo }
     if (nextFrom === drawn.from && nextTo === drawn.to) {
-      // Back on the rows already drawn: a block still on its way is no longer wanted.
+      // Back on the rows already drawn: a block still on its way is no longer
+      // wanted, and other columns of the same rows move nothing up or down.
       anchorRef.current = null
-      setWin(w => (same(w) ? w : { layout, from: nextFrom, to: nextTo }))
+      setWin(w => (sameWindow(w, next) ? w : next))
       return
     }
     const { above, below } = spacers(rowTop, drawn.from, drawn.to, k)
     const pageEnd = above + (rowTop[drawn.to] - rowTop[drawn.from]) + below
     anchorRef.current = k > 1
       ? {
-          layout, from: nextFrom, to: nextTo, declared, y: viewTop, viewH: viewBottom - viewTop,
+          ...next, declared, y: viewTop, viewH: viewBottom - viewTop,
           inBlock: first >= drawn.from && first < drawn.to,
           end: viewBottom >= pageEnd - 1,
         }
       : null
-    setWin(w => (same(w) ? w : { layout, from: nextFrom, to: nextTo }))
+    setWin(w => (sameWindow(w, next) ? w : next))
   }, [layout, windowed, k])
 
   // Record what is drawn, and move the view with the rows when the spacers
@@ -272,11 +299,11 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
   // its own block: rows arrive from the worker, and a block asked for earlier
   // may be drawn first.
   useLayoutEffect(() => {
-    drawnRef.current = { layout, from, to }
+    drawnRef.current = { layout, from, to, cFrom, cTo }
     const a = anchorRef.current
     if (!a || !layout) return
     if (a.layout !== layout) { anchorRef.current = null; return }
-    if (a.from !== from || a.to !== to) return
+    if (a.from !== from || a.to !== to || a.cFrom !== cFrom || a.cTo !== cTo) return
     anchorRef.current = null
     const host = hostRef.current
     const head = host?.querySelector('thead')
@@ -294,7 +321,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     const scale = sheetScale(host, head)
     const delta = (pageY(a.declared, layout.rowTop, from, to, k) - a.y) * scale
     if (Math.abs(delta) >= 0.5) scroller.scrollTop += delta
-  }, [layout, from, to, k])
+  }, [layout, from, to, cFrom, cTo, k])
 
   // Look again once a block is drawn. Drawing moves the spacers, and with them
   // what the view (whose scrollTop stays put) is showing; no scroll event
@@ -304,7 +331,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     if (!windowed) return
     const id = requestAnimationFrame(() => update())
     return () => cancelAnimationFrame(id)
-  }, [windowed, update, from, to])
+  }, [windowed, update, from, to, cFrom, cTo])
 
   useLayoutEffect(() => {
     if (!windowed) return
@@ -346,12 +373,16 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       reveal(index) {
         const f = foundRef.current
         const ri = f?.cells[index * 2]
-        if (!f || ri === undefined) return
+        const ci = f?.cells[index * 2 + 1]
+        if (!f || ri === undefined || ci === undefined) return
         // Draw the block around the match before scrolling to it.
         const nextFrom = Math.max(0, Math.floor(ri / BLOCK_ROWS) * BLOCK_ROWS - BLOCK_ROWS)
         const nextTo = Math.min(layout.rowCount, nextFrom + BLOCK_ROWS * 3)
+        const cols = columnBlock(layout, ci, ci)
         anchorRef.current = null   // the find bar scrolls to the match itself
-        setWin(w => (w && w.layout === layout && w.from <= ri && ri < w.to ? w : { layout, from: nextFrom, to: nextTo }))
+        setWin(w => (w && w.layout === layout && w.from <= ri && ri < w.to && w.cFrom <= ci && ci < w.cTo
+          ? w
+          : { layout, from: nextFrom, to: nextTo, ...cols }))
         const shown: Found = { ...f, active: index, seq: f.seq + 1 }
         foundRef.current = shown
         setFound(shown)
@@ -391,20 +422,22 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
   // Memoized like the other reflowing views, so zooming or a find keystroke
   // does not rebuild thousands of cells.
   const rowsHtml = shown?.html ?? ''
+  const tableOpen = shown?.open ?? ''
   const table = useMemo(() => {
     if (!layout || layout.empty) return null
+    const across = cellsAcross(layout.cols, cFrom, cTo)
     const gap = (px: number) => (px > 0
-      ? `<tr class="wz-sheet-gap" aria-hidden="true" style="height:${px}px"><td colspan="${layout.columnCount}"></td></tr>`
+      ? `<tr class="wz-sheet-gap" aria-hidden="true" style="height:${px}px"><td colspan="${across}"></td></tr>`
       : '')
     const { above, below } = spacers(layout.rowTop, from, to, k)
-    const html = layout.tableOpen
+    const html = tableOpen
       + '<tbody>'
       + gap(above)
       + rowsHtml
       + gap(below)
       + '</tbody></table>'
     return <div className="wz-sheet" dangerouslySetInnerHTML={{ __html: html }} />
-  }, [layout, from, to, rowsHtml, k])
+  }, [layout, from, to, cFrom, cTo, tableOpen, rowsHtml, k])
 
   // Paint the matches among the drawn rows, and bring the active one on
   // screen. Re-run whenever the drawn rows change, since that replaces them.
@@ -421,8 +454,9 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     let active: Range[] = []
     for (let i = 0; i < f.cells.length; i += 2) {
       const ri = f.cells[i]
-      if (ri < from || ri >= to) continue
-      const td = host.querySelector<HTMLElement>(`tr[data-r="${ri}"] > td[data-c="${f.cells[i + 1]}"]`)
+      const ci = f.cells[i + 1]
+      if (ri < from || ri >= to || ci < cFrom || ci >= cTo) continue
+      const td = host.querySelector<HTMLElement>(`tr[data-r="${ri}"] > td[data-c="${ci}"]`)
       if (!td) continue
       const ranges = rangesInCell(td, f.needle)
       all.push(...ranges)
@@ -439,7 +473,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     else api.registry.delete(HL_ALL)
     if (active.length) api.registry.set(HL_ACTIVE, new api.Highlight(...active))
     else api.registry.delete(HL_ACTIVE)
-  }, [layout, from, to, found])
+  }, [layout, from, to, cFrom, cTo, found])
 
   if (current?.error) {
     return (

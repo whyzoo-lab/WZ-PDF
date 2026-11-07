@@ -17,8 +17,8 @@ import { initialSheet, layoutSheet, loadWorkbook, type LoadedWorkbook, type Shee
 import { buildSheetIndex, searchSheetIndex, slicer, type SheetSearchIndex } from './sheetSearch'
 import { sheetPdfPlan, type SheetPdfPlan } from './sheetPdf'
 
-import { BLOCK_ROWS, WHOLE_SHEET_CELLS } from './sheetWindow'
-export { BLOCK_ROWS, WHOLE_SHEET_CELLS }
+import { BLOCK_ROWS, COL_BLOCK, WHOLE_SHEET_CELLS } from './sheetWindow'
+export { BLOCK_ROWS, COL_BLOCK, WHOLE_SHEET_CELLS }
 /** Matches kept per search; past this a query is too broad to step through anyway. */
 export const MAX_MATCHES = 100_000
 
@@ -36,15 +36,28 @@ export interface SheetMetrics {
   id: number
   empty: boolean
   rowCount: number
+  /** Drawn columns, plus the row-number column. */
   columnCount: number
+  /** Drawn columns alone. */
+  cols: number
   tableWidth: number
-  tableOpen: string
   rowTop: Float64Array
-  /** Drawn a block at a time (else every row is in `html`). */
+  colLeft: Float64Array
+  /** Drawn a block of rows at a time (else every row is in `html`). */
   windowed: boolean
-  /** Markup of rows [0, firstTo): the whole sheet, or its first window. */
+  /** Drawn a block of columns at a time as well (else every column always is). */
+  colsWindowed: boolean
+  /** The first window: rows [0, firstTo), columns [0, firstCols) — the table head and its rows. */
+  tableOpen: string
   html: string
   firstTo: number
+  firstCols: number
+}
+
+/** A block of rows and columns to draw: the table head for its columns, and its rows. */
+export interface SheetRows {
+  open: string
+  html: string
 }
 
 export class SheetBook {
@@ -91,23 +104,29 @@ export class SheetBook {
     this.layouts.clear()
     const id = this.nextId++
     this.layouts.set(id, { layout })
+    const cols = layout.colLeft.length - 1
     const windowed = layout.rowCount * layout.columnCount > WHOLE_SHEET_CELLS
+    const colsWindowed = windowed && cols > COL_BLOCK * 3
     const firstTo = windowed ? Math.min(layout.rowCount, BLOCK_ROWS * 3) : layout.rowCount
+    const firstCols = colsWindowed ? COL_BLOCK * 3 : cols
     return {
-      id, windowed, firstTo,
+      id, windowed, colsWindowed, firstTo, firstCols, cols,
       empty: layout.empty,
       rowCount: layout.rowCount,
       columnCount: layout.columnCount,
       tableWidth: layout.tableWidth,
-      tableOpen: layout.tableOpen,
       rowTop: layout.rowTop,
-      html: layout.empty ? '' : layout.rows(0, firstTo),
+      colLeft: layout.colLeft,
+      tableOpen: layout.empty ? '' : layout.head(0, firstCols),
+      html: layout.empty ? '' : layout.rows(0, firstTo, 0, firstCols),
     }
   }
 
-  /** Markup of drawn rows [from, to) of layout `id`; '' when it is gone. */
-  rows(id: number, from: number, to: number): string {
-    return this.layouts.get(id)?.layout.rows(from, to) ?? ''
+  /** Rows [from, to), columns [cFrom, cTo) of layout `id`; empty when it is gone. */
+  rows(id: number, from: number, to: number, cFrom: number, cTo: number): SheetRows {
+    const layout = this.layouts.get(id)?.layout
+    if (!layout) return { open: '', html: '' }
+    return { open: layout.head(cFrom, cTo), html: layout.rows(from, to, cFrom, cTo) }
   }
 
   private index(id: number): Promise<SheetSearchIndex | null> {

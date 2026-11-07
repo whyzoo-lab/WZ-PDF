@@ -27,6 +27,7 @@ import {
   scientific, textMeasure,
   type FontSpec, type Measure,
 } from './sheetFit'
+import { ROW_HEADER_PX } from './sheetWindow'
 
 export type SheetFormat = 'xlsx' | 'xls' | 'ods' | 'csv'
 
@@ -105,10 +106,20 @@ export interface SheetLayout {
   columnCount: number
   /** Width of the whole table, px. */
   tableWidth: number
+  /** colLeft[i] = declared left of drawn column i, px past the row numbers; length columns + 1. */
+  colLeft: Float64Array
   /** `<table …><colgroup>…</colgroup><thead>…</thead>` — close with `</table>`. */
   tableOpen: string
-  /** Drawn rows [from, to) as `<tr>` markup. */
-  rows(from: number, to: number): string
+  /**
+   * The same, for drawing only columns [cFrom, cTo): a spacer column stands in
+   * for the columns either side, so the table keeps its width.
+   */
+  head(cFrom?: number, cTo?: number): string
+  /**
+   * Drawn rows [from, to) as `<tr>` markup — of columns [cFrom, cTo) only,
+   * with a spacer cell either side, to go under `head(cFrom, cTo)`.
+   */
+  rows(from: number, to: number, cFrom?: number, cTo?: number): string
   /**
    * The text shown in drawn row `ri`, drawn column `ci` — what find matches
    * against when the sheet is too large to be in the DOM at once. A cell a
@@ -303,9 +314,6 @@ function spanPx(visible: number[], from: number, to: number, size: (i: number) =
   return visible.filter(i => i >= from && i < to).reduce((sum, i) => sum + size(i), 0)
 }
 
-/** Width of the row-number column. */
-const ROW_HEADER_PX = 44
-
 /** Draw a whole sheet as one table — for small sheets, print and tests. */
 export interface LayoutOptions {
   /**
@@ -378,7 +386,7 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
   if (lastRow < 0 || lastCol < 0 || sheet.kind && sheet.kind !== 'worksheet') {
     return {
       empty: true, rowCount: 0, rowNumbers: [], rowTop: new Float64Array(1), columnCount: 0, tableWidth: 0,
-      tableOpen: '', rows: () => '', textAt: () => '',
+      colLeft: new Float64Array(1), tableOpen: '', head: () => '', rows: () => '', textAt: () => '',
     }
   }
 
@@ -496,57 +504,133 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
   }
 
   // ── The parts that do not depend on which rows are drawn ──
-  const out: string[] = []
   const widths = visibleCols.map(colWidth)
+  const colCount = visibleCols.length
+  const colLeft = new Float64Array(colCount + 1)
+  for (let i = 0; i < colCount; i++) colLeft[i + 1] = colLeft[i] + widths[i]
   const tableStyle = [
     // An explicit width, so the fixed layout uses the column widths and
     // nothing else: with an intrinsic width, text running over its neighbours
     // widened its own column to fit.
-    `width:${(headings ? ROW_HEADER_PX : 0) + widths.reduce((a, b) => a + b, 0)}px`,
+    `width:${(headings ? ROW_HEADER_PX : 0) + colLeft[colCount]}px`,
     defaultFont ? `font-family:"${defaultFont}",var(--wz-sheet-font)` : '',
     defaultSize ? `font-size:${defaultSize}pt` : '',
   ].filter(Boolean).join(';')
-  out.push(`<table class="wz-sheet-table" style="${tableStyle}"><colgroup>`)
-  if (headings) out.push(`<col style="width:${ROW_HEADER_PX}px">`)
-  for (const w of widths) out.push(`<col style="width:${w}px">`)
-  out.push('</colgroup>')
-  if (headings) {
-    out.push('<thead><tr><th class="wz-sheet-corner"></th>')
-    // Labels come from CSS (`content: attr(data-l)`), not text: find and
-    // read-aloud walk the table's text, and "A" or "12" there is not the sheet.
-    for (const c of visibleCols) out.push(`<th data-l="${columnLetter(c)}"></th>`)
-    out.push('</tr></thead>')
+  const head = (cFrom = 0, cTo = colCount): string => {
+    const lo = Math.max(0, cFrom)
+    const hi = Math.min(colCount, cTo)
+    const out: string[] = [`<table class="wz-sheet-table" style="${tableStyle}"><colgroup>`]
+    if (headings) out.push(`<col style="width:${ROW_HEADER_PX}px">`)
+    // The columns not drawn are one spacer column each side, as wide as they are.
+    if (lo > 0) out.push(`<col style="width:${colLeft[lo]}px">`)
+    for (let i = lo; i < hi; i++) out.push(`<col style="width:${widths[i]}px">`)
+    if (hi < colCount) out.push(`<col style="width:${colLeft[colCount] - colLeft[hi]}px">`)
+    out.push('</colgroup>')
+    if (headings) {
+      out.push('<thead><tr><th class="wz-sheet-corner"></th>')
+      if (lo > 0) out.push('<th class="wz-sheet-colgap"></th>')
+      // Labels come from CSS (`content: attr(data-l)`), not text: find and
+      // read-aloud walk the table's text, and "A" or "12" there is not the sheet.
+      for (let i = lo; i < hi; i++) out.push(`<th data-l="${columnLetter(visibleCols[i])}"></th>`)
+      if (hi < colCount) out.push('<th class="wz-sheet-colgap"></th>')
+      out.push('</tr></thead>')
+    }
+    return out.join('')
   }
-  const tableOpen = out.join('')
+  const tableOpen = head()
 
   const heightOf = (r: number) => rowPx(sheet.rowDefs?.get(r)?.height ?? defaultHeight)
   const rowTop = new Float64Array(visibleRows.length + 1)
   for (let i = 0; i < visibleRows.length; i++) rowTop[i + 1] = rowTop[i] + heightOf(visibleRows[i])
 
-  // ── Rows [from, to) ──
-  const drawRows = (from: number, to: number): string => {
+  // ── Cells beside the drawn columns that make their row taller ──
+  // A row grows to fit a wrapped cell or a large font, so with only some
+  // columns drawn its height would depend on which: row 2 of a 273-column
+  // survey was 130 px over columns A–AF and 286 px over CS–FD, and scrolling
+  // sideways moved every row below it. Each such cell is drawn into the spacer
+  // on its side as an invisible copy — its text from CSS (`attr(data-t)`), so
+  // find, copy and read-aloud never see it — all copies in one grid cell, so
+  // the spacer is as tall as the tallest and the row as tall as it is with
+  // every column drawn. Merged cells are left out: a merge's height is shared
+  // by its rows.
+  const NO_GHOSTS: Array<[number, string]> = []
+  const ghostCache = new Map<number, Array<[number, string]>>()
+  const ghostsOf = (r: number): Array<[number, string]> => {
+    // No styles (every CSV): nothing wraps and every font is the default.
+    if (cells.size === 0) return NO_GHOSTS
+    let list = ghostCache.get(r)
+    if (list) return list
+    list = []
+    const declared = heightOf(r)
+    for (let ci = 0; ci < colCount; ci++) {
+      const c = visibleCols[ci]
+      const cell = cellAt(r, c)
+      if (!cell) continue
+      if (spans.size > 0 && (spans.has(`${r},${c}`) || covered.has(`${r},${c}`))) continue
+      const text = cell.richText?.length
+        ? cell.richText.map(run => run.text).join('')
+        : displayValue(valueAt(r, c), cell, is1904)
+      if (!text) continue
+      const style = cell.style
+      const font = fontOf(style?.font)
+      const ownPt = font.sizePt ?? 11
+      let pt = ownPt
+      for (const run of cell.richText ?? []) {
+        const size = run.font?.size
+        if (typeof size === 'number' && size > pt && size < 410) pt = size
+      }
+      const wrap = !!style?.alignment?.wrapText
+      // One line is 1.25 em (.wz-sheet-table) plus the cell's bottom border;
+      // a wrapped cell's text box is its width less 3 px padding a side and
+      // the 1 px right border.
+      const tall = pt * 1.25 * 96 / 72 + 1 > declared
+        || (wrap && (text.includes('\n') || measure(text, font) > widths[ci] - 7))
+      if (!tall) continue
+      const css = `width:${widths[ci]}px;${fontCss(style?.font, theme)}${pt !== ownPt ? `;font-size:${pt}pt` : ''}`
+      list.push([ci, `<div class="wz-ghost${wrap ? ' wz-wrap' : ''}" data-t="${escapeHtml(text)}" style="${escapeHtml(css)}"></div>`])
+    }
+    ghostCache.set(r, list)
+    return list
+  }
+
+  // ── Rows [from, to), columns [cFrom, cTo) ──
+  const drawRows = (from: number, to: number, cFrom = 0, cTo = colCount): string => {
   const html: string[] = []
   const lastDrawn = visibleRows[Math.min(to, visibleRows.length) - 1]
+  const lo = Math.max(0, cFrom)
+  const hi = Math.min(colCount, cTo)
+  if (hi <= lo) return ''
+  const firstRow = visibleRows[from]
+  const firstCol = visibleCols[lo]
+  const lastCol = visibleCols[hi - 1]
+  const cut = lo > 0 || hi < colCount
+  const gapCell = (ghosts: string[]) => (ghosts.length
+    ? `<td class="wz-sheet-colgap"><div class="wz-ghosts" aria-hidden="true">${ghosts.join('')}</div></td>`
+    : '<td class="wz-sheet-colgap"></td>')
   for (let ri = from; ri < Math.min(to, visibleRows.length); ri++) {
     const r = visibleRows[ri]
     html.push(`<tr data-r="${ri}" style="height:${heightOf(r)}px">${headings ? `<th data-l="${r + 1}"></th>` : ''}`)
-    visibleCols.forEach((c, ci) => {
+    const ghosts = cut ? ghostsOf(r) : NO_GHOSTS
+    if (lo > 0) html.push(gapCell(ghosts.filter(([ci]) => ci < lo).map(([, g]) => g)))
+    for (let ci = lo; ci < hi; ci++) {
+      const c = visibleCols[ci]
       let key = `${r},${c}`
       // Where (in the sheet) this cell's content and style come from: itself,
-      // or — for the first row drawn part-way down a merge — the merge's anchor,
-      // which has scrolled out of the drawn rows.
+      // or — for the top-left cell drawn of a merge whose anchor is above or
+      // left of the drawn block — the merge's anchor, carried into view.
       let srcR = r
       let srcC = c
       let span = spans.get(key)
       const owner = covered.get(key)
       if (owner !== undefined) {
         const [r0, c0] = owner.split(',').map(Number)
-        if (ri !== from || c0 !== c || r0 >= r) return
+        if (r !== Math.max(r0, firstRow) || c !== Math.max(c0, firstCol)) continue
         srcR = r0; srcC = c0; key = owner
         span = spans.get(owner)
       }
-      // Rows this span covers among the rows being drawn.
+      // Rows and columns this span covers among those being drawn.
       const rs = span ? countIn(visibleRows, r, Math.min(span.endRow, lastDrawn)) : 1
+      const cs = span ? countIn(visibleCols, c, Math.min(span.endCol, lastCol)) : 1
       const cell = cellAt(srcR, srcC)
       const style = cell?.style
       const value = valueAt(srcR, srcC)
@@ -577,7 +661,9 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
       let shown = text
       if ((typeof value === 'number' || value instanceof Date) && !cell?.richText?.length) {
         let room = -CELL_TEXT_INSET
-        for (let i = ci; i < ci + (span?.cs ?? 1); i++) room += widths[i] ?? 0
+        // The whole merge's width, wherever the drawn block cuts it.
+        const at = colPos.get(srcC) ?? ci
+        for (let i = at; i < at + (span?.cs ?? 1); i++) room += widths[i] ?? 0
         const numFmt = style?.numFmt
         const general = !numFmt || numFmt.toLowerCase() === 'general'
         shown = fitNumber(value, text, general, room, fontOf(style?.font), measure)
@@ -617,10 +703,11 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
       }
 
       if (pics) inner = pics.join('') + inner
-      const spanAttrs = span ? `${rs > 1 ? ` rowspan="${rs}"` : ''}${span.cs > 1 ? ` colspan="${span.cs}"` : ''}` : ''
+      const spanAttrs = span ? `${rs > 1 ? ` rowspan="${rs}"` : ''}${cs > 1 ? ` colspan="${cs}"` : ''}` : ''
       const title = shown !== text ? ` title="${escapeHtml(text)}"` : ''
       html.push(`<td data-c="${ci}"${spanAttrs}${cls ? ` class="${cls}"` : ''}${title} style="${escapeHtml(css.join(';'))}">${inner}</td>`)
-    })
+    }
+    if (hi < colCount) html.push(gapCell(ghosts.filter(([ci]) => ci >= hi).map(([, g]) => g)))
     html.push('</tr>')
   }
   return html.join('')
@@ -632,8 +719,10 @@ export function layoutSheet(sheet: Sheet, workbook: Workbook, opts: LayoutOption
     rowNumbers: visibleRows,
     rowTop,
     columnCount: visibleCols.length + (headings ? 1 : 0),
-    tableWidth: (headings ? ROW_HEADER_PX : 0) + widths.reduce((a, b) => a + b, 0),
+    tableWidth: (headings ? ROW_HEADER_PX : 0) + colLeft[colCount],
+    colLeft,
     tableOpen,
+    head,
     rows: drawRows,
     textAt: (ri, ci) => {
       const r = visibleRows[ri]

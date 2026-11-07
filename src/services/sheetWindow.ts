@@ -62,3 +62,18 @@ export function pageY(declared: number, rowTop: Float64Array, from: number, to: 
 export const WHOLE_SHEET_CELLS = 60_000
 /** Rows are drawn in blocks, so scrolling re-draws now and then, not per row. */
 export const BLOCK_ROWS = 100
+/**
+ * Columns are drawn in blocks too, once a windowed sheet has more than three
+ * of them: a 273-column survey drew 54,600 cells for the rows in sight, where
+ * the screen shows ~10 columns (5.9 s of the main thread while opening). 16
+ * columns a block left redraws of 0.2-0.9 s when scrolling sideways; 8 gives
+ * 0.1-0.26 s.
+ */
+export const COL_BLOCK = 8
+/** Width of the row-number column, px (sheetDoc draws it; SheetView measures past it). */
+export const ROW_HEADER_PX = 44
+
+/** Cells in one drawn row: the row number, the columns [cFrom, cTo) of `cols`, and a spacer each side that has columns behind it. */
+export function cellsAcross(cols: number, cFrom: number, cTo: number): number {
+  return 1 + (cTo - cFrom) + (cFrom > 0 ? 1 : 0) + (cTo < cols ? 1 : 0)
+}

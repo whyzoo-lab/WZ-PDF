@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { writeXlsx } from 'hucre/xlsx'
-import { SheetBook, BLOCK_ROWS, WHOLE_SHEET_CELLS } from './sheetBook'
+import { SheetBook, BLOCK_ROWS, COL_BLOCK, WHOLE_SHEET_CELLS } from './sheetBook'
 import { openSheetHost } from './sheetHost'
 
 const toBuffer = (u: Uint8Array) => u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer
@@ -45,9 +45,30 @@ describe('SheetBook', () => {
     expect(b.firstTo).toBe(BLOCK_ROWS * 3)
     expect(b.rowTop.length).toBe(rows + 1)
     // Any block on request, by the layout's id.
-    const tail = big.rows(b.id, rows - 10, rows)
+    const tail = big.rows(b.id, rows - 10, rows, 0, b.cols).html
     expect(tail).toContain('끝줄')
     expect(tail).not.toContain('data-r="0"')
+    // Six columns are drawn whole.
+    expect(b.colsWindowed).toBe(false)
+    expect(b.firstCols).toBe(6)
+  })
+
+  it('draws a wide sheet a block of columns at a time', async () => {
+    const cols = 1500
+    const lines = Array.from({ length: 50 }, (_, r) => Array.from({ length: cols }, (_, c) => `r${r}c${c}`).join(','))
+    const book = await SheetBook.open(csv(lines.join('\n')), 'w.csv')
+    const m = book.layout(0)!
+    expect(m.windowed).toBe(true)
+    expect(m.colsWindowed).toBe(true)
+    expect(m.cols).toBe(cols)
+    expect(m.firstCols).toBe(COL_BLOCK * 3)
+    expect(m.html).toContain(`data-c="${COL_BLOCK * 3 - 1}"`)
+    expect(m.html).not.toContain(`data-c="${COL_BLOCK * 3}"`)
+    expect(m.tableOpen).toContain('wz-sheet-colgap')
+    const far = book.rows(m.id, 0, 50, 1440, cols)
+    expect(far.html).toContain('r49c1499')
+    expect(far.html).not.toContain('r0c0<')
+    expect(far.open.match(/data-l="/g)!.length).toBe(60)
   })
 
   it('finds over every row of the layout, and a newer search overtakes an older one', async () => {
@@ -67,8 +88,8 @@ describe('SheetBook', () => {
     const first = book.layout(0)!
     const second = book.layout(0)!
     expect(second.id).not.toBe(first.id)
-    expect(book.rows(first.id, 0, 1)).toBe('')
-    expect(book.rows(second.id, 0, 1)).toContain('<tr')
+    expect(book.rows(first.id, 0, 1, 0, 1)).toEqual({ open: '', html: '' })
+    expect(book.rows(second.id, 0, 1, 0, 1).html).toContain('<tr')
   })
 
   it('makes the PDF pieces as markup', async () => {
@@ -90,6 +111,6 @@ describe('openSheetHost', () => {
     expect(warn).toHaveBeenCalled()
     const m = await host.layout(host.info.initial)
     expect(m!.html).toContain('data-r="1"')
-    expect(await host.rows(m!.id, 0, 1)).toContain('<tr')
+    expect((await host.rows(m!.id, 0, 1, 0, m!.cols)).html).toContain('<tr')
   })
 })

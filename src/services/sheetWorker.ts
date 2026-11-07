@@ -27,7 +27,10 @@ async function run(op: string, args: unknown[]): Promise<unknown> {
   const b = await book
   switch (op) {
     case 'layout': return b.layout(args[0] as number)
-    case 'rows': return b.rows(args[0] as number, args[1] as number, args[2] as number)
+    case 'rows': {
+      const [id, from, to, cFrom, cTo] = args as number[]
+      return b.rows(id, from, to, cFrom, cTo)
+    }
     case 'prepare': b.prepare(args[0] as number); return null
     case 'find': return b.find(args[0] as number, args[1] as string)
     case 'cancelFind': b.cancelFind(); return null

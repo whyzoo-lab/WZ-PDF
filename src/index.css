@@ -702,6 +702,22 @@ canvas {
    corner over the cells beyond, as in Excel. */
 .wz-sheet-table td.wz-anchor { position: relative; overflow: visible; }
 .wz-sheet-img { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; max-width: none; }
+/* The columns not drawn of a wide sheet, and invisible copies of their cells
+   that make a row taller (sheetDoc ghostsOf): laid over one another, so the
+   row is as tall as the tallest, as with every column drawn. */
+.wz-sheet-table td.wz-sheet-colgap { padding: 0; vertical-align: top; }
+.wz-ghosts { display: grid; visibility: hidden; pointer-events: none; user-select: none; }
+.wz-ghost {
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  padding: 0 3px;
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.wz-ghost.wz-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wz-ghost::before { content: attr(data-t); }
 /* Column letters and row numbers. Drawn by CSS so they are not document text:
    find, copy and read-aloud see only the cells. */
 .wz-sheet-table th {

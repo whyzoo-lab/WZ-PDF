@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { writeXlsx } from 'hucre/xlsx'
-import type { Sheet, Workbook } from 'hucre'
+import type { Cell, Sheet, Workbook } from 'hucre'
 import {
   loadWorkbook, renderSheetHtml, displayValue, formatGeneral, columnLetter, initialSheet,
   layoutSheet,
@@ -192,6 +192,86 @@ describe('size', () => {
     expect(carried.getAttribute('rowspan')).toBe('2')
     // The row below has only its own cell; the merge already covers column A.
     expect(Array.from(second.querySelectorAll('td')).map(td => td.textContent)).toEqual(['d'])
+  })
+
+  it('draws a block of columns with a spacer either side, keeping the table width', () => {
+    const cols = 100
+    const sheet: Sheet = { name: 'S', rows: [Array.from({ length: cols }, (_, c) => `v${c}`)] }
+    const layout = layoutSheet(sheet, { sheets: [sheet] })
+    expect(layout.colLeft.length).toBe(cols + 1)
+    const doc = new DOMParser().parseFromString(`${layout.head(40, 60)}<tbody>${layout.rows(0, 1, 40, 60)}</tbody></table>`, 'text/html')
+    const widths = Array.from(doc.querySelectorAll('col')).map(col => parseFloat((col as HTMLElement).style.width))
+    // Row numbers, the spacer for columns 0–39, columns 40–59, the spacer for 60–99.
+    expect(widths.length).toBe(1 + 1 + 20 + 1)
+    expect(widths.reduce((a, b) => a + b, 0)).toBe(layout.tableWidth)
+    expect(widths[1]).toBe(layout.colLeft[40])
+    const letters = Array.from(doc.querySelectorAll('thead th[data-l]')).map(th => th.getAttribute('data-l'))
+    expect(letters[0]).toBe('AO')   // column 41
+    expect(letters.length).toBe(20)
+    const tr = doc.querySelector('tbody tr')!
+    expect(tr.children.length).toBe(1 + 1 + 20 + 1)
+    const cells = Array.from(tr.querySelectorAll('td[data-c]'))
+    expect(cells.map(td => td.getAttribute('data-c'))[0]).toBe('40')
+    expect(cells[0].textContent).toBe('v40')
+    expect(tr.querySelectorAll('td.wz-sheet-colgap').length).toBe(2)
+    // Without a block of columns, nothing changes.
+    expect(layout.head()).toBe(layout.tableOpen)
+    expect(layout.rows(0, 1)).not.toContain('wz-sheet-colgap')
+  })
+
+  it('carries a merge into a block of columns that starts part-way across it, and cuts it at the block\'s end', () => {
+    const empty = () => Array.from({ length: 30 }, () => null as string | null)
+    const rows = [empty(), empty(), empty()]
+    rows[0][2] = 'left'
+    rows[1][5] = 'wide'
+    const sheet: Sheet = {
+      name: 'S',
+      rows,
+      merges: [
+        { startRow: 0, startCol: 2, endRow: 0, endCol: 9 },   // C1:J1, cut by the block's start (column 8)
+        { startRow: 1, startCol: 5, endRow: 2, endCol: 12 },  // F2:M3, cut at both ends
+      ],
+    }
+    const layout = layoutSheet(sheet, { sheets: [sheet] })
+    const doc = new DOMParser().parseFromString(`${layout.head(8, 11)}<tbody>${layout.rows(0, 3, 8, 11)}</tbody></table>`, 'text/html')
+    const trs = Array.from(doc.querySelectorAll('tbody tr'))
+    const drawn = (tr: Element) => Array.from(tr.querySelectorAll('td[data-c]'))
+      .map(td => [td.getAttribute('data-c'), td.textContent, td.getAttribute('colspan'), td.getAttribute('rowspan')])
+    // C1:J1 shows its remaining columns 8–9; column 10 is a cell of its own.
+    expect(drawn(trs[0])).toEqual([['8', 'left', '2', null], ['10', '', null, null]])
+    // F2:M3 shows columns 8–10 of both its rows, cut at the block's end.
+    expect(drawn(trs[1])).toEqual([['8', 'wide', '3', '2']])
+    expect(drawn(trs[2])).toEqual([])
+    // Every row is as wide as the head: no colspan runs into a spacer.
+    const across = (tr: Element) => Array.from(tr.children).reduce((n, el) => n + Number(el.getAttribute('colspan') ?? 1), 0)
+    expect(across(trs[0])).toBe(doc.querySelectorAll('col').length)
+    expect(across(trs[1])).toBe(doc.querySelectorAll('col').length)
+  })
+
+  it('keeps cells that make a row taller beside the drawn columns, as invisible copies', () => {
+    const long = '줄바꿈되는 아주 긴 제목 '.repeat(8)
+    const rows = [Array.from({ length: 40 }, (_, c) => (c === 30 ? long : c === 31 ? '짧음' : `v${c}`))]
+    const cells = new Map<string, Cell>([
+      ['0,30', { value: long, type: 'string', style: { alignment: { wrapText: true } } }],
+      ['0,31', { value: '짧음', type: 'string', style: { alignment: { wrapText: true } } }],
+      ['0,2', { value: 'v2', type: 'string', style: { font: { size: 28 } } }],
+    ])
+    const sheet: Sheet = { name: 'S', rows, cells }
+    const layout = layoutSheet(sheet, { sheets: [sheet] }, { measure: text => text.length * 7 })
+    const doc = new DOMParser().parseFromString(`${layout.head(10, 20)}<tbody>${layout.rows(0, 1, 10, 20)}</tbody></table>`, 'text/html')
+    const [left, right] = Array.from(doc.querySelectorAll('td.wz-sheet-colgap'))
+    // Left of the block: the 28 pt cell; right of it: the wrapped title, not the short one.
+    expect(Array.from(left.querySelectorAll('.wz-ghost')).map(g => g.getAttribute('style'))).toEqual([
+      expect.stringContaining('font-size:28pt'),
+    ])
+    const ghosts = Array.from(right.querySelectorAll('.wz-ghost'))
+    expect(ghosts.map(g => g.getAttribute('data-t'))).toEqual([long])
+    expect(ghosts[0].classList.contains('wz-wrap')).toBe(true)
+    expect(right.querySelector('.wz-ghosts')!.getAttribute('aria-hidden')).toBe('true')
+    // Their text is not document text: find, copy and read-aloud see only cells.
+    expect(left.textContent + right.textContent).toBe('')
+    // Every column drawn: no copies.
+    expect(layout.rows(0, 1)).not.toContain('wz-ghost')
   })
 
   it('reports an empty sheet', () => {
