@@ -21,6 +21,19 @@ export interface SpeechUnit {
 }
 
 /**
+ * A document's text handed over a part at a time, for one too large to gather
+ * at once: a sheet drawn a window at a time holds 1,300,000 rows in its
+ * worker, and reading them would take weeks — so the reader is handed the
+ * next part as reading nears the end of the last.
+ */
+export interface SpeechStream {
+  /** The next part; empty at the end. */
+  next(): Promise<SpeechUnit[]>
+  /** How far through the document unit `page` is, 0–1, for the progress line. */
+  fraction(page: number): number
+}
+
+/**
  * How much of a sentence identifies it. A whole sentence can run across a page
  * break, and then matches neither page; its opening is on the page it starts on,
  * and that is the page to show while it is read.

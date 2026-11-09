@@ -2,7 +2,7 @@
 // worker that holds the workbook, or by a SheetBook in the page where no
 // worker can be started (tests, a refused worker).
 
-import type { BookInfo, SheetBook, SheetMetrics, SheetRows } from './sheetBook'
+import type { BookInfo, SheetBook, SheetMetrics, SheetRows, SheetSpeech } from './sheetBook'
 import { EncryptedWorkbookError } from './sheetErrors'
 
 export interface SheetHost {
@@ -13,6 +13,8 @@ export interface SheetHost {
   /** Matching cells as [row, column, …]; null when overtaken by a newer search. */
   find(id: number, needle: string): Promise<Int32Array | null>
   cancelFind(): void
+  /** A part of the sheet's text for read-aloud, from drawn row `from` on. */
+  speech(id: number, from: number): Promise<SheetSpeech>
   pdf(index: number): Promise<{ css: string; pieces: number }>
   pdfPiece(index: number, piece: number): Promise<string>
   close(): void
@@ -26,6 +28,7 @@ function localHost(book: SheetBook): SheetHost {
     prepare: id => book.prepare(id),
     find: (id, needle) => book.find(id, needle),
     cancelFind: () => book.cancelFind(),
+    speech: async (id, from) => book.speech(id, from),
     pdf: async index => book.pdf(index),
     pdfPiece: async (index, piece) => book.pdfPiece(index, piece),
     close: () => undefined,
@@ -80,6 +83,7 @@ async function workerHost(bytes: ArrayBuffer, name: string): Promise<SheetHost> 
     prepare: id => { void call('prepare', id).catch(() => undefined) },
     find: (id, needle) => call('find', id, needle),
     cancelFind: () => { void call('cancelFind').catch(() => undefined) },
+    speech: (id, from) => call('speech', id, from),
     pdf: index => call('pdf', index),
     pdfPiece: (index, piece) => call('pdfPiece', index, piece),
     close: () => {

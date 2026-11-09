@@ -83,6 +83,46 @@ describe('SheetBook', () => {
     expect((await newer)!.length).toBeGreaterThan(0)
   })
 
+  it('hands over every cell\'s text for read-aloud, a part at a time, from any row', async () => {
+    const { bytes, rows } = bigCsv()
+    const book = await SheetBook.open(bytes, 'b.csv')
+    const m = book.layout(0)!
+    // Parts follow on from each other, in reading order, to the last row.
+    const texts: string[] = []
+    const at: number[] = []
+    let row = 0
+    let parts = 0
+    while (row >= 0) {
+      const part = book.speech(m.id, row, 500)
+      expect(part.cells.length).toBe(part.texts.length * 2)
+      texts.push(...part.texts)
+      at.push(...part.cells)
+      row = part.next
+      parts++
+    }
+    expect(parts).toBeGreaterThan(10)
+    expect(texts.slice(0, 7)).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'r1'])
+    expect(texts.length).toBe(rows * 6)
+    expect(texts.at(-1)).toBe('끝줄')
+    expect(at.slice(-2)).toEqual([rows - 1, 5])
+    // From a row in the middle, nothing before it.
+    const mid = book.speech(m.id, rows - 2)
+    expect(mid.texts[0]).toBe(`r${rows - 2}`)
+    expect(mid.next).toBe(-1)
+  })
+
+  it('skips empty cells for read-aloud, and stops looking after so many', async () => {
+    const lines = Array.from({ length: 2000 }, (_, r) => (r === 1500 ? 'x,,,,,,,,,끝' : ',,,,,,,,,'))
+    const book = await SheetBook.open(csv(lines.join('\n')), 'e.csv')
+    const m = book.layout(0)!
+    const first = book.speech(m.id, 0, 20_000, 1000)
+    expect(first.texts).toEqual([])
+    expect(first.next).toBe(100)
+    const rest = book.speech(m.id, 1000)
+    expect(rest.texts).toEqual(['x', '끝'])
+    expect(Array.from(rest.cells)).toEqual([1500, 0, 1500, 9])
+  })
+
   it('forgets the previous sheet\'s layout when another is laid out', async () => {
     const book = await SheetBook.open(csv('a\n1'), 's.csv')
     const first = book.layout(0)!

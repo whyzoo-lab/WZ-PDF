@@ -34,6 +34,7 @@ async function run(op: string, args: unknown[]): Promise<unknown> {
     case 'prepare': b.prepare(args[0] as number); return null
     case 'find': return b.find(args[0] as number, args[1] as string)
     case 'cancelFind': b.cancelFind(); return null
+    case 'speech': return b.speech(args[0] as number, args[1] as number)
     case 'pdf': return b.pdf(args[0] as number)
     case 'pdfPiece': return b.pdfPiece(args[0] as number, args[1] as number)
     default: throw new Error(`unknown request ${op}`)

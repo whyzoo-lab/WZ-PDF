@@ -1,6 +1,6 @@
 import type { PdfJob } from '../../services/officePdf'
 import type { ViewMode } from '../../types/viewModes'
-import type { SpeechUnit } from '../../services/speechPages'
+import type { SpeechStream, SpeechUnit } from '../../services/speechPages'
 
 /**
  * What an Office view offers the app, so the toolbar's viewer controls —
@@ -22,6 +22,18 @@ export interface OfficeViewHandle {
    * what is on screen.
    */
   speechScript?(): SpeechUnit[] | null
+  /**
+   * What read-aloud should read when the DOM holds only part of the document
+   * (a sheet drawn a window at a time): the whole of it from where the reader
+   * is, a part at a time. Each unit's `page` names a place the view knows.
+   */
+  speechStream?(): SpeechStream | null
+  /**
+   * The element holding unit `page` of `speechStream`, for the highlight;
+   * when it is not drawn, draws it and brings it into view, and is null until
+   * it is.
+   */
+  speechTarget?(page: number): HTMLElement | null
 }
 
 export interface OfficePageInfo {

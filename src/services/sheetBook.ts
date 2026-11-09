@@ -60,6 +60,19 @@ export interface SheetRows {
   html: string
 }
 
+/** Text per part of read-aloud: ~45 minutes of speech, a few KB to copy. */
+export const SPEECH_PART_CHARS = 20_000
+/** Cells looked at per part, so a sheet of mostly empty cells still answers quickly. */
+export const SPEECH_PART_CELLS = 200_000
+
+/** A part of a sheet's text for read-aloud: cell `i` is at drawn row cells[2i], column cells[2i+1]. */
+export interface SheetSpeech {
+  cells: Int32Array
+  texts: string[]
+  /** The drawn row the next part starts at; -1 when this part reaches the end. */
+  next: number
+}
+
 export class SheetBook {
   private readonly layouts = new Map<number, { layout: SheetLayout; index?: Promise<SheetSearchIndex | null> }>()
   private readonly plans = new Map<number, SheetPdfPlan>()
@@ -159,6 +172,36 @@ export class SheetBook {
   }
 
   cancelFind(): void { this.findSeq++ }
+
+  /**
+   * The text of layout `id` for read-aloud, cell by cell in reading order
+   * (row by row, left to right), from drawn row `from` on: what the DOM cannot
+   * give for a sheet drawn a window at a time. Stops after `maxChars` of text
+   * or `maxCells` cells looked at, whichever comes first, so a part is small
+   * to copy and quick to make; `next` is the row to ask from next, -1 at the
+   * end. Empty cells (and cells a merge covers) are left out.
+   */
+  speech(id: number, from: number, maxChars = SPEECH_PART_CHARS, maxCells = SPEECH_PART_CELLS): SheetSpeech {
+    const layout = this.layouts.get(id)?.layout
+    if (!layout || layout.empty) return { cells: new Int32Array(0), texts: [], next: -1 }
+    const cols = layout.colLeft.length - 1
+    const at: number[] = []
+    const texts: string[] = []
+    let chars = 0
+    let looked = 0
+    let r = Math.max(0, from)
+    for (; r < layout.rowCount && chars < maxChars && looked < maxCells; r++) {
+      for (let c = 0; c < cols; c++) {
+        const text = layout.textAt(r, c).trim()
+        if (!text) continue
+        at.push(r, c)
+        texts.push(text)
+        chars += text.length
+      }
+      looked += cols
+    }
+    return { cells: Int32Array.from(at), texts, next: r < layout.rowCount ? r : -1 }
+  }
 
   /** The PDF of sheet `index`: its css and piece count. */
   pdf(index: number): { css: string; pieces: number } {

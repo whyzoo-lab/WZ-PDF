@@ -255,13 +255,41 @@ export function useTts() {
     void window.electronAPI?.ttsStop?.()
   }, [])
 
-  const speak = useCallback(async (chunks: string[]) => {
+  /**
+   * Read `chunks` aloud. `more`, when given, hands over the chunks that come
+   * after them — the document is read a part at a time (see SpeechStream) —
+   * and returns an empty list at the end. It is asked once reading comes
+   * within the look-ahead of the end of what it has, so the next part is ready
+   * before the last sentence of this one has finished.
+   */
+  const speak = useCallback(async (first: string[], more?: () => Promise<string[]>) => {
     stop()
-    if (chunks.length === 0) return
+    if (first.length === 0) return
 
     const run = ++runRef.current
+    // Our own array: parts from `more` are appended to it.
+    const chunks = [...first]
     chunksRef.current = chunks
     setChunkCount(chunks.length)
+    let moreDone = !more
+    let morePending: Promise<void> | null = null
+    const askMore = (): Promise<void> => {
+      if (moreDone || !more) return Promise.resolve()
+      morePending ??= more().then(
+        next => {
+          if (runRef.current !== run) return
+          if (next.length === 0) { moreDone = true; return }
+          for (const chunk of next) chunks.push(chunk)
+          setChunkCount(chunks.length)
+        },
+        err => {
+          // The rest cannot be had; what was read stays read.
+          console.error('read-aloud: the next part failed:', err)
+          moreDone = true
+        },
+      ).finally(() => { morePending = null })
+      return morePending
+    }
     setError(null)
     setStatus('preparing')
 
@@ -275,9 +303,14 @@ export function useTts() {
       // Driven by the cursor rather than a counter: `previous` and `next` move
       // it from outside while this loop is awaiting audio, and the loop simply
       // speaks wherever it points next.
-      while (cursorRef.current < chunks.length) {
-        const i = cursorRef.current
+      for (;;) {
         if (runRef.current !== run) return
+        if (cursorRef.current >= chunks.length) {
+          if (moreDone) break
+          await askMore()
+          continue
+        }
+        const i = cursorRef.current
         // Jumping past the look-ahead lands on a sentence that has not been
         // made yet, and the wait should be reported like the first one is.
         if (!cacheRef.current.has(i)) setStatus('preparing')
@@ -301,6 +334,7 @@ export function useTts() {
         for (let ahead = 1; ahead <= LOOKAHEAD; ahead++) {
           if (i + ahead < chunks.length) void bufferFor(i + ahead).catch(() => undefined)
         }
+        if (i + LOOKAHEAD >= chunks.length) void askMore()
         await playBuffer(buffer, run)
 
         // Advance only if nothing moved the cursor while this sentence played;

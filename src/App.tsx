@@ -20,7 +20,7 @@ import { useTts } from './hooks/useTts'
 import { SpeechHighlight } from './components/SpeechHighlight'
 import { TtsBar } from './components/TtsBar'
 import { planSpeech } from './services/ttsText'
-import { joinSpeechUnits, pagesForChunks, type SpeechUnit } from './services/speechPages'
+import { joinSpeechUnits, pagesForChunks, type SpeechStream, type SpeechUnit } from './services/speechPages'
 import { SearchBar } from './components/SearchBar'
 import { SpeechAnnouncer } from './components/SpeechAnnouncer'
 import { PasswordPrompt } from './components/modals/PasswordPrompt'
@@ -1565,7 +1565,13 @@ export default function App() {
   // The page each planned sentence came from (services/speechPages.ts), for
   // the follow effect below; null where the text has no pages.
   const [speechPages, setSpeechPages] = useState<number[] | null>(null)
+  // A document read a part at a time (a big sheet; OfficeViewHandle.speechStream),
+  // and which reading it belongs to, so a part arriving late is not added to
+  // the next one.
+  const [speechStream, setSpeechStream] = useState<SpeechStream | null>(null)
+  const readingSeq = useRef(0)
   const startReading = useCallback(async () => {
+    const seq = ++readingSeq.current
     let raw = ''
     // Text by page, where there are pages: what lets a presentation turn the
     // page as it is read (see the follow effect below).
@@ -1573,11 +1579,20 @@ export default function App() {
     // A deck with a script is read from the script (its speaker notes), from
     // the slide on screen on — see OfficeViewHandle.speechScript.
     const script = flowDoc ? officeHandleRef.current?.speechScript?.() ?? null : null
+    // A sheet is read from its workbook, the whole of it from the row in
+    // view: the DOM holds only the rows and columns drawn.
+    const stream = flowDoc && !script ? officeHandleRef.current?.speechStream?.() ?? null : null
     if (script) {
       units = script
       // The highlight follows the sentence in the notes under each slide, so
       // they must be on screen to follow.
       setShowSlideNotes(true)
+    } else if (stream) {
+      units = await stream.next().catch(err => {
+        console.error('read-aloud: reading the sheet failed:', err)
+        return []
+      })
+      if (seq !== readingSeq.current) return
     } else if (flowDoc) {
       // The element the flow printer marks is exactly the readable body.
       const body = document.querySelector<HTMLElement>('[data-wz-flow-print]')
@@ -1605,7 +1620,23 @@ export default function App() {
       return
     }
     setSpeechPages(units ? pagesForChunks(units, chunks) : null)
-    await tts.speak(chunks)
+    setSpeechStream(stream)
+    // The next part, planned like the first, with its pages added after the
+    // first part's in step with the sentences.
+    const more = stream
+      ? async (): Promise<string[]> => {
+          for (;;) {
+            const part = await stream.next()
+            if (seq !== readingSeq.current || part.length === 0) return []
+            const next = planSpeech(joinSpeechUnits(part)).chunks
+            if (next.length === 0) continue
+            const pages = pagesForChunks(part, next)
+            setSpeechPages(p => (p ? p.concat(pages) : pages))
+            return next
+          }
+        }
+      : undefined
+    await tts.speak(chunks, more)
   }, [tts, flowDoc, pdfDoc, kind, currentPage, numPages, showToast, ocr.ocrResults])
 
   // ── A presentation turns the page as it is read ───────────────────────────
@@ -1617,6 +1648,17 @@ export default function App() {
     ? speechPages[tts.index] ?? null
     : null
   const presentFollowPage = viewMode === 'fullscreen' ? spokenPage : null
+  // Read a part at a time: the view says where the progress is (the sentences
+  // handed over so far are not the document), and which element holds the
+  // place being read, drawing it first if it is not.
+  const readingStream = spokenPage !== null ? speechStream : null
+  const speechProgress = readingStream && spokenPage !== null ? readingStream.fraction(spokenPage) : null
+  const speechScope = useMemo(
+    () => (readingStream && spokenPage !== null
+      ? () => officeHandleRef.current?.speechTarget?.(spokenPage) ?? null
+      : null),
+    [readingStream, spokenPage],
+  )
   useEffect(() => {
     // Slides: the slideshow is the Office view's; PDFs follow through
     // PdfViewer's `fullscreenFollowPage`.
@@ -2167,6 +2209,7 @@ export default function App() {
         status={tts.status}
         index={tts.index}
         chunkCount={tts.chunkCount}
+        progress={speechProgress}
         error={tts.error}
         model={tts.model}
         downloading={tts.downloading}
@@ -2240,7 +2283,7 @@ export default function App() {
 
       <SpeechAnnouncer status={tts.status} />
 
-      <SpeechHighlight text={tts.currentText} index={tts.index} />
+      <SpeechHighlight text={tts.currentText} index={tts.index} scope={speechScope} />
 
 
 

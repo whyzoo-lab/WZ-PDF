@@ -68,15 +68,27 @@ export interface UseSpeechHighlightArgs {
   text: string | null
   /** Its position in the document, used to notice a restart. */
   index: number
+  /**
+   * The element the sentence is in, when the view can say (a sheet's cell,
+   * see OfficeViewHandle.speechTarget): searched alone, so a value repeated
+   * down a column is highlighted in the row being read. Null until the view
+   * has drawn it; asked again until it has.
+   */
+  scope?: (() => HTMLElement | null) | null
 }
 
-export function useSpeechHighlight({ text, index }: UseSpeechHighlightArgs): SpeechRect[] {
+/** How often, and how long, a scope not yet drawn is asked for again. */
+const SCOPE_RETRY_MS = 100
+const SCOPE_RETRIES = 30
+
+export function useSpeechHighlight({ text, index, scope }: UseSpeechHighlightArgs): SpeechRect[] {
   const [rects, setRects] = useState<SpeechRect[]>([])
   // Where the previous sentence ended: {part, offset}. Searching from here is
   // what makes the whole document a single linear scan.
   const cursorRef = useRef({ part: 0, offset: 0 })
   const lastIndexRef = useRef(-1)
   const targetRef = useRef<Target | null>(null)
+  const scopeRef = useRef<HTMLElement | null>(null)
 
   const remeasure = useCallback(() => {
     const target = targetRef.current
@@ -88,8 +100,10 @@ export function useSpeechHighlight({ text, index }: UseSpeechHighlightArgs): Spe
     // matter: a page that has just mounted has not been laid out yet, so its
     // boxes would all read as zero; and this keeps the DOM read out of React's
     // render pass.
-    const frame = requestAnimationFrame(() => locate())
-    return () => cancelAnimationFrame(frame)
+    let frame = requestAnimationFrame(() => locate())
+    let retry = 0
+    let retries = 0
+    return () => { cancelAnimationFrame(frame); clearTimeout(retry) }
 
     function locate() {
     if (!text) {
@@ -102,7 +116,23 @@ export function useSpeechHighlight({ text, index }: UseSpeechHighlightArgs): Spe
     if (index <= lastIndexRef.current) cursorRef.current = { part: 0, offset: 0 }
     lastIndexRef.current = index
 
-    const flow = flowRoot()
+    let flow = flowRoot()
+    if (scope) {
+      const el = scope()
+      if (!el) {
+        // Not drawn yet: the view has been asked to draw it.
+        targetRef.current = null
+        setRects([])
+        if (retries++ < SCOPE_RETRIES) {
+          retry = window.setTimeout(() => { frame = requestAnimationFrame(() => locate()) }, SCOPE_RETRY_MS)
+        }
+        return
+      }
+      // Its own text alone: the cursor means nothing across scopes.
+      if (scopeRef.current !== el) cursorRef.current = { part: 0, offset: 0 }
+      scopeRef.current = el
+      flow = el
+    }
     const parts: { root: HTMLElement; idx: Indexed }[] = flow
       ? [{ root: flow, idx: indexText(flow) }]
       : pageRoots().map(root => ({ root, idx: indexText(root) }))
@@ -147,7 +177,7 @@ export function useSpeechHighlight({ text, index }: UseSpeechHighlightArgs): Spe
     targetRef.current = null
     setRects([])
     }
-  }, [text, index])
+  }, [text, index, scope])
 
   // The rectangles are viewport coordinates, so anything that moves the
   // document invalidates them. Measured on a frame so a scroll does not force

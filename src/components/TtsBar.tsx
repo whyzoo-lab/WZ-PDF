@@ -29,6 +29,12 @@ export interface TtsBarProps {
   status: 'idle' | 'preparing' | 'speaking' | 'paused'
   index: number
   chunkCount: number
+  /**
+   * How far through the document reading is, 0–1, when sentences cannot say:
+   * a document read a part at a time knows only the sentences handed over so
+   * far (see SpeechStream).
+   */
+  progress?: number | null
   error: string | null
   /** Null until the renderer has asked; absent entirely outside the desktop app. */
   model: TtsModelStatus | null
@@ -72,7 +78,7 @@ const iconBtn = 'flex items-center justify-center w-9 h-9 shrink-0 rounded-full 
 
 export function TtsBar(props: TtsBarProps) {
   const {
-    status, index, chunkCount, error, model, downloading, downloadProgress,
+    status, index, chunkCount, progress: through, error, model, downloading, downloadProgress,
     promptOpen, voice, speed, canApply, applying,
     onDownload, onCancelDownload, onDismissPrompt,
     onPause, onResume, onStop, onPrevious, onNext, onVoiceChange, onSpeedChange, onApply,
@@ -129,7 +135,9 @@ export function TtsBar(props: TtsBarProps) {
   // How far in, as a hairline along the bottom edge. It replaces the "읽는 중
   // 12/4794" that used to sit at the front of the bar: the number was the widest
   // thing in the row and the least use — nobody is counting sentences.
-  const progress = chunkCount > 0 ? Math.min(100, ((index + 1) / chunkCount) * 100) : 0
+  const progress = through != null
+    ? Math.min(100, Math.max(0, through * 100))
+    : chunkCount > 0 ? Math.min(100, ((index + 1) / chunkCount) * 100) : 0
 
   return (
     <div

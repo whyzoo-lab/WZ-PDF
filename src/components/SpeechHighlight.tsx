@@ -18,8 +18,13 @@ import { useSpeechHighlight } from '../hooks/useSpeechHighlight'
  * re-rendered the whole app — toolbar, page panel, every page wrapper — about
  * sixty times a second.
  */
-export function SpeechHighlight({ text, index }: { text: string | null; index: number }) {
-  const rects = useSpeechHighlight({ text, index })
+export function SpeechHighlight({ text, index, scope }: {
+  text: string | null
+  index: number
+  /** See useSpeechHighlight. */
+  scope?: (() => HTMLElement | null) | null
+}) {
+  const rects = useSpeechHighlight({ text, index, scope })
   if (rects.length === 0) return null
   return (
     <div className="no-print fixed inset-0 z-30 pointer-events-none" aria-hidden="true">

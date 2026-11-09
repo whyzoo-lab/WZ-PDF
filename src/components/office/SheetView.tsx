@@ -399,10 +399,44 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
     return () => setFlowSearchProvider(null)
   }, [windowed, layout, wb])
 
+  // ── Read-aloud over the data ──────────────────────────────────────────────
+  // The DOM holds only the rows and columns drawn, so the text comes from the
+  // workbook (SheetBook.speech), a part at a time, and the cell being read is
+  // drawn and brought into view as reading reaches it. Brought into view here,
+  // as soon as its block is drawn, rather than by the highlight a frame later:
+  // by then `update` has asked for the block around the old scroll position.
+  const speechWantRef = useRef<{ layout: SheetLayout; ri: number; ci: number } | null>(null)
+  useLayoutEffect(() => {
+    const want = speechWantRef.current
+    if (!want || want.layout !== layout) return
+    if (want.ri < from || want.ri >= to || want.ci < cFrom || want.ci >= cTo) return
+    speechWantRef.current = null
+    hostRef.current
+      ?.querySelector<HTMLElement>(`tr[data-r="${want.ri}"] > td[data-c="${want.ci}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [layout, from, to, cFrom, cTo])
+
+  /** The drawn row at the top of the view: where reading starts. */
+  const rowInView = useCallback((): number => {
+    const host = hostRef.current
+    const head = host?.querySelector('thead')
+    const body = host?.querySelector('tbody')
+    const drawn = drawnRef.current
+    if (!layout || !host || !head || !body || drawn.layout !== layout) return 0
+    const scale = sheetScale(host, head)
+    const viewTop = scrollParent(host)?.getBoundingClientRect().top ?? 0
+    // Below the column letters, which stay on screen over the rows.
+    const y = Math.max(0, viewTop + head.getBoundingClientRect().height - body.getBoundingClientRect().top) / scale
+    return rowAt(layout.rowTop, declaredAt(y, layout.rowTop, drawn.from, drawn.to, k))
+  }, [layout, k])
+
   // ── What the app can ask of this view ─────────────────────────────────────
   const scrollerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!wb || !layout || layout.empty) return
+    const cols = layout.cols
+    // A unit's `page` names its cell: drawn row × columns + drawn column, from 1.
+    const cellOf = (page: number) => ({ ri: Math.floor((page - 1) / cols), ci: (page - 1) % cols })
     handleRef.current = {
       fitWidth: () => {
         const width = scrollerRef.current?.clientWidth
@@ -410,6 +444,34 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       },
       // A sheet has no pages to go to.
       goTo: () => undefined,
+      speechStream: () => {
+        let row = rowInView()
+        return {
+          async next() {
+            while (row >= 0) {
+              const part = await wb.speech(layout.id, row)
+              row = part.next
+              if (part.texts.length > 0) {
+                return part.texts.map((text, i) => ({ page: part.cells[i * 2] * cols + part.cells[i * 2 + 1] + 1, text }))
+              }
+            }
+            return []
+          },
+          fraction: page => (layout.rowCount > 0 ? (cellOf(page).ri + 1) / layout.rowCount : 0),
+        }
+      },
+      speechTarget: page => {
+        const { ri, ci } = cellOf(page)
+        const td = hostRef.current?.querySelector<HTMLElement>(`tr[data-r="${ri}"] > td[data-c="${ci}"]`)
+        if (td) return td
+        // Draw the block around it; the layout effect above brings it into view.
+        speechWantRef.current = { layout, ri, ci }
+        anchorRef.current = null
+        const nextFrom = Math.max(0, Math.floor(ri / BLOCK_ROWS) * BLOCK_ROWS - BLOCK_ROWS)
+        const next = { layout, from: nextFrom, to: Math.min(layout.rowCount, nextFrom + BLOCK_ROWS * 3), ...columnBlock(layout, ci, ci) }
+        setWin(w => (sameWindow(w, next) ? w : next))
+        return null
+      },
       // Laid out for print where the workbook is; the page only builds the DOM.
       pdfJob: async (): Promise<PdfJob> => {
         const { css, pieces } = await wb.pdf(index)
@@ -417,7 +479,7 @@ export function SheetView({ bytes, name, zoom, fullscreen, onExitFullscreen, han
       },
     }
     return () => { handleRef.current = null }
-  }, [wb, index, layout, handleRef])
+  }, [wb, index, layout, handleRef, rowInView])
 
   // Memoized like the other reflowing views, so zooming or a find keystroke
   // does not rebuild thousands of cells.
