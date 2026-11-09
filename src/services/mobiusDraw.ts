@@ -21,8 +21,9 @@
  * front together, so the ring passes behind the tube as it really would. Each
  * quad is one opaque fill with its highlight and rim light mixed in: added as
  * separate "lighter" fills, the antialiased borders of neighbouring quads took
- * the light twice and the tube showed a grid. Drawn at 30 fps. On the light
- * theme a dark lens is drawn behind it: added light vanishes into a pale page.
+ * the light twice and the tube showed a grid. Drawn at 30 fps. Nothing is
+ * drawn behind it: a dark lens on the light theme (1.29.5) read as a grey disc
+ * round the loader, and the tube and wisps show on a pale page without it.
  * Readers who ask for less motion get one still frame.
  *
  * This module is only the drawing; components/MobiusLoader.tsx runs it in a
@@ -181,22 +182,12 @@ function drawAura(ctx: Ctx2D, size: number, t: number): void {
   }
 }
 
-function drawLoader(ctx: Ctx2D, size: number, t: number, dark: boolean, sparks: Spark[]): void {
+function drawLoader(ctx: Ctx2D, size: number, t: number, sparks: Spark[]): void {
   ctx.globalCompositeOperation = 'source-over'
   ctx.clearRect(0, 0, size, size)
   const { turn, project } = makeView(size, t)
   const ring = (t / LAP_S) % 1                          // fraction of the way round
 
-  if (!dark) {
-    const c = size / 2
-    const lens = ctx.createRadialGradient(c, c, size * 0.1, c, c, size / 2)
-    lens.addColorStop(0, 'rgba(16,20,54,0.97)')
-    lens.addColorStop(0.82, 'rgba(10,12,34,0.94)')
-    lens.addColorStop(0.92, 'rgba(10,12,34,0.5)')
-    lens.addColorStop(1, 'rgba(10,12,34,0)')
-    ctx.fillStyle = lens
-    ctx.fillRect(0, 0, size, size)
-  }
   ctx.globalCompositeOperation = 'lighter'
   drawAura(ctx, size, t)
 
@@ -305,7 +296,6 @@ function drawLoader(ctx: Ctx2D, size: number, t: number, dark: boolean, sparks: 
 export interface LoaderStart {
   size: number
   dpr: number
-  dark: boolean
   /** prefers-reduced-motion: one still frame. */
   still: boolean
   /** Seconds the animation has already been running — a loader that replaces
@@ -316,7 +306,7 @@ export interface LoaderStart {
 
 /**
  * Run the animation on `ctx` (a canvas of `start.size` x `start.dpr` pixels).
- * Returns a handle to change the theme and to stop.
+ * Returns a handle to stop it.
  */
 export function runLoader(
   ctx: Ctx2D,
@@ -324,14 +314,13 @@ export function runLoader(
   raf: (cb: (now: number) => void) => number,
   cancel: (id: number) => void,
   now: () => number,
-): { setDark(dark: boolean): void; stop(): void; frames(): number } {
+): { stop(): void; frames(): number } {
   const { size, dpr } = start
   let drawnFrames = 0
-  let dark = start.dark
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   if (start.still) {
-    drawLoader(ctx, size, 0.6, dark, [])
-    return { setDark: d => { dark = d; drawLoader(ctx, size, 0.6, dark, []) }, stop: () => {}, frames: () => 1 }
+    drawLoader(ctx, size, 0.6, [])
+    return { stop: () => {}, frames: () => 1 }
   }
   const sparks: Spark[] = []
   let seed = 7
@@ -353,13 +342,13 @@ export function runLoader(
     }
     for (const spark of sparks) spark.life -= dt / 1.1
     while (sparks.length && sparks[0].life <= 0) sparks.shift()
-    drawLoader(ctx, size, t, dark, sparks)
+    drawLoader(ctx, size, t, sparks)
     drawnFrames++
   }
   // The first frame at once, so something is on screen before any wait.
-  drawLoader(ctx, size, (now() - origin) / 1000, dark, sparks)
+  drawLoader(ctx, size, (now() - origin) / 1000, sparks)
   frame = raf(tick)
   // frames(): how many have been drawn — how a test tells the animation kept
   // going while the page was busy.
-  return { setDark: d => { dark = d }, stop: () => cancel(frame), frames: () => drawnFrames }
+  return { stop: () => cancel(frame), frames: () => drawnFrames }
 }

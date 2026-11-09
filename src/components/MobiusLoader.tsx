@@ -24,12 +24,9 @@ export default function MobiusLoader({ size = 150 }: { size?: number }) {
   useEffect(() => {
     const canvas = ref.current
     if (!canvas) return
-    const html = document.documentElement
-    const isDark = () => html.classList.contains('dark')
     const start = {
       size,
       dpr: Math.min(window.devicePixelRatio || 1, 3),
-      dark: isDark(),
       still: !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
       elapsed: (performance.now() - EPOCH) / 1000,
     }
@@ -51,7 +48,7 @@ export default function MobiusLoader({ size = 150 }: { size?: number }) {
     }
 
     let cancelled = false
-    let run: { setDark(dark: boolean): void; stop(): void } | null = null
+    let run: { stop(): void } | null = null
     if (!worker) {
       let ctx: CanvasRenderingContext2D | null = null
       try { ctx = canvas.getContext('2d') } catch { /* no canvas (tests), or already transferred */ }
@@ -69,15 +66,8 @@ export default function MobiusLoader({ size = 150 }: { size?: number }) {
       }
     }
 
-    // The theme can change while it shows.
-    const watch = new MutationObserver(() => {
-      if (worker) worker.postMessage({ type: 'dark', dark: isDark() })
-      else run?.setDark(isDark())
-    })
-    watch.observe(html, { attributes: true, attributeFilter: ['class'] })
     return () => {
       cancelled = true
-      watch.disconnect()
       worker?.terminate()
       run?.stop()
     }

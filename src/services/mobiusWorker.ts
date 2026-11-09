@@ -14,7 +14,6 @@ import { runLoader, type LoaderStart } from './mobiusDraw'
 
 type Message =
   | ({ type: 'start'; canvas: OffscreenCanvas } & LoaderStart)
-  | { type: 'dark'; dark: boolean }
   | { type: 'frames' }
 
 const scope = self as unknown as {
@@ -27,7 +26,6 @@ let loader: ReturnType<typeof runLoader> | null = null
 
 scope.onmessage = e => {
   const m = e.data
-  if (m.type === 'dark') { loader?.setDark(m.dark); return }
   if (m.type === 'frames') { (self as unknown as { postMessage(m: unknown): void }).postMessage({ type: 'frames', frames: loader?.frames() ?? 0 }); return }
   if (m.type !== 'start' || loader) return
   const { canvas, ...start } = m
