@@ -26,6 +26,32 @@ jobs:
         with:
           python-version: '3.12'
 
+      # electron-builder downloads Electron and its packaging tools (7zip, NSIS,
+      # NSIS resources, winCodeSign, icons) from GitHub release assets on every
+      # build. Those downloads 504'd four times in a row on 1.29.10 while
+      # githubstatus said all was well, each time at a different file. Caching
+      # them takes the downloads off the release path; the retry below covers a
+      # cache miss. Restored before `npm ci`, whose electron postinstall uses
+      # %LOCALAPPDATA%\electron\Cache as well.
+      - name: Electron versions for the cache key
+        id: eb-versions
+        shell: bash
+        run: |
+          echo "key=$(node -p "const p=require('./package-lock.json').packages;[p['node_modules/electron'].version,p['node_modules/electron-builder'].version].join('-')")" >> "$GITHUB_OUTPUT"
+
+      # Saved under a per-run key (cache keys cannot be overwritten) and restored
+      # by prefix, so a run that failed half-way still keeps what it downloaded.
+      - name: Restore Electron download cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-dl-v1-${{ steps.eb-versions.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            electron-dl-v1-${{ steps.eb-versions.outputs.key }}-
+            electron-dl-v1-
+
       - name: Install dependencies
         run: npm ci
 
@@ -52,8 +78,30 @@ jobs:
           pip install pyyaml
           npm run setup:ocr
 
+      # Up to three attempts. A download that completed stays in the cache folder,
+      # so each attempt starts past the files the last one got.
       - name: Build portable + NSIS installer
-        run: npm run build:exe
+        shell: pwsh
+        run: |
+          $attempts = 3
+          for ($i = 1; $i -le $attempts; $i++) {
+            npm run build:exe
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            if ($i -lt $attempts) {
+              Write-Host "::warning::build:exe failed (attempt $i of $attempts), retrying in 60 s"
+              Start-Sleep -Seconds 60
+            }
+          }
+          exit 1
+
+      - name: Save Electron download cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-dl-v1-${{ steps.eb-versions.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Create GitHub Release and upload artifacts
         uses: softprops/action-gh-release@v2
