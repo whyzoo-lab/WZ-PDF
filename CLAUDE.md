@@ -639,7 +639,23 @@ the rest in Excel" — meaningless in a viewer for people without Excel. Now:
   anchor waits for its own block. Where no worker can start (tests) a
   `SheetBook` answers in the page. `cliBridge` (`topdf`) still reads in the
   page — it has no window to keep responsive.
-- Still windowed, and known: print and read-aloud cover the rows and columns drawn.
+- **Read-aloud reads the data, not the DOM**, from the row in view to the
+  last row. `OfficeViewHandle.speechStream` hands the text over a part at a
+  time (`SheetBook.speech`: cells in reading order, 20,000 characters or
+  200,000 cells looked at per part), and `useTts.speak(chunks, more)` asks for
+  the next part once reading is within the look-ahead of the end — a whole
+  1.3 M-row sheet is weeks of speech and hundreds of MB of text. A unit's
+  `page` names its cell (row × columns + column + 1); `speechTarget` draws
+  the cell's block and scrolls it into view in a layout effect (a frame later
+  `update` would already have asked for the old block), and the highlight
+  searches that cell alone (`useSpeechHighlight` `scope`), so a value repeated
+  down a column lights up in the row being read. The progress line is the row
+  (`SpeechStream.fraction`), not the sentences handed over so far. Checked in
+  the preview with a stand-in engine on 70,000 x 30 cells from row 50,000: the
+  highlight followed across all 30 columns (scrolling sideways, then back for
+  the next row), the second part followed the first with no cell missed, and
+  the line read 71.6 % at row 50,090.
+- Still windowed, and known: print covers the rows and columns drawn.
 
 **PowerPoint** (`services/pptxDoc.ts`, `PptxView`). Each slide is rendered
 with `renderSlide` into a box React lays out, not through the library's
@@ -1489,8 +1505,9 @@ the rest painted back to front with the ring's segments, so the ring passes
 behind the tube. Each quad is **one opaque fill** with highlight and rim light
 mixed in — as separate additive fills, neighbouring quads' antialiased
 borders took the light twice and the tube showed a grid. ~3-4 ms a frame at
-2x, drawn at 30 fps. On the light theme a dark lens is drawn behind it,
-since added light vanishes into a pale page. One still frame for
+2x, drawn at 30 fps. Nothing is drawn behind it: the dark lens the light
+theme had read as a grey disc round the loader, and without it the tube
+and wisps still show on a pale page. One still frame for
 `prefers-reduced-motion`. Shown at **50 % opacity** (1.29.6: "too dark").
 
 **It is drawn by a worker** (1.29.6; `services/mobiusDraw.ts` the drawing,
