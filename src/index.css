@@ -658,15 +658,17 @@ canvas {
 /* ── Word (docx-preview output) ───────────────────────────────────────────
    docx-preview draws its pages on a mid-grey band; the viewer's own grey is
    the backdrop here, the same one PDF pages sit on. */
-.wz-docx-wrapper.wz-docx-wrapper { background: transparent; padding: 24px 16px 0; }
+/* `safe` everywhere a page is centred: a page zoomed wider than the view
+   would otherwise overflow both sides, and the left side cannot be scrolled to. */
+.wz-docx-wrapper.wz-docx-wrapper { background: transparent; padding: 24px 16px 0; align-items: safe center; }
 .wz-docx-wrapper.wz-docx-wrapper > section.wz-docx { box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.25); margin-bottom: 24px; }
 /* The PDF viewer's layouts, for Word pages. Gaps are in page units: the whole
    column is scaled with `zoom`, to ~0.3 in the all-pages grid. */
 [data-wz-docx-mode="spread"] .wz-docx-wrapper.wz-docx-wrapper {
-  display: grid; grid-template-columns: repeat(2, max-content); justify-content: center; column-gap: 32px;
+  display: grid; grid-template-columns: repeat(2, max-content); justify-content: safe center; column-gap: 32px;
 }
 [data-wz-docx-mode="grid"] .wz-docx-wrapper.wz-docx-wrapper {
-  flex-flow: row wrap; justify-content: center; align-items: flex-start; gap: 0 80px; padding: 80px 40px 0;
+  flex-flow: row wrap; justify-content: safe center; align-items: flex-start; gap: 0 80px; padding: 80px 40px 0;
 }
 [data-wz-docx-mode="grid"] .wz-docx-wrapper > section.wz-docx { cursor: pointer; margin-bottom: 80px; }
 

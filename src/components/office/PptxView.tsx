@@ -427,8 +427,8 @@ export function PptxView({
   }
 
   const layoutClass = viewMode === 'grid'
-    ? 'flex flex-row flex-wrap justify-center'
-    : viewMode === 'spread' ? 'grid grid-cols-[repeat(2,max-content)] justify-center' : 'flex flex-col items-center'
+    ? 'flex flex-row flex-wrap justify-center-safe'
+    : viewMode === 'spread' ? 'grid grid-cols-[repeat(2,max-content)] justify-center-safe' : 'flex flex-col items-center-safe'
 
   return (
     <div className="flex h-full">

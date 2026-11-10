@@ -2841,6 +2841,15 @@ disagreed, so check `layer.scrollTop` before suspecting the item mapping.
 Related: on a PDF page with its own text, search indices are PDF items, so the
 OCR layer over such a page gets no highlights (`PdfPage`).
 
+### Centred pages use `safe center`
+
+Every scroller that centres pages (single, two-page, grid, PowerPoint
+slides, Word's `.wz-docx-wrapper`) centres with `items-center-safe` /
+`justify-center-safe` / `safe center`. With plain `center`, a page zoomed
+wider than the view overflows both sides and the left side lies at a
+negative scroll offset nobody can reach: at 200 % on a 1,038 px view the
+first 399 px of the page could not be seen. `safeCentering.test.ts` holds it.
+
 ### Find: progressive, from the page in view, phrase across lines
 
 After PdfCraft's find bar (Apache-2.0/MIT). `useSearch` searches from the page
