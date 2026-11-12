@@ -58,6 +58,8 @@ describe('a template the reader picks', () => {
     fs.writeFileSync(picked, Buffer.from('portable exe bytez'))
     await expect(adoptTemplate(dir, manifest, picked)).rejects.toThrow()
     expect(await cachedTemplate(dir, manifest)).toBeNull()
+    // The copy that was checked is gone too, not left as a .part.
+    expect(fs.existsSync(`${cachedTemplatePath(dir, manifest)}.part`)).toBe(false)
   })
 
   it('leaves no copy of an older version behind', async () => {

@@ -41,6 +41,25 @@ describe('where tools may write', () => {
     expect(await readFile(doc, 'utf8')).toBe('my thesis')
   })
 
+  // NTFS: "thesis.docx:a.pdf" ends in .pdf and names a hidden stream of thesis.docx.
+  it.runIf(process.platform === 'win32')('refuses an alternate data stream of another file', async () => {
+    const doc = join(dir, 'paper.docx')
+    await writeFile(doc, 'my paper')
+    await expect(callTool('pdf_insert_blank', { file: input, output: `${doc}:a.pdf`, afterPage: 0 })).rejects.toThrow(/invalid output path/)
+  })
+
+  // Touching \\host\share opens an SMB session before anything else is checked.
+  it.runIf(process.platform === 'win32')('refuses network paths, in and out', async () => {
+    await expect(callTool('pdf_insert_blank', { file: '\\\\wz-no-such-host.invalid\\share\\in.pdf', output: join(dir, 'unc.pdf'), afterPage: 0 })).rejects.toThrow(/UNC/)
+    await expect(callTool('pdf_insert_blank', { file: input, output: '\\\\wz-no-such-host.invalid\\share\\out.pdf', afterPage: 0 })).rejects.toThrow(/UNC/)
+  })
+
+  it('splits a range far past the last page without walking it', async () => {
+    const started = performance.now()
+    await callTool('pdf_split', { file: input, outputDir: dir, ranges: '1-99999999999', overwrite: true })
+    expect(performance.now() - started).toBeLessThan(5000)
+  })
+
   it('advertises overwrite on every tool that writes', () => {
     for (const t of tools) {
       const props = t.inputSchema.properties as Record<string, unknown>

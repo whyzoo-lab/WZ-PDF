@@ -25,6 +25,17 @@ describe('SVG anchors in documents', () => {
     for (const a of anchors(html)) expect(a.getAttribute('target')).toBe('_blank')
   })
 
+  // An image map is a link as well, and DOMPurify keeps map / area / usemap.
+  it('Markdown: an image-map area opens outside the app, or does not survive at all', async () => {
+    const map = '<img src="x.png" usemap="#m"><map name="m"><area shape="rect" coords="0,0,9,9" href="https://example.com/"></map>'
+    const { html } = await renderMarkdown(`before\n\n${map}\n`)
+    const areas = Array.from(new DOMParser().parseFromString(html, 'text/html').querySelectorAll('area'))
+    for (const area of areas) {
+      expect(area.getAttribute('target')).toBe('_blank')
+      expect(area.getAttribute('rel')).toContain('noopener')
+    }
+  })
+
   it('Markdown: in-page anchors still stay in the page', async () => {
     const [a] = anchors((await renderMarkdown('[top](#intro)\n')).html)
     expect(a).toBeDefined()

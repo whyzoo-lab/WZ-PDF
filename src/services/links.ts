@@ -5,10 +5,12 @@
  *
  * Every `<a>`, not `a[href]`: an SVG anchor names its target in `xlink:href`,
  * which that selector misses, and DOMPurify keeps it. Clicked, it navigated the
- * main window itself.
+ * main window itself. And `<area>`: an image map is a link too (DOMPurify
+ * keeps `map`, `area` and `usemap`), and in the web build nothing else stops
+ * it navigating the viewer's own page.
  */
 export function openLinksOutside(doc: Document, keepInPageAnchors = false): void {
-  for (const a of Array.from(doc.querySelectorAll('a'))) {
+  for (const a of Array.from(doc.querySelectorAll('a, area'))) {
     const href = a.getAttribute('href') ?? a.getAttribute('xlink:href')
     if (href === null) continue
     if (keepInPageAnchors && href.startsWith('#')) continue

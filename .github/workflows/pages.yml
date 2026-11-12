@@ -64,7 +64,7 @@ jobs:
       - name: Build OCR assets
         if: steps.ocr-cache.outputs.cache-hit != 'true'
         run: |
-          pip install pyyaml
+          pip install pyyaml==6.0.3
           npm run setup:ocr
 
       - name: Build (web)

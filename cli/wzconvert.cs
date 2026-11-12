@@ -51,7 +51,7 @@ static class WzConvert
         }
 
         var psi = new ProcessStartInfo(app);
-        psi.Arguments = "--" + tool + " " + Quote(args);
+        psi.Arguments = "--" + tool + " " + Quote(PathsOnly(args));
         // No redirection and no shell: the child inherits this console's
         // handles, so its stdout/stderr land straight in the caller's terminal.
         psi.UseShellExecute = false;
@@ -69,6 +69,28 @@ static class WzConvert
             Console.Error.WriteLine(tool + ": could not start the converter — " + ex.Message);
             return 2;
         }
+    }
+
+    // The converters' own options (electron/cli.ts). Keep the two in step.
+    static readonly string[] Options = { "-h", "--help", "-f", "--force", "-q", "--quiet", "--no-recurse", "-o", "--out" };
+
+    /// Anything else that starts with '-' is a file name, and is passed as
+    /// ".\name". The app is Chromium: it reads its own switches off the command
+    /// line before the converter sees it, so a file called "--no-sandbox" or
+    /// "--gpu-launcher=x.hwp", reached by `for %f in (*) do topdf "%f"`, would
+    /// be obeyed as one. The value after -o is a path as well.
+    static string[] PathsOnly(string[] args)
+    {
+        var result = new string[args.Length];
+        bool value = false;
+        for (int i = 0; i < args.Length; i++)
+        {
+            string arg = args[i];
+            bool option = !value && Array.IndexOf(Options, arg) >= 0;
+            result[i] = !option && arg.StartsWith("-") ? ".\\" + arg : arg;
+            value = option && (arg == "-o" || arg == "--out");
+        }
+        return result;
     }
 
     /// Re-quote arguments for the child. Windows gives every process one command

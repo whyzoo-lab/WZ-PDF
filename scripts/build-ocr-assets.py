@@ -21,6 +21,7 @@ yml carries the character dictionary and the RecResizeImg image_shape.
 Requires: Python 3 + pyyaml  (pip install pyyaml)
 The onnxruntime-web wasm files come from node_modules, so run `npm install` first.
 """
+import hashlib
 import io
 import os
 import shutil
@@ -35,7 +36,17 @@ WASM_DIR = os.path.join(ROOT, "public", "ocr", "wasm")
 ORT_DIST = os.path.join(ROOT, "node_modules", "onnxruntime-web", "dist")
 
 CDN = "https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0"
-HF_KO = "https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/korean"
+# A commit, not `main`: a branch can be moved, and these bytes ship in the
+# installer and are fed to an ONNX parser. Every file is also checked against
+# SHA256 below (the Baidu URL has no commit to pin). The hashes were taken from
+# the models 1.29.x already shipped, so pinning changed nothing. To upgrade,
+# change the commit and every hash together.
+HF_KO = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/languages/korean"
+SHA256 = {
+    f"{CDN}/PP-OCRv5_mobile_det_onnx.tar": "236be1ff426a393717f792b59612bd417e8f8d7650109ffc875fa73eebd2b95a",
+    f"{HF_KO}/rec.onnx": "322f140154c820fcb83c3d24cfe42c9ec70dd1a1834163306a7338136e4f1eaa",
+    f"{HF_KO}/dict.txt": "a88071c68c01707489baa79ebe0405b7beb5cca229f4fc94cc3ef992328802d7",
+}
 
 # Confirmed empirically from the ONNX model input tensor: [batch, 3, 48, dynamic_w].
 # (The community config.json says 32, but the actual model is 48 — verified.)
@@ -55,7 +66,11 @@ def fetch(url: str) -> bytes:
     print(f"  -> {url}")
     req = urllib.request.Request(url, headers={"User-Agent": "wz-pdf-ocr-setup"})
     with urllib.request.urlopen(req, timeout=300) as r:
-        return r.read()
+        data = r.read()
+    got = hashlib.sha256(data).hexdigest()
+    if got != SHA256[url]:
+        raise SystemExit(f"  [fail] {url}: SHA256 {got} is not the pinned {SHA256[url]}")
+    return data
 
 
 def build_det():

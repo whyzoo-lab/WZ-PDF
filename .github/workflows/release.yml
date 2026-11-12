@@ -16,6 +16,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Nothing here pushes with git; the build's dependencies need not
+          # find a write token in .git/config.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -75,7 +79,7 @@ jobs:
       - name: Build OCR assets
         if: steps.ocr-cache.outputs.cache-hit != 'true'
         run: |
-          pip install pyyaml
+          pip install pyyaml==6.0.3
           npm run setup:ocr
 
       # Up to three attempts. A download that completed stays in the cache folder,
@@ -104,7 +108,9 @@ jobs:
           key: electron-dl-v1-${{ steps.eb-versions.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Create GitHub Release and upload artifacts
-        uses: softprops/action-gh-release@v2
+        # A commit, not the movable v2 tag: this step holds the write token to
+        # the release that every installed copy updates from. (v2 = this SHA.)
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           # Both exes, plus what automatic updates read: latest.yml names the
           # newest installer and its sha512 (installed copies check this file),

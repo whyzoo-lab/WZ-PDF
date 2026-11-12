@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ParsedEmail, EmailAttachment } from '../../services/emlParser'
 import { renderEmailHtml, renderEmailText } from '../../services/emailHtml'
 import { downloadBlob } from '../../utils/download'
+import { formatSize } from '../../utils/fileSize'
 import { classifyDocFile } from '../../utils/detectDocType'
 import { FLOW_PRINT_ATTR } from '../../services/htmlPrint'
 import { ReaderFullscreen } from '../reader/ReaderFullscreen'
@@ -23,12 +24,6 @@ interface EmailViewProps {
 
 /** Message size at zoom 1; everything inside is relative to it. */
 const BASE_FONT_PX = 15
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 
 /** An attachment becomes a real File so it can go straight into the normal
  *  open pipeline — the viewer then treats it like any other document. */

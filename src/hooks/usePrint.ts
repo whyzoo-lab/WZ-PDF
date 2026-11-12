@@ -115,16 +115,19 @@ export function usePrint({ pdfDoc, numPages, annotations, onError }: UsePrintArg
     if (!pdfDoc || numPages === 0) return
     setIsPrinting(true)
     setProgress({ done: 0, total: numPages })
+    // Outside the try: a page that fails must not leave the Blob URLs of the
+    // pages before it allocated for the life of the window.
+    const pages: string[] = []
     try {
       // Sequential so cache lookups stay cheap and progress feels responsive;
       // parallel would saturate memory on large documents.
-      const pages: string[] = []
       for (let p = 1; p <= numPages; p++) {
         pages.push(await renderPageWithAnnotations(pdfDoc, p, annotations))
         setProgress({ done: p, total: numPages })
       }
       setPreviewPages(pages)
     } catch (err) {
+      pages.forEach(url => URL.revokeObjectURL(url))
       console.error('[print] failed:', err)
       onError(t('print.prepareFailed', { error: errorMessage(err) }))
     } finally {

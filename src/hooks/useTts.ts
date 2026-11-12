@@ -286,6 +286,9 @@ export function useTts() {
           // The rest cannot be had; what was read stays read.
           console.error('read-aloud: the next part failed:', err)
           moreDone = true
+          // Said in the bar: otherwise reading just ends early, as if the
+          // document did.
+          if (runRef.current === run) setError(err instanceof Error ? err.message : String(err))
         },
       ).finally(() => { morePending = null })
       return morePending

@@ -68,6 +68,13 @@ type PdfSource =
       disableStream: true
     }
 
+/**
+ * The collection built for a picture File, kept per File: building one
+ * registers the File's bytes as a source that is never released, so opening
+ * the same File again (a tab coming back, an undo) reuses it.
+ */
+const imageManifests = new WeakMap<object, Promise<File>>()
+
 export function usePdfDocument(file: DocumentFile | null, knownPassword?: (file: DocumentFile) => string | undefined): UsePdfDocumentReturn {
   // A tab coming back: the password that opened it before, so it is not asked again.
   const knownRef = useRef(knownPassword)
@@ -301,9 +308,16 @@ export function usePdfDocument(file: DocumentFile | null, knownPassword?: (file:
           import('../services/imageSet'),
         ])
         const isZip = new Uint8Array(buffer, 0, Math.min(4, buffer.byteLength)).every((b, i) => b === [0x50, 0x4b, 0x03, 0x04][i])
-        const manifest = isZip
-          ? await set.collectionForZip(buffer, file.name)
-          : await set.collectionForImage(file, buffer)
+        // Once per File: building a collection registers its bytes as a source
+        // that is never released, so re-opening the same File (a tab coming
+        // back, an undo) used to pin another whole copy each time.
+        let pending = imageManifests.get(file)
+        if (!pending) {
+          pending = isZip ? set.collectionForZip(buffer, file.name) : set.collectionForImage(file, buffer)
+          imageManifests.set(file, pending)
+          pending.catch(() => { imageManifests.delete(file) })
+        }
+        const manifest = await pending
         const doc = await openManifest(await manifest.arrayBuffer())
         return { doc, kind: 'image', email: null, markdown: null, startPage: doc.startPage }
       }

@@ -584,19 +584,26 @@ export default function App() {
 
   const saveCompareReport = useCallback(async () => {
     if (!shownComparison) return
-    const { compareReport } = await import('./services/textCompare')
-    const { pickSaveTarget, saveBlobTo } = await import('./utils/download')
-    const c = shownComparison.result
-    const text = compareReport(c, shownComparison.oldName, file?.name ?? '', {
-      title: t('compare.reportTitle'), old: t('compare.old'), new: t('compare.new'),
-      summary: t('compare.summary', { n: c.changes.length, r: c.changes.filter(x => x.kind === 'replaced').length, i: c.changes.filter(x => x.kind === 'inserted').length, d: c.changes.filter(x => x.kind === 'deleted').length }),
-      identical: t('compare.identical'),
-      kind: { replaced: t('compare.kind.replaced'), inserted: t('compare.kind.inserted'), deleted: t('compare.kind.deleted') },
-      page: (o, n) => t('compare.pages', { o, n }),
-    })
-    const name = `${(file?.name ?? 'document').replace(/\.[^.]+$/, '')}_compare.txt`
-    const target = await pickSaveTarget(name, { description: t('compare.reportType'), accept: { 'text/plain': ['.txt'] } })
-    if (await saveBlobTo(target, new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' }), name)) showToast(t('compare.reportSaved', { name }))
+    try {
+      const { compareReport } = await import('./services/textCompare')
+      const { pickSaveTarget, saveBlobTo } = await import('./utils/download')
+      const c = shownComparison.result
+      const text = compareReport(c, shownComparison.oldName, file?.name ?? '', {
+        title: t('compare.reportTitle'), old: t('compare.old'), new: t('compare.new'),
+        summary: t('compare.summary', { n: c.changes.length, r: c.changes.filter(x => x.kind === 'replaced').length, i: c.changes.filter(x => x.kind === 'inserted').length, d: c.changes.filter(x => x.kind === 'deleted').length }),
+        identical: t('compare.identical'),
+        kind: { replaced: t('compare.kind.replaced'), inserted: t('compare.kind.inserted'), deleted: t('compare.kind.deleted') },
+        page: (o, n) => t('compare.pages', { o, n }),
+      })
+      const name = `${(file?.name ?? 'document').replace(/\.[^.]+$/, '')}_compare.txt`
+      const target = await pickSaveTarget(name, { description: t('compare.reportType'), accept: { 'text/plain': ['.txt'] } })
+      if (await saveBlobTo(target, new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' }), name)) showToast(t('compare.reportSaved', { name }))
+    } catch (err) {
+      // A failed write used to be an unhandled rejection: the picker closed
+      // and nothing said the report was not saved.
+      console.error('compare report save failed:', err)
+      showToast(errorMessage(err))
+    }
   }, [shownComparison, file, showToast])
   const goToComment = useCallback((a: CommentAnnotation) => {
     setScrollToPage(a.page)
@@ -822,8 +829,13 @@ export default function App() {
   // listeners and the global keydown listener on every render.
   const clearSearch = search.clear
   const clearFlowSearch = flowSearch.clear
-  const stopTts = tts.stop
-  const openDocument = useCallback((f: DocumentFile, filePath?: string) => {
+  // Which reading is current. Stopping bumps it, so text still being gathered
+  // for a reading (a long PDF, a sheet part) is dropped when it arrives
+  // instead of being spoken over the document opened meanwhile.
+  const readingSeq = useRef(0)
+  const ttsStop = tts.stop
+  const stopTts = useCallback(() => { readingSeq.current++; ttsStop() }, [ttsStop])
+  const openDocument =useCallback((f: DocumentFile, filePath?: string) => {
     setFile(f)
     // Listed on the start screen next time. Paths only, and only files that
     // came from disk (not URLs, attachments or an embedded viewer's bytes).
@@ -1371,7 +1383,7 @@ export default function App() {
   // their DOM instead — see services/htmlPrint.ts for why that's the better
   // output, not just the easier one.
   const handlePrintAny = useCallback(async () => {
-    if (isFlowKind(kind)) {
+    if (isFlowKind(kind)) try {
       // Word, PowerPoint, sheets: printed on the paper their PDF uses — a slide
       // per sheet at the slide's size, Word pages at their own size and margins.
       // Markdown and mail: their text on A4, as "Save as PDF" writes it.
@@ -1400,6 +1412,12 @@ export default function App() {
       }
       const { printFlowDoc } = await import('./services/htmlPrint')
       if (await printFlowDoc()) return
+    } catch (err) {
+      // Building the print layout can fail (a chunk, a sheet's worker); it
+      // used to be an unhandled rejection and a print button that did nothing.
+      console.error('[print] failed:', err)
+      showToast(t('print.prepareFailed', { error: errorMessage(err) }))
+      return
     }
     handlePrint()
   }, [kind, handlePrint, previewThenPrint, showToast])
@@ -1569,7 +1587,6 @@ export default function App() {
   // and which reading it belongs to, so a part arriving late is not added to
   // the next one.
   const [speechStream, setSpeechStream] = useState<SpeechStream | null>(null)
-  const readingSeq = useRef(0)
   const startReading = useCallback(async () => {
     const seq = ++readingSeq.current
     let raw = ''
@@ -1588,15 +1605,15 @@ export default function App() {
       // they must be on screen to follow.
       setShowSlideNotes(true)
     } else if (stream) {
-      units = await stream.next().catch(err => {
-        console.error('read-aloud: reading the sheet failed:', err)
-        return []
-      })
+      // A failure is thrown to the caller, which says so; swallowed, it read
+      // as "nothing to read".
+      units = await stream.next()
       if (seq !== readingSeq.current) return
     } else if (flowDoc) {
       // The element the flow printer marks is exactly the readable body.
       const body = document.querySelector<HTMLElement>('[data-wz-flow-print]')
       const { textFromElement } = await import('./services/ttsSource')
+      if (seq !== readingSeq.current) return
       raw = body ? textFromElement(body) : ''
     } else if (pdfDoc) {
       const { speechUnitsFromPages } = await import('./services/ttsSource')
@@ -1608,6 +1625,8 @@ export default function App() {
           return result && result.status === 'done' ? result.words : undefined
         },
       })
+      // Gathering a long document takes a while; another may be open by now.
+      if (seq !== readingSeq.current) return
     }
 
     if (units) raw = joinSpeechUnits(units)
@@ -1671,7 +1690,7 @@ export default function App() {
   }, [showToast])
 
   const handleToggleSpeech = useCallback(async () => {
-    if (tts.status !== 'idle') { tts.stop(); return }
+    if (tts.status !== 'idle') { stopTts(); return }
     // A narrated video is using the voice; reading as well would take turns
     // with it sentence by sentence and slow both.
     if (videoAbort.current) return
@@ -1686,7 +1705,7 @@ export default function App() {
       // used to be an unhandled rejection and a button that seemed dead.
       reportSpeechFailure(err)
     }
-  }, [tts, startReading, reportSpeechFailure])
+  }, [tts, stopTts, startReading, reportSpeechFailure])
 
   const handleTtsDownload = useCallback(async () => {
     try {
@@ -1761,21 +1780,23 @@ export default function App() {
   // print layouts in the page at once each printed both documents.
   const officeSaveBusy = useRef(false)
   const saveOfficePdf = useCallback(async (view: OfficeViewHandle): Promise<boolean> => {
-    const { canSaveOfficePdf, officeJobToPdf, printOfficeJob } = await import('./services/officePdf')
-    if (!canSaveOfficePdf()) {
-      await printOfficeJob(await view.pdfJob())
-      return false
-    }
-    const suggested = `${stripDocExt(file?.name ?? 'document')}.pdf`
-    // Asked first, while the click still counts as the reader's: a large
-    // document can take longer to print than that permission lasts.
-    const target = await pickSaveTarget(suggested, {
-      description: 'PDF document',
-      accept: { 'application/pdf': ['.pdf'] },
-    })
-    if (target.kind === 'canceled') return false
-    setSavingOfficePdf(true)
+    // Everything is inside the try: the chunk, the web build's print layout
+    // and the save picker can fail too, and used to fail without a word.
     try {
+      const { canSaveOfficePdf, officeJobToPdf, printOfficeJob } = await import('./services/officePdf')
+      if (!canSaveOfficePdf()) {
+        await printOfficeJob(await view.pdfJob())
+        return false
+      }
+      const suggested = `${stripDocExt(file?.name ?? 'document')}.pdf`
+      // Asked first, while the click still counts as the reader's: a large
+      // document can take longer to print than that permission lasts.
+      const target = await pickSaveTarget(suggested, {
+        description: 'PDF document',
+        accept: { 'application/pdf': ['.pdf'] },
+      })
+      if (target.kind === 'canceled') return false
+      setSavingOfficePdf(true)
       const job = await view.pdfJob()
       let lastShown = -1
       const bytes = await officeJobToPdf(job, fraction => {
@@ -1824,7 +1845,7 @@ export default function App() {
       const target = await api.pickVideoPath(`${stripDocExt(file?.name ?? 'presentation')}.mp4`)
       if (!target) return
 
-      if (tts.status !== 'idle') tts.stop()
+      if (tts.status !== 'idle') stopTts()
       // Minutes of work that must not slow to a crawl when the reader switches
       // to another window (main.ts, 'background-work'); undone in `finally`.
       await api.setBackgroundWork?.(true)
@@ -1862,7 +1883,7 @@ export default function App() {
       setVideoProgress(null)
       void api.setBackgroundWork?.(false).catch(() => undefined)
     }
-  }, [office, file, tts, showToast, reportSpeechFailure])
+  }, [office, file, tts, stopTts, showToast, reportSpeechFailure])
 
   const handleSaveOfficePdf = useCallback(async (): Promise<boolean> => {
     const view = officeHandleRef.current
@@ -2226,7 +2247,7 @@ export default function App() {
         onNext={tts.next}
         onPause={tts.pause}
         onResume={tts.resume}
-        onStop={tts.stop}
+        onStop={stopTts}
         onVoiceChange={tts.setVoice}
         onSpeedChange={tts.setSpeed}
         onApply={tts.applySettings}

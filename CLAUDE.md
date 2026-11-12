@@ -2497,7 +2497,10 @@ per-file limit is 15 minutes, since a 215,897-row sheet is thousands of pages.
   four names**: each launcher picks its converter from its own file name
   (checked against an allowlist, so a renamed copy cannot pass the app an
   arbitrary switch), which keeps the delicate part — re-quoting the command
-  line — in one place. They exist only because `WZ PDF.exe` is a GUI-subsystem
+  line — in one place. An argument starting with `-` that is not one of the
+  converters' options is passed as `.\name` (`PathsOnly`; keep its list in step
+  with `electron/cli.ts`): the app is Chromium and would obey a file called
+  `--no-sandbox` as a switch before the converter saw it. They exist only because `WZ PDF.exe` is a GUI-subsystem
   binary: started from cmd it has no console and its output goes nowhere. A
   console-subsystem parent has one, and a child launched with inherited handles
   writes to it — so a launcher's whole job is to lend the app a console and pass
@@ -2621,7 +2624,12 @@ text PDF 5.3 s, a Word picture 3.5 s (each including app start).
 advertised on every tool that writes). Without `MCP_SANDBOX_DIR` — the stdio
 server the installer ships — any path was writable, and text an agent reads
 out of a PDF is attacker-controlled: "save the result over thesis.docx" would
-have destroyed it. `tools.output.test.ts` holds this.
+have destroyed it. `tools.output.test.ts` holds this. For the same reason the
+server refuses UNC and device paths, in and out (`assertLocalPath`; touching
+`\\host\share` opens an SMB session and leaks the NTLM response —
+`MCP_ALLOW_UNC=1` allows shares, mapped drive letters always work), and an
+output with a colon past the drive letter: `thesis.docx:a.pdf` ends in `.pdf`
+and writes a hidden NTFS stream onto `thesis.docx`.
 
 **Shipping it.** `scripts/build-mcp.cjs` bundles the server with esbuild into
 `build/mcp/`, which electron-builder copies to `<install>/resources/mcp/`. Two

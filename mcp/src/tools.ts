@@ -50,10 +50,26 @@ const SANDBOX_DIR = process.env.MCP_SANDBOX_DIR
   ? realpathSync(resolve(process.env.MCP_SANDBOX_DIR))
   : null
 
+/**
+ * Refuse network (UNC) and device paths on Windows, as the app's `read-file`
+ * does. Touching `\\host\share\x.pdf` makes this process open an SMB session —
+ * the user's NTLM response goes to whoever runs `host` — and an output there
+ * sends a document off the machine; the path comes from an agent that may be
+ * relaying text it read out of a hostile document. A mapped drive letter still
+ * works, and `MCP_ALLOW_UNC=1` allows shares for those who need them.
+ */
+const ALLOW_UNC = process.env.MCP_ALLOW_UNC === '1'
+function assertLocalPath(abs: string, original: string): string {
+  if (process.platform === 'win32' && !ALLOW_UNC && /^[\\/]{2}/.test(abs)) {
+    throw new Error(`network (UNC) and device paths are not allowed (set MCP_ALLOW_UNC=1 to allow): ${original}`)
+  }
+  return abs
+}
+
 /** Resolve a caller-supplied path, clamped to the sandbox when configured. */
 function lexicalSafePath(p: string): string {
   if (!p || typeof p !== 'string') throw new Error('invalid path')
-  if (!SANDBOX_DIR) return resolve(p)
+  if (!SANDBOX_DIR) return assertLocalPath(resolve(p), p)
   // Treat caller paths as relative TO the sandbox so they can't escape via
   // absolute paths or `..`. After resolve, verify containment.
   const cleaned = p.replace(/^[A-Za-z]:[/\\]+/, '').replace(/^[/\\]+/, '')
@@ -82,6 +98,8 @@ function assertInsideSandbox(abs: string, original: string): void {
 async function readInputFile(p: string, maxBytes = MAX_DOCUMENT_BYTES): Promise<Buffer> {
   const canonical = await realpath(lexicalSafePath(p))
   assertInsideSandbox(canonical, p)
+  // A local link or junction may point at a share.
+  assertLocalPath(canonical, p)
   const info = await stat(canonical)
   if (!info.isFile()) throw new Error(`not a regular file: ${p}`)
   if (info.size > maxBytes) {
@@ -102,6 +120,11 @@ async function readInputFile(p: string, maxBytes = MAX_DOCUMENT_BYTES): Promise<
 async function resolveOutputPath(p: string, overwrite = false): Promise<string> {
   if (extname(p).toLowerCase() !== '.pdf') throw new Error(`output must be a .pdf file: ${p}`)
   const candidate = lexicalSafePath(p)
+  // NTFS: `thesis.docx:a.pdf` has the extension .pdf, does not exist, and
+  // writes a hidden stream onto thesis.docx. No colon past the drive letter.
+  if (process.platform === 'win32' && candidate.slice(2).includes(':')) {
+    throw new Error(`invalid output path: ${p}`)
+  }
   let canonical: string
   try {
     canonical = await realpath(candidate)
@@ -109,9 +132,11 @@ async function resolveOutputPath(p: string, overwrite = false): Promise<string> 
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     const parent = await realpath(dirname(candidate))
     assertInsideSandbox(parent, p)
+    assertLocalPath(parent, p)
     return resolve(parent, basename(candidate))
   }
   assertInsideSandbox(canonical, p)
+  assertLocalPath(canonical, p)
   if (!overwrite) throw new Error(`output already exists (pass overwrite: true to replace it): ${p}`)
   return canonical
 }
@@ -454,9 +479,9 @@ async function pdfSplit(args: {
       const lo = Math.min(a, b),
         hi = Math.max(a, b)
       const pages: number[] = []
-      for (let p = lo; p <= hi; p++) {
-        if (p >= 1 && p <= total) pages.push(p)
-      }
+      // Clamped before the loop: "1-99999999999" used to spin through every
+      // number and hang the server (every session of it, over HTTP).
+      for (let p = Math.max(lo, 1); p <= Math.min(hi, total); p++) pages.push(p)
       ranges.push({ name: `${base}_${lo}-${hi}.pdf`, pages })
     }
   }

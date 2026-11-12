@@ -148,13 +148,19 @@ export async function downloadTemplate(
  */
 export async function adoptTemplate(userData: string, m: TemplateManifest, picked: string): Promise<string> {
   const stat = await fs.promises.stat(picked)
-  if (stat.size !== m.size || (await sha512OfFile(picked)) !== m.sha512) {
+  if (stat.size !== m.size) throw new Error(`not ${m.file}`)
+  const target = cachedTemplatePath(userData, m)
+  const part = `${target}.part`
+  await fs.promises.mkdir(path.dirname(target), { recursive: true })
+  // Copy first, then hash the copy: hashing the picked file and copying it
+  // afterwards are two reads, and a file on a share somebody else serves can
+  // answer them differently — the bytes kept must be the bytes checked.
+  await fs.promises.copyFile(picked, part)
+  if ((await fs.promises.stat(part)).size !== m.size || (await sha512OfFile(part)) !== m.sha512) {
+    await fs.promises.rm(part, { force: true })
     throw new Error(`not ${m.file}`)
   }
-  const target = cachedTemplatePath(userData, m)
-  await fs.promises.mkdir(path.dirname(target), { recursive: true })
-  await fs.promises.copyFile(picked, `${target}.part`)
-  await fs.promises.rename(`${target}.part`, target)
+  await fs.promises.rename(part, target)
   return target
 }
 
