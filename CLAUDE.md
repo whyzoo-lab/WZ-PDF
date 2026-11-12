@@ -785,6 +785,18 @@ paper to a new page with the same header and footer, block by block and row by
 row through a table; a single block taller than a page stays put. It runs in
 `DocxView`'s layout effect, again whenever the body is remounted (fullscreen).
 
+**Section breaks start pages** (`services/docxSections.ts`). In that mode a
+section break alone is no page break to docx-preview, and it never looks for
+the marks inside tables: a cover page followed by a section opening with a
+table (Word's mark sits in the first cell) was one page holding both sections,
+with the cover's header and footer. `breakBetweenSections` edits the parsed
+model before `renderDocument`: the paragraph ending a section gets the page
+break `<w:br w:type="page"/>` parses to (drawn as nothing) when the next
+section is not `continuous`/`nextColumn` and nothing there breaks already —
+a mark at the start of the next paragraph would otherwise leave a blank page.
+Known gap: a page holding a continuous section break has two `<article>`s,
+and `paginateDocx` measures the first only.
+
 **Save as PDF** (`services/officePdf.ts`). Each view builds a `PdfJob` — print-
 ready DOM plus `@page` rules — and `officeJobToPdf` puts it in `#wz-print-root`
 (the print stylesheet hides the app) and asks the main process to

@@ -21,6 +21,7 @@
 import DOMPurify from 'dompurify'
 import { unescapeCss } from '../utils/text'
 import { openLinksOutside } from './links'
+import { breakBetweenSections, styleFinder } from './docxSections'
 
 /** docx-preview's class prefix; every rule it writes is scoped under it. */
 export const DOCX_CLASS = 'wz-docx'
@@ -214,6 +215,7 @@ export async function renderDocx(bytes: ArrayBuffer): Promise<RenderedDocx> {
     experimental: false,
   }
   const parsed = await parseAsync(new Blob([bytes]), options)
+  breakBetweenSections(parsed.documentPart.body, { findStyle: styleFinder(parsed.stylesPart?.styles) })
   const nodes = await renderDocument(parsed, options)
 
   const css: string[] = []

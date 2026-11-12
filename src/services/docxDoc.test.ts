@@ -50,6 +50,48 @@ describe('renderDocx', () => {
     expect(web?.getAttribute('target')).toBe('_blank')
   })
 
+  describe('section breaks', () => {
+    const pages = async (body: string) => {
+      const out = await renderDocx(await makeDocx(body))
+      return Array.from(new DOMParser().parseFromString(out.html, 'text/html').querySelectorAll('section'))
+        .map(s => s.textContent ?? '')
+    }
+    const A4 = '<w:pgSz w:w="11906" w:h="16838"/>'
+    const sectEnd = (text: string, sect = A4) => `<w:p><w:pPr><w:sectPr>${sect}</w:sectPr></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`
+    const lastSect = (sect = A4) => `<w:sectPr>${sect}</w:sectPr>`
+    const lrpb = '<w:r><w:lastRenderedPageBreak/></w:r>'
+    // A cover page, then a section whose first block is a table: Word marks
+    // the page it starts with a lastRenderedPageBreak inside that table,
+    // which docx-preview never looks at — the cover and the body came out as
+    // one page. The page size differing by a twip (as it did in the file
+    // that showed it) changes nothing.
+    it('starts the next section on a new page when it opens with a table', async () => {
+      const table = `<w:tbl><w:tr><w:tc><w:p>${lrpb}<w:r><w:t>본문 표</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
+      const got = await pages(sectEnd('표지', '<w:pgSz w:w="11907" w:h="16840"/>') + table + para('본문') + lastSect())
+      expect(got).toHaveLength(2)
+      expect(got[0]).toContain('표지')
+      expect(got[1]).toContain('본문 표')
+    })
+
+    it('starts the next section on a new page in a file Word never laid out', async () => {
+      const got = await pages(sectEnd('첫 장') + para('둘째 장') + lastSect())
+      expect(got).toEqual([expect.stringContaining('첫 장'), expect.stringContaining('둘째 장')])
+    })
+
+    it('adds no blank page when Word already marked the break', async () => {
+      const got = await pages(sectEnd('첫 장') + `<w:p>${lrpb}<w:r><w:t>둘째 장</w:t></w:r></w:p>` + lastSect())
+      expect(got).toHaveLength(2)
+      expect(got[1]).toContain('둘째 장')
+    })
+
+    it('keeps a continuous section on the same page', async () => {
+      const got = await pages(sectEnd('위') + para('아래') + lastSect(`<w:type w:val="continuous"/>${A4}`))
+      expect(got).toHaveLength(1)
+      expect(got[0]).toContain('위')
+      expect(got[0]).toContain('아래')
+    })
+  })
+
   it('keeps every style rule inside the document', async () => {
     const out = await renderDocx(await makeDocx(para('x')))
     expect(out.css.length).toBeGreaterThan(0)
